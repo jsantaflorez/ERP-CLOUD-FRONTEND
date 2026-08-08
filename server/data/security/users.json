@@ -1,0 +1,23 @@
+[
+  {
+    "id": 1,
+    "username": "admin",
+    "passwordHash": "$2b$10$REEMPLAZAR_CON_HASH_REAL",
+    "level": 1,
+    "active": true
+  },
+  {
+    "id": 2,
+    "username": "jefe",
+    "passwordHash": "$2b$10$REEMPLAZAR_CON_HASH_REAL",
+    "level": 2,
+    "active": true
+  },
+  {
+    "id": 3,
+    "username": "operador",
+    "passwordHash": "$2b$10$REEMPLAZAR_CON_HASH_REAL",
+    "level": 3,
+    "active": true
+  }
+]

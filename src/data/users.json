@@ -1,0 +1,23 @@
+[
+  {
+    "id": 1,
+    "username": "admin",
+    "password": "1234",
+    "level": 1,
+    "active": true
+  },
+  {
+    "id": 2,
+    "username": "jefe",
+    "password": "1234",
+    "level": 2,
+    "active": true
+  },
+  {
+    "id": 3,
+    "username": "operador",
+    "password": "1234",
+    "level": 3,
+    "active": true
+  }
+]

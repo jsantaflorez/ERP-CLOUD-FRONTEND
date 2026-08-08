@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, Geist, Arial, sans-serif;
+  background-color: #f8fafc;
+}
+
+.input {
+  @apply w-full rounded-xl border border-gray-300 px-4 py-2.5 outline-none focus:border-blue-500;
+}
+
+@keyframes slide {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-slide {
+  animation: slide 0.25s ease-out;
+}
