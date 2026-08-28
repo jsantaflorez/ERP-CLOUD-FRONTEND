@@ -1,30 +1,28 @@
 // Comprehensive translation dictionary for DIAN-COLOMBIA tax regimes
 export const TAX_REGIME_LABELS = {
-  VAT_REGISTERED:     "Responsable de IVA",
-  VAT_NOT_REGISTERED: "No Responsable de IVA",
-  GRAND_TAXPAYER:     "Gran Contribuyente",
-  SPECIAL_REGIME:     "Régimen Especial",
-  INDIVIDUAL:         "Régimen Ordinario - Persona Natural",
-  CORPORATE:          "Régimen Ordinario - Persona Jurídica"
+  es: {
+    VAT_REGISTERED: "Responsable de IVA",
+    VAT_NOT_REGISTERED: "No Responsable de IVA",
+    GRAND_TAXPAYER: "Gran Contribuyente",
+    SPECIAL_REGIME: "Régimen Tributario Especial",
+    INDIVIDUAL: "Régimen Ordinario",
+    CORPORATE: "Régimen Ordinario",
+  },
+  en: {
+    VAT_REGISTERED: "VAT Registered",
+    VAT_NOT_REGISTERED: "Not VAT Registered",
+    GRAND_TAXPAYER: "Large Taxpayer",
+    SPECIAL_REGIME: "Special Tax Regime",
+    INDIVIDUAL: "Ordinary Regime",
+    CORPORATE: "Ordinary Regime",
+  },
 };
 
-// Optional: A formatted list, useful if it is necessary to iterate through the selects in other forms.
-export const TAX_REGIME_OPTIONS = Object.entries(TAX_REGIME_LABELS).map(([value, label]) => ({
-  value,
-  label
-}));
-
-//Grouping of tax regimes by type of entity (INDIVIDUAL / LEGAL ENTITY)
+// Which regimes are valid per person type — just the value, no label
+// duplicated here. Display text always comes from TAX_REGIME_LABELS
+// above (single source of truth), to avoid the same translation drift
+// that hit AccountCategory earlier today.
 export const TAX_REGIMES_BY_PERSON = {
-  NATURAL: [
-    { value: "INDIVIDUAL", label: TAX_REGIME_LABELS.INDIVIDUAL },
-    { value: "VAT_NOT_REGISTERED", label: TAX_REGIME_LABELS.VAT_NOT_REGISTERED },
-    { value: "VAT_REGISTERED", label: TAX_REGIME_LABELS.VAT_REGISTERED }
-  ],
-  JURIDICA: [
-    { value: "CORPORATE", label: TAX_REGIME_LABELS.CORPORATE },
-    { value: "VAT_REGISTERED", label: TAX_REGIME_LABELS.VAT_REGISTERED },
-    { value: "SPECIAL_REGIME", label: TAX_REGIME_LABELS.SPECIAL_REGIME },
-    { value: "GRAND_TAXPAYER", label: TAX_REGIME_LABELS.GRAND_TAXPAYER }
-  ]
+  NATURAL: ["INDIVIDUAL", "VAT_NOT_REGISTERED", "VAT_REGISTERED"],
+  JURIDICA: ["CORPORATE", "VAT_REGISTERED", "SPECIAL_REGIME", "GRAND_TAXPAYER"],
 };

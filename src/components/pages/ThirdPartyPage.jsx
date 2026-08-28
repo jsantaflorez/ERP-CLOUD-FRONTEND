@@ -38,7 +38,7 @@ const initialForm = {
 // when personType changes, and to repair stale/invalid data on edit.
 const getDefaultTaxRegimeForPersonType = (personType) => {
   const options = TAX_REGIMES_BY_PERSON[personType] || [];
-  return options[0]?.value || "";
+  return options[0] || "";
 };
 
 // INDIVIDUAL and CORPORATE both display as "Régimen Ordinario" in
@@ -49,13 +49,39 @@ const getDefaultTaxRegimeForPersonType = (personType) => {
 // regimes (VAT_REGISTERED, etc.) already read unambiguously on their own.
 const AMBIGUOUS_REGIMES = ["INDIVIDUAL", "CORPORATE"];
 
-const getRegimeDisplayLabel = (taxRegime, personType, t) => {
-  const label = TAX_REGIME_LABELS[taxRegime] || taxRegime;
+const getRegimeDisplayLabel = (taxRegime, personType, language, t) => {
+  const label = TAX_REGIME_LABELS[language]?.[taxRegime] || taxRegime;
   if (AMBIGUOUS_REGIMES.includes(taxRegime)) {
     const suffix = personType === "JURIDICA" ? t.juridica : t.natural;
     return `${label} (${suffix})`;
   }
   return label;
+};
+
+// FIX: mirrors ThirdPartyService.calculateDV exactly (Colombian NIT
+// verification digit, Modulo 11 algorithm). The backend ALWAYS computes
+// this itself from documentNumber for any purely numeric document — it
+// never reads whatever the frontend sends for verificationDigit. The old
+// form had this as a manually-typed input, disabled unless
+// documentType === "NIT" (so it was unusable for Natural persons with a
+// numeric CC, even though the backend computes a DV for those too).
+// Now computed live here purely for preview — the saved value always
+// comes from the backend's own calculation on save/reload.
+const calculateVerificationDigit = (documentNumber) => {
+  const primes = [3, 7, 13, 17, 19, 23, 29, 37, 41, 43, 47, 53, 59, 67, 71];
+  const cleanDoc = (documentNumber || "").replace(/[^0-9]/g, "");
+
+  if (!cleanDoc) return null;
+  if (cleanDoc.length > primes.length) return null; // matches backend's 15-digit max guard
+
+  let sum = 0;
+  for (let i = 0; i < cleanDoc.length; i++) {
+    const digit = Number(cleanDoc[cleanDoc.length - 1 - i]);
+    sum += digit * primes[i];
+  }
+
+  const remainder = sum % 11;
+  return remainder < 2 ? remainder : 11 - remainder;
 };
 
 // NEW: Maps each validated field to the tab where it lives.
@@ -235,6 +261,20 @@ function ThirdPartyPage({ language = "es" }) {
     }
   }[language];
 
+  // NEW: maps each validated field to its human-readable label in the
+  // active language, so the error toast can list exactly which fields
+  // are missing instead of a generic "check the red fields" message.
+  const FIELD_LABEL_MAP = {
+    documentNumber: t.docNum,
+    documentType: t.docType,
+    personType: t.type,
+    taxRegime: t.regime,
+    cityId: t.city,
+    businessName: t.businessName,
+    firstName: t.firstName,
+    lastName: t.lastName,
+  };
+
   // --- Feedback Utilities ---
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -339,7 +379,7 @@ const loadCatalogs = async () => {
     // option for its personType (e.g. legacy data, or a value that
     // predates the personType-based filtering), fall back to a sensible
     // default instead of loading an invalid combination into the form.
-    const validRegimes = (TAX_REGIMES_BY_PERSON[personType] || []).map((r) => r.value);
+    const validRegimes = TAX_REGIMES_BY_PERSON[personType] || [];
     const resolvedTaxRegime = validRegimes.includes(item.taxRegime)
       ? item.taxRegime
       : getDefaultTaxRegimeForPersonType(personType);
@@ -405,10 +445,25 @@ const loadCatalogs = async () => {
     let val = type === "checkbox" ? checked : value;
 
     if (name === "documentNumber") val = value.replace(/\s/g, "").slice(0, 20);
-    if (name === "verificationDigit") val = value === "" ? "" : Math.max(0, Math.min(9, Number(value)));
+    // FIX: verificationDigit is no longer a manually-typed field (see the
+    // <input readOnly> below) — it's derived automatically from
+    // documentNumber, same as the backend always does. The old
+    // `if (name === "verificationDigit")` clamp branch is gone since
+    // nothing dispatches onChange for that field anymore.
 
     setForm((prev) => {
       const next = { ...prev, [name]: val };
+
+      // FIX: auto-calculate the verification digit live as the user
+      // types the document number, mirroring calculateVerificationDigit
+      // (same Modulo-11 algorithm as the backend). Applies to ANY
+      // purely-numeric document (CC, NIT, etc.) — not just NIT — since
+      // that's what the backend actually does. Non-numeric documents
+      // (e.g. Passport) show no DV, same as the backend's behavior.
+      if (name === "documentNumber") {
+        const dv = calculateVerificationDigit(val);
+        next.verificationDigit = dv != null ? String(dv) : "";
+      }
 
       // FIX: taxRegime options are now filtered by personType (see the
       // accounting tab's <select> below). If personType changes, the
@@ -418,7 +473,7 @@ const loadCatalogs = async () => {
       // that isn't valid for this person type. This is the same class of
       // bug as the earlier stale "COMMON" default.
       if (name === "personType") {
-        const validRegimes = (TAX_REGIMES_BY_PERSON[val] || []).map((r) => r.value);
+        const validRegimes = TAX_REGIMES_BY_PERSON[val] || [];
         if (!validRegimes.includes(prev.taxRegime)) {
           next.taxRegime = getDefaultTaxRegimeForPersonType(val);
         }
@@ -470,7 +525,16 @@ const loadCatalogs = async () => {
       );
       if (firstErrorTab) setActiveTab(firstErrorTab);
 
-      showToast(t.fixErrors, "error");
+      // FIX: the toast used to just say "check the fields highlighted in
+      // red" without naming them — easy to miss on a long form with
+      // several tabs, especially when the actual cause is something
+      // non-obvious (e.g. the city list failed to load, so cityId can
+      // never be satisfied). Now lists the specific field names.
+      const missingFieldLabels = Object.keys(errs)
+        .map((field) => FIELD_LABEL_MAP[field])
+        .filter(Boolean);
+      const detail = missingFieldLabels.length > 0 ? `: ${missingFieldLabels.join(", ")}` : "";
+      showToast(`${t.fixErrors}${detail}`, "error");
       return;
     }
 
@@ -616,7 +680,7 @@ const loadCatalogs = async () => {
                         {item.personType === "JURIDICA" ? t.juridica : t.natural}
                       </td>
                       <td className="px-5 py-4 text-slate-500 text-xs font-medium">
-                          {getRegimeDisplayLabel(item.taxRegime, item.personType, t)}
+                          {getRegimeDisplayLabel(item.taxRegime, item.personType, language, t)}
                       </td>
                       <td className="px-5 py-4">
                         <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${item.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
@@ -742,7 +806,24 @@ const loadCatalogs = async () => {
                                   </div>
                                   <div>
                                     <Field label={t.dv}>
-                                      <input type="number" name="verificationDigit" value={form.verificationDigit} onChange={handleChange} className={inputCls()} placeholder="0" disabled={form.documentType !== "NIT"} />
+                                      {/* FIX: was a manually-typed input,
+                                          disabled unless documentType === "NIT"
+                                          — meaning it never worked for Natural
+                                          persons (default documentType "CC"),
+                                          and never actually calculated
+                                          anything. Now read-only and
+                                          auto-computed from documentNumber
+                                          (see handleChange), matching what
+                                          the backend always does regardless
+                                          of document type. */}
+                                      <input
+                                        type="text"
+                                        name="verificationDigit"
+                                        value={form.verificationDigit}
+                                        readOnly
+                                        className={`${inputCls()} bg-slate-50 cursor-not-allowed`}
+                                        placeholder="—"
+                                      />
                                     </Field>
                                   </div>
                                 </div>
@@ -829,13 +910,17 @@ const loadCatalogs = async () => {
                                      onChange={handleChange}
                                      className={inputCls(errors.taxRegime)}
                                    >
-                                     {/* FIX: options are now filtered by form.personType via
-                                         TAX_REGIMES_BY_PERSON, instead of always showing all 6
-                                         regimes regardless of whether they even apply (e.g.
-                                         showing "Persona Natural"-only regimes for a JURIDICA
-                                         record). Single source of truth stays in taxRegimes.js. */}
-                                     {(TAX_REGIMES_BY_PERSON[form.personType] || []).map((opt) => (
-                                       <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                     {/* FIX: options are filtered by form.personType via
+                                         TAX_REGIMES_BY_PERSON (now just an array of valid
+                                         codes per person type — no duplicated label field,
+                                         to avoid the same translation-drift bug we hit with
+                                         AccountCategory). Display text always comes from
+                                         TAX_REGIME_LABELS[language], the single bilingual
+                                         source of truth also used by the table/View panel. */}
+                                     {(TAX_REGIMES_BY_PERSON[form.personType] || []).map((value) => (
+                                       <option key={value} value={value}>
+                                         {TAX_REGIME_LABELS[language]?.[value] || value}
+                                       </option>
                                      ))}
                                    </select>
                                  </Field>
@@ -846,11 +931,20 @@ const loadCatalogs = async () => {
 
                                <div className="md:col-span-2 pt-2">
                                  <Field label={t.costCenter}>
+                                   {/* FIX: was showing ALL cost centers regardless of
+                                       allowsMovement, but the backend's
+                                       mapRequestToEntity() only accepts cost centers
+                                       where allowsMovement === true — a "header" cost
+                                       center (one with children) can't be assigned as
+                                       a third party's default. Filtered here so a user
+                                       can't pick an option that's guaranteed to fail. */}
                                    <select name="defaultCostCenterId" value={form.defaultCostCenterId} onChange={handleChange} className={inputCls()}>
                                      <option value="">{t.selectOption}</option>
-                                     {costCenters.map((cc) => (
-                                       <option key={cc.id} value={cc.id}>{cc.code} - {cc.name}</option>
-                                     ))}
+                                     {costCenters
+                                       .filter((cc) => cc.allowsMovement)
+                                       .map((cc) => (
+                                         <option key={cc.id} value={cc.id}>{cc.code} - {cc.name}</option>
+                                       ))}
                                    </select>
                                  </Field>
                                </div>
@@ -963,7 +1057,7 @@ const loadCatalogs = async () => {
                           display as "Régimen Ordinario" otherwise. */}
                       <DataRow
                         label={t.regime}
-                        value={getRegimeDisplayLabel(viewItem.taxRegime, viewItem.personType, t)}
+                        value={getRegimeDisplayLabel(viewItem.taxRegime, viewItem.personType, language, t)}
                         t={t}
                       />
                     </div>
