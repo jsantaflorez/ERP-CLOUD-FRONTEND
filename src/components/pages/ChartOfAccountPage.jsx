@@ -3,6 +3,7 @@ import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
 import api from "../../services/api"; // Centralized Axios instance with multi-tenancy context
 import { useAuth } from "../../context/AuthContext";
+import { getApiErrorMessage, API_ERROR_LABELS } from "../../constants/apiErrors";
 
 const initialForm = {
   code: "",
@@ -41,6 +42,64 @@ const getMetadataLabel = (list, value, language) => {
   const match = list.find((item) => item.value === value);
   if (!match) return value;
   return language === "es" ? match.displayNameEs : match.displayName;
+};
+
+// Mirrors ChartOfAccountService.validateCodeStructure exactly (PUC —
+// Colombian Chart of Accounts structure rules), so the user sees a
+// structural problem with the code immediately instead of only after a
+// failed save. Returns one of apiErrors.js's error codes, or null if the
+// code structure is valid. Reuses those same codes/translations rather
+// than duplicating the wording a third time — this stays identical to
+// what the backend would return if this check were ever bypassed.
+const getCodeStructureErrorCode = (code, parentId, isPostingAccount, rows) => {
+  if (!code) return null; // empty code is handled by the required-field check
+
+  const codeLength = code.length;
+
+  if (isPostingAccount && codeLength < 6) {
+    return "POSTING_ACCOUNT_CODE_TOO_SHORT";
+  }
+
+  if (!parentId) {
+    if (codeLength !== 1) {
+      return "ROOT_ACCOUNT_CODE_INVALID_LENGTH";
+    }
+    return null;
+  }
+
+  const parent = rows.find((r) => String(r.id) === String(parentId));
+  if (!parent) return null; // parent lookup issues are surfaced elsewhere
+
+  const parentCode = parent.code;
+  const parentLength = parentCode.length;
+
+  if (!code.startsWith(parentCode)) {
+    return "CHILD_CODE_MUST_START_WITH_PARENT";
+  }
+
+  const isValidJump =
+    (parentLength === 1 && codeLength === 2) ||
+    (parentLength === 2 && codeLength === 4) ||
+    (parentLength >= 4 && codeLength === parentLength + 2);
+
+  if (!isValidJump) {
+    return "INVALID_CODE_STRUCTURE";
+  }
+
+  return null;
+};
+
+// Mirrors ChartOfAccountService.getExpectedLength — used only to show a
+// proactive hint ("expect N digits") near the code field, not for
+// validation itself (getCodeStructureErrorCode handles that).
+const getExpectedCodeLength = (parentId, rows) => {
+  if (!parentId) return 1;
+  const parent = rows.find((r) => String(r.id) === String(parentId));
+  if (!parent) return null;
+  const parentLength = parent.code.length;
+  if (parentLength === 1) return 2;
+  if (parentLength === 2) return 4;
+  return parentLength + 2;
 };
 
 // Returns the set of ids that are descendants (children, grandchildren, ...)
@@ -82,6 +141,14 @@ function ChartOfAccountsPage({ language = "es" }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading]       = useState(false);
   const [toast, setToast]           = useState(null);
+
+  // Snapshot of `code` at the moment editing started. Used as a
+  // defense-in-depth guard in handleSave: even though the field is
+  // rendered readOnly while editing, this ensures the payload can never
+  // carry a different value than what was actually loaded, regardless of
+  // any client-side tampering with the DOM/readOnly attribute — mirrors
+  // the backend's own immutability rule on `code`.
+  const originalCodeRef = useRef(null);
 
   // NEW: dynamically loaded from GET /v1/chart-of-accounts/metadata,
   // replacing the old hardcoded ACCOUNT_CLASS_OPTIONS/ACCOUNT_CATEGORY_OPTIONS/
@@ -147,6 +214,9 @@ function ChartOfAccountsPage({ language = "es" }) {
       categoryHint: "Mostrando categorías aplicables para:",
       loading: "Cargando...",
       loadingMetadata: "Cargando opciones...",
+      codeLockedHint: "El código no se puede modificar una vez creada la cuenta.",
+      expectedCodeLengthHint: "Se espera un código de",
+      expectedCodeLengthHintDigits: "dígitos.",
       postingBlockedByChildren: "No puede ser cuenta de movimiento porque tiene subcuentas asociadas.",
       parentIsPostingWarning: "Esta cuenta padre es de movimiento. Debes desmarcar \"Cuenta de Movimiento\" en ella antes de guardar, o el backend rechazará el cambio.",
     },
@@ -195,6 +265,9 @@ function ChartOfAccountsPage({ language = "es" }) {
       categoryHint: "Showing categories applicable to:",
       loading: "Loading...",
       loadingMetadata: "Loading options...",
+      codeLockedHint: "The code can't be changed once the account is created.",
+      expectedCodeLengthHint: "Expected code length:",
+      expectedCodeLengthHintDigits: "digits.",
       postingBlockedByChildren: "Can't be a posting account because it has sub-accounts.",
       parentIsPostingWarning: "This parent account is a posting account. You must uncheck \"Posting Account\" on it before saving, or the backend will reject the change.",
     },
@@ -227,8 +300,7 @@ function ChartOfAccountsPage({ language = "es" }) {
         showToast(response.data?.message || t.errorConn, "error");
       }
     } catch (error) {
-      const errorMsg = error.response?.data?.message || t.errorConn;
-      showToast(errorMsg, "error");
+      showToast(getApiErrorMessage(error, language, t.errorConn), "error");
     } finally {
       setLoading(false);
     }
@@ -253,8 +325,7 @@ function ChartOfAccountsPage({ language = "es" }) {
         showToast(response.data?.message || t.errorConn, "error");
       }
     } catch (error) {
-      const errorMsg = error.response?.data?.message || t.errorConn;
-      showToast(errorMsg, "error");
+      showToast(getApiErrorMessage(error, language, t.errorConn), "error");
     } finally {
       setLoadingMetadata(false);
     }
@@ -302,6 +373,7 @@ function ChartOfAccountsPage({ language = "es" }) {
     setErrors({});
     setEditingId(null);
     editingIdRef.current = null;
+    originalCodeRef.current = null;
   };
 
   const openCreatePanel = () => {
@@ -352,6 +424,7 @@ function ChartOfAccountsPage({ language = "es" }) {
     setErrors({});
     setEditingId(item.id);
     editingIdRef.current = item.id;
+    originalCodeRef.current = item.code || "";
     setOpen(true);
   };
 
@@ -394,7 +467,26 @@ function ChartOfAccountsPage({ language = "es" }) {
   const validate = () => {
     const errs = {};
 
-    if (!form.code?.trim()) errs.code = t.required;
+    if (!form.code?.trim()) {
+      errs.code = t.required;
+    } else {
+      // NEW: mirrors the backend's PUC structure rules (root = 1 digit,
+      // posting accounts >= 6 digits, child code must extend the parent's
+      // code by the exact expected jump). Checked against form.parentId
+      // as it currently stands — relevant even in edit mode, since `code`
+      // stays locked but the user can still reassign the parent, and the
+      // backend re-validates the (fixed) code against the NEW parent.
+      const structureErrorCode = getCodeStructureErrorCode(
+        form.code.trim(),
+        form.parentId,
+        form.postingAccount,
+        rows
+      );
+      if (structureErrorCode) {
+        errs.code = API_ERROR_LABELS[language]?.[structureErrorCode] || structureErrorCode;
+      }
+    }
+
     if (!form.name?.trim()) errs.name = t.required;
     if (!form.nature?.trim()) errs.nature = t.required;
     if (!form.accountClass?.trim()) errs.accountClass = t.required;
@@ -422,7 +514,12 @@ function ChartOfAccountsPage({ language = "es" }) {
     const recordHasChildren = editingRow != null && hasChildren(editingRow.code, rows);
 
     const payload = {
-      code:               form.code.trim(),
+      // Defense in depth: while editing, `code` is locked in the UI, but
+      // this guarantees the payload matches what was actually loaded
+      // (originalCodeRef) rather than trusting form state — mirrors the
+      // backend's own "code is immutable once created" rule. Only a
+      // brand-new account (currentId == null) may set this from the form.
+      code:               currentId ? originalCodeRef.current : form.code.trim(),
       name:               form.name.trim(),
       nature:             form.nature,
       accountClass:       form.accountClass,
@@ -451,8 +548,7 @@ function ChartOfAccountsPage({ language = "es" }) {
         showToast(response.data?.message || t.errorConn, "error");
       }
     } catch (error) {
-      const errorMsg = error.response?.data?.message || t.errorConn;
-      showToast(errorMsg, "error");
+      showToast(getApiErrorMessage(error, language, t.errorConn), "error");
     }
   };
 
@@ -482,8 +578,7 @@ function ChartOfAccountsPage({ language = "es" }) {
         showToast(response.data?.message || t.errorConn, "error");
       }
     } catch (error) {
-      const errorMsg = error.response?.data?.message || t.errorConn;
-      showToast(errorMsg, "error");
+      showToast(getApiErrorMessage(error, language, t.errorConn), "error");
     }
   };
 
@@ -502,8 +597,7 @@ function ChartOfAccountsPage({ language = "es" }) {
         showToast(response.data?.message || t.errorConn, "error");
       }
     } catch (error) {
-      const errorMsg = error.response?.data?.message || t.errorConn;
-      showToast(errorMsg, "error");
+      showToast(getApiErrorMessage(error, language, t.errorConn), "error");
     }
   };
 
@@ -694,6 +788,13 @@ function ChartOfAccountsPage({ language = "es" }) {
             </div>
 
             <form onSubmit={handleSave} className="flex-1 px-8 py-6 grid grid-cols-1 gap-5 md:grid-cols-2">
+              {/* FIX: the backend rejects any change to `code` on update
+                  ("Account codes are immutable once created" —
+                  ChartOfAccountsService.update()). The field was freely
+                  editable here with no indication of that, so a user
+                  editing it would only find out via a failed save. Now
+                  locked to read-only once editingIdRef.current is set
+                  (i.e. only settable at creation time). */}
               <Field label={t.code} error={errors.code}>
                 <input
                   name="code"
@@ -701,8 +802,21 @@ function ChartOfAccountsPage({ language = "es" }) {
                   onChange={handleChange}
                   maxLength={20}
                   placeholder="Ej: 110505"
-                  className={inputCls(errors.code)}
+                  readOnly={!!editingIdRef.current}
+                  className={`${inputCls(errors.code)} ${editingIdRef.current ? "opacity-60 cursor-not-allowed" : ""}`}
                 />
+                {editingIdRef.current && (
+                  <span className="text-[10px] text-amber-600">{t.codeLockedHint}</span>
+                )}
+                {/* NEW: proactive hint (create mode only, no error showing
+                    yet) — tells the user the expected digit count for the
+                    selected parent BEFORE they submit and hit
+                    getCodeStructureErrorCode's rejection. */}
+                {!editingIdRef.current && !errors.code && (
+                  <span className="text-[10px] text-slate-400">
+                    {t.expectedCodeLengthHint} {getExpectedCodeLength(form.parentId, rows) ?? "—"} {t.expectedCodeLengthHintDigits}
+                  </span>
+                )}
               </Field>
 
               <Field label={t.name} error={errors.name}>
