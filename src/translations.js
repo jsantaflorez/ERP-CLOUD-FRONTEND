@@ -18,6 +18,7 @@ const translations = {
     navChartOfAccount: "Plan de Cuentas",
     navTax: "Impuestos",
     navThirdParties: "Terceros",
+    navJournalEntry: "Asientos Contables",
     navUsers: "Usuarios",
   },
 
@@ -40,6 +41,7 @@ const translations = {
     navChartOfAccount: "Chart of Accounts",
     navTax: "Taxes",
     navThirdParties: "Third Parties",
+    navJournalEntry: "Journal Entries",
     navUsers: "Users",
   },
 };

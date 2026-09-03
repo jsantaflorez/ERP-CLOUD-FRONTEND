@@ -11,6 +11,7 @@ import CostCenterPage from "./CostCenterPage";
 import ChartOfAccountPage from "./ChartOfAccountPage";
 import TaxPage from "./TaxPage";
 import ThirdPartyPage from "./ThirdPartyPage";
+import JournalEntryPage from "./JournalEntryPage";
 
 function Dashboard({ user, onLogout, language, onLanguageChange }) {
   const [activeView, setActiveView] = useState("dashboard");
@@ -65,6 +66,15 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
 
             {isAuthorizedOperational && (
               <>
+                <button
+                  onClick={() => setActiveView("journalEntry")}
+                  className={`rounded-xl px-4 py-3 text-left transition-colors ${
+                    activeView === "journalEntry" ? "bg-blue-600" : "bg-slate-800 hover:bg-slate-700"
+                  }`}
+                >
+                  {t.navJournalEntry}
+                </button>
+
                 <button
                   onClick={() => setActiveView("documentType")}
                   className={`rounded-xl px-4 py-3 text-left transition-colors ${
@@ -151,6 +161,10 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
               </p>
             </div>
           </>
+        )}
+
+        {activeView === "journalEntry" && (
+          <JournalEntryPage language={language} />
         )}
 
         {activeView === "documentType" && (
