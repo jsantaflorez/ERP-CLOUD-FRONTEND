@@ -62,6 +62,16 @@ function JournalEntryPage({ language = "es" }) {
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
+  // null = creating a new entry; otherwise the id of the entry being edited.
+  const [editingId, setEditingId] = useState(null);
+  const [loadingEntry, setLoadingEntry] = useState(false);
+
+  // Annulment modal state -- a separate lightweight flow from the main
+  // form, since it only ever needs one field (the audit-trail reason).
+  const [annulTarget, setAnnulTarget] = useState(null); // entry being annulled, or null
+  const [annulReason, setAnnulReason] = useState("");
+  const [annulError, setAnnulError] = useState("");
+  const [annulling, setAnnulling] = useState(false);
 
   const { session } = useAuth();
   const activeTenantId = session.companyName || session.companyId;
@@ -106,6 +116,19 @@ function JournalEntryPage({ language = "es" }) {
       close: "Cerrar",
       noThirdParty: "— Sin tercero —", noCostCenter: "— Sin centro de costo —",
       documentTypeHint: "Próximo número",
+      edit: "Editar", annul: "Anular",
+      editingTitle: "Editar Asiento",
+      documentTypeLocked: "El tipo de documento no se puede modificar una vez creado el asiento.",
+      loadingEntry: "Cargando asiento...",
+      successUpdate: "¡Asiento contable actualizado!",
+      successAnnul: "¡Asiento contable anulado!",
+      annulTitle: "Anular Asiento",
+      annulBody: "Esta acción neutraliza el efecto financiero del asiento (los débitos y créditos quedan en cero). El número de documento y el registro permanecen para el historial, pero ya no podrá editarse ni volver a anularse.",
+      annulReasonLabel: "Motivo de anulación",
+      annulReasonPlaceholder: "Explique el motivo (obligatorio para el registro de auditoría)",
+      annulReasonRequired: "El motivo de anulación es obligatorio",
+      annulConfirm: "Confirmar Anulación",
+      annulCancel: "Cancelar",
     },
     en: {
       title: "Journal Entries",
@@ -146,6 +169,19 @@ function JournalEntryPage({ language = "es" }) {
       close: "Close",
       noThirdParty: "— No third party —", noCostCenter: "— No cost center —",
       documentTypeHint: "Next number",
+      edit: "Edit", annul: "Annul",
+      editingTitle: "Edit Entry",
+      documentTypeLocked: "The document type can't be changed once the entry is created.",
+      loadingEntry: "Loading entry...",
+      successUpdate: "Journal entry updated!",
+      successAnnul: "Journal entry annulled!",
+      annulTitle: "Annul Entry",
+      annulBody: "This neutralizes the entry's financial effect (debits and credits are zeroed out). The document number and record remain for history, but it can no longer be edited or annulled again.",
+      annulReasonLabel: "Annulment reason",
+      annulReasonPlaceholder: "Explain the reason (required for the audit trail)",
+      annulReasonRequired: "An annulment reason is required",
+      annulConfirm: "Confirm Annulment",
+      annulCancel: "Cancel",
     },
   }[language];
 
@@ -266,13 +302,48 @@ function JournalEntryPage({ language = "es" }) {
   const openNewEntry = () => {
     setForm(emptyForm());
     setErrors({});
+    setEditingId(null);
     setView("form");
+  };
+
+  // Fetches the entry fresh from the backend rather than reusing the list
+  // row: the list response omits some fields, and this guarantees the form
+  // is seeded from the exact current state (in case it changed since the
+  // list was last loaded).
+  const openEditEntry = async (entry) => {
+    setLoadingEntry(true);
+    setView("form");
+    setErrors({});
+    try {
+      const response = await api.get(`/v1/journal-entries/${entry.id}`);
+      const data = response.data?.data;
+      setForm({
+        entryDate: data.entryDate,
+        documentTypeId: data.documentTypeId != null ? String(data.documentTypeId) : "",
+        description: data.description || "",
+        items: (data.items || []).map((item) => ({
+          accountId: item.accountId != null ? String(item.accountId) : "",
+          thirdPartyId: item.thirdPartyId != null ? String(item.thirdPartyId) : "",
+          costCenterId: item.costCenterId != null ? String(item.costCenterId) : "",
+          debit: item.debit ? String(item.debit) : "",
+          credit: item.credit ? String(item.credit) : "",
+          description: item.description || "",
+        })),
+      });
+      setEditingId(entry.id);
+    } catch (error) {
+      showToast(getApiErrorMessage(error, language, t.errorConn), "error");
+      setView("list");
+    } finally {
+      setLoadingEntry(false);
+    }
   };
 
   const backToList = () => {
     setView("list");
     setForm(emptyForm());
     setErrors({});
+    setEditingId(null);
   };
 
   const handleHeaderChange = (e) => {
@@ -369,11 +440,17 @@ function JournalEntryPage({ language = "es" }) {
 
     setSaving(true);
     try {
-      const response = await api.post("/v1/journal-entries", payload);
+      // The document type/document number are assigned once at creation
+      // and never change on update (JournalEntryService.update() doesn't
+      // touch them) -- editingId picks PUT over POST, everything else
+      // about the request shape is identical.
+      const response = editingId
+        ? await api.put(`/v1/journal-entries/${editingId}`, payload)
+        : await api.post("/v1/journal-entries", payload);
       if (response.data?.success) {
-        showToast(t.successCreate);
+        showToast(editingId ? t.successUpdate : t.successCreate);
         backToList();
-        loadEntries(0);
+        loadEntries(currentPage);
       } else {
         showToast(getApiErrorMessage({ response }, language, t.errorConn), "error");
       }
@@ -381,6 +458,46 @@ function JournalEntryPage({ language = "es" }) {
       showToast(getApiErrorMessage(error, language, t.errorConn), "error");
     } finally {
       setSaving(false);
+    }
+  };
+
+  // ============================================================
+  // Annulment
+  // ============================================================
+
+  const openAnnulModal = (entry) => {
+    setAnnulTarget(entry);
+    setAnnulReason("");
+    setAnnulError("");
+  };
+
+  const closeAnnulModal = () => {
+    setAnnulTarget(null);
+    setAnnulReason("");
+    setAnnulError("");
+  };
+
+  const confirmAnnul = async () => {
+    if (!annulReason.trim()) {
+      setAnnulError(t.annulReasonRequired);
+      return;
+    }
+    setAnnulling(true);
+    try {
+      const response = await api.patch(`/v1/journal-entries/${annulTarget.id}/annul`, {
+        reason: annulReason.trim(),
+      });
+      if (response.data?.success) {
+        showToast(t.successAnnul);
+        closeAnnulModal();
+        loadEntries(currentPage);
+      } else {
+        showToast(getApiErrorMessage({ response }, language, t.errorConn), "error");
+      }
+    } catch (error) {
+      showToast(getApiErrorMessage(error, language, t.errorConn), "error");
+    } finally {
+      setAnnulling(false);
     }
   };
 
@@ -426,6 +543,8 @@ function JournalEntryPage({ language = "es" }) {
           totalPages={totalPages}
           onPageChange={(p) => loadEntries(p)}
           onViewEntry={setViewingEntry}
+          onEditEntry={openEditEntry}
+          onAnnulEntry={openAnnulModal}
         />
       ) : (
         <JeFormView
@@ -434,6 +553,8 @@ function JournalEntryPage({ language = "es" }) {
           errors={errors}
           saving={saving}
           loadingCatalogs={loadingCatalogs}
+          loadingEntry={loadingEntry}
+          isEditing={editingId != null}
           documentTypes={activeDocumentTypes}
           postableAccounts={postableAccounts}
           activeThirdParties={activeThirdParties}
@@ -452,6 +573,19 @@ function JournalEntryPage({ language = "es" }) {
       {viewingEntry && (
         <JeDetailModal t={t} entry={viewingEntry} onClose={() => setViewingEntry(null)} />
       )}
+
+      {annulTarget && (
+        <JeAnnulModal
+          t={t}
+          entry={annulTarget}
+          reason={annulReason}
+          setReason={setAnnulReason}
+          error={annulError}
+          annulling={annulling}
+          onConfirm={confirmAnnul}
+          onCancel={closeAnnulModal}
+        />
+      )}
     </div>
   );
 }
@@ -463,7 +597,7 @@ function JournalEntryPage({ language = "es" }) {
 function JeListView({
   t, entries, loading,
   searchTerm, setSearchTerm, startDate, setStartDate, endDate, setEndDate, onSearch,
-  currentPage, totalPages, onPageChange, onViewEntry,
+  currentPage, totalPages, onPageChange, onViewEntry, onEditEntry, onAnnulEntry,
 }) {
   return (
     <>
@@ -531,7 +665,19 @@ function JeListView({
                         )}
                       </td>
                       <td className="px-5 py-4">
-                        <Button variant="ghost" size="sm" onClick={() => onViewEntry(entry)}>{t.view}</Button>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => onViewEntry(entry)}>{t.view}</Button>
+                          {/* An annulled entry is immutable (backend rejects
+                              both PUT and PATCH .../annul on it), so neither
+                              action is offered once it's annulled. */}
+                          {!entry.annulled && (
+                            <>
+                              <Button variant="ghost" size="sm" onClick={() => onEditEntry(entry)}>{t.edit}</Button>
+                              <Button variant="ghost" size="sm" onClick={() => onAnnulEntry(entry)}
+                                className="text-red-500 hover:text-red-700">{t.annul}</Button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -560,14 +706,26 @@ function JeListView({
 // ============================================================
 
 function JeFormView({
-  t, form, errors, saving, loadingCatalogs,
+  t, form, errors, saving, loadingCatalogs, loadingEntry, isEditing,
   documentTypes, postableAccounts, activeThirdParties, activeCostCenters, accountById,
   totals, onHeaderChange, onItemChange, onAddLine, onRemoveLine, onSubmit, onCancel,
 }) {
   const selectedDocType = documentTypes.find((d) => String(d.id) === String(form.documentTypeId));
 
+  if (loadingEntry) {
+    return (
+      <div className="rounded-xl border border-gray-100 bg-white p-16 text-center text-sm text-slate-400 shadow-sm">
+        {t.loadingEntry}
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={onSubmit} className="space-y-6">
+      {isEditing && (
+        <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">{t.editingTitle}</h3>
+      )}
+
       <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
         <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
           <JeField label={t.entryDate} error={errors.entryDate}>
@@ -575,19 +733,27 @@ function JeFormView({
               className={jeInputCls(errors.entryDate)} />
           </JeField>
 
+          {/* FIX: the document type/document number are assigned once at
+              creation and JournalEntryService.update() never touches them
+              -- locked to read-only in edit mode, mirroring the same
+              immutable-field pattern already used for Chart of Accounts'
+              Codigo field. */}
           <JeField label={t.documentType} error={errors.documentTypeId}>
             <select name="documentTypeId" value={form.documentTypeId} onChange={onHeaderChange}
-              className={jeInputCls(errors.documentTypeId)} disabled={loadingCatalogs}>
+              className={`${jeInputCls(errors.documentTypeId)} ${isEditing ? "opacity-60 cursor-not-allowed" : ""}`}
+              disabled={loadingCatalogs || isEditing}>
               <option value="">{loadingCatalogs ? t.loadingCatalogs : t.selectDocumentType}</option>
               {documentTypes.map((d) => (
                 <option key={d.id} value={d.id}>{d.code} - {d.name}</option>
               ))}
             </select>
-            {selectedDocType && (
+            {isEditing ? (
+              <span className="text-[10px] text-amber-600">{t.documentTypeLocked}</span>
+            ) : selectedDocType ? (
               <span className="text-[11px] text-slate-400">
                 {t.documentTypeHint}: {selectedDocType.nextNumberPreview}
               </span>
-            )}
+            ) : null}
           </JeField>
 
           <JeField label={t.generalDescription}>
@@ -780,6 +946,47 @@ function JeDetailModal({ t, entry, onClose }) {
 
         <div className="px-8 pb-6">
           <Button variant="secondary" onClick={onClose}>{t.close}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Annulment confirmation modal
+// ============================================================
+
+function JeAnnulModal({ t, entry, reason, setReason, error, annulling, onConfirm, onCancel }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+        <div className="px-8 py-6 space-y-4">
+          <div>
+            <h2 className="text-xl font-black text-slate-800">{t.annulTitle} — {entry.documentNumber}</h2>
+            <p className="mt-2 text-sm text-slate-500">{t.annulBody}</p>
+          </div>
+
+          <JeField label={t.annulReasonLabel} error={error}>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder={t.annulReasonPlaceholder}
+              maxLength={255}
+              rows={3}
+              className={jeInputCls(error)}
+              autoFocus
+            />
+          </JeField>
+
+          <div className="flex gap-3 pt-2">
+            <Button variant="danger" loading={annulling} onClick={onConfirm}>
+              {t.annulConfirm}
+            </Button>
+            <Button variant="secondary" onClick={onCancel} disabled={annulling}>
+              {t.annulCancel}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

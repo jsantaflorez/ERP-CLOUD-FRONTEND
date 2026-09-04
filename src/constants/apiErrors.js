@@ -41,6 +41,11 @@ export const API_ERROR_LABELS = {
     BUSINESS_NAME_REQUIRED: "La razón social es obligatoria para personas jurídicas.",
     NAMES_REQUIRED_FOR_NATURAL: "El primer nombre y el primer apellido son obligatorios para personas naturales.",
     INVALID_COST_CENTER: "El centro de costo seleccionado no es válido, no pertenece a la compañía, o no permite movimientos.",
+    ENTRY_ANNULLED_IMMUTABLE: "No se puede editar un asiento anulado. Su efecto financiero ya fue neutralizado.",
+    ENTRY_INACTIVE_IMMUTABLE: "No se puede modificar un asiento contable inactivo.",
+    ENTRY_ALREADY_ANNULLED: "Este asiento contable ya está anulado.",
+    ITEM_HAS_BOTH_DEBIT_AND_CREDIT: "Cada línea del asiento debe tener débito O crédito, no ambos.",
+    ITEM_MISSING_DEBIT_OR_CREDIT: "Cada línea del asiento debe tener débito o crédito.",
   },
   en: {
     DUPLICATE_VALUE: "A record with this value already exists. Check the code or identifier.",
@@ -69,6 +74,11 @@ export const API_ERROR_LABELS = {
     BUSINESS_NAME_REQUIRED: "Business name is required for legal entities.",
     NAMES_REQUIRED_FOR_NATURAL: "First and last name are required for natural persons.",
     INVALID_COST_CENTER: "The selected cost center is invalid, doesn't belong to the company, or doesn't allow movements.",
+    ENTRY_ANNULLED_IMMUTABLE: "Can't edit an annulled journal entry. Its financial effect has already been neutralized.",
+    ENTRY_INACTIVE_IMMUTABLE: "Can't modify an inactive journal entry.",
+    ENTRY_ALREADY_ANNULLED: "This journal entry is already annulled.",
+    ITEM_HAS_BOTH_DEBIT_AND_CREDIT: "Each entry line must have a debit OR a credit, not both.",
+    ITEM_MISSING_DEBIT_OR_CREDIT: "Each entry line must have a debit or a credit.",
   },
 };
 
