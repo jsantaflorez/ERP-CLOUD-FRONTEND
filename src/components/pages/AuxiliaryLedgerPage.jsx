@@ -7,6 +7,7 @@ import { getApiErrorMessage } from "../../constants/apiErrors";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { addPdfReportHeader, addPdfRunningHeader, buildExcelHeaderRows, formatGeneratedAt } from "../../utils/reportExport";
 
 // NEW (2026-09-08): first report screen wired into the frontend. The
 // backend has had /v1/reports/auxiliary-ledger (and 3 other report
@@ -235,12 +236,24 @@ function AuxiliaryLedgerPage({ language = "es" }) {
   // opening-balance line, the transaction table, then a totals line --
   // mirrors what's on screen so the exported file matches what the user
   // just reviewed.
-  const buildSheetRows = (group) => {
-    const header = [t.date, t.document, t.detail, t.thirdParty, t.costCenter, t.debit, t.credit, t.balance];
+  const reportPeriodLabel = () =>
+    `${t.pdfPeriod}: ${report?.startDate || filters.startDate} – ${report?.endDate || filters.endDate}`;
+
+  const buildSheetRows = (group, includeHeader) => {
+    const columnHeader = [t.date, t.document, t.detail, t.thirdParty, t.costCenter, t.debit, t.credit, t.balance];
     const rows = [
+      ...(includeHeader
+        ? buildExcelHeaderRows({
+            companyName: report.companyName,
+            reportTitle: t.pdfReportTitle,
+            period: reportPeriodLabel(),
+            generatedAtLabel: t.generatedAt,
+            generatedAt: report.generatedAt,
+          })
+        : []),
       [`${group.accountCode} — ${group.accountName}`],
       [t.openingBalance, "", "", "", "", "", "", rawAmount(group.openingBalance)],
-      header,
+      columnHeader,
       ...(group.transactions || []).map((tx) => [
         tx.transactionDate,
         tx.documentNumber,
@@ -269,13 +282,17 @@ function AuxiliaryLedgerPage({ language = "es" }) {
     if (!report?.accountGroups?.length) return;
 
     const workbook = XLSX.utils.book_new();
-    report.accountGroups.forEach((group) => {
-      const sheet = XLSX.utils.aoa_to_sheet(buildSheetRows(group));
+    report.accountGroups.forEach((group, index) => {
+      // Full company/report/generated-at header on every sheet, not just
+      // the first -- each sheet can be opened, printed or forwarded on
+      // its own, so it needs to identify itself without relying on
+      // another tab in the same workbook.
+      const sheet = XLSX.utils.aoa_to_sheet(buildSheetRows(group, true));
       // Sheet names are capped at 31 chars and can't contain \ / ? * [ ] :
       // -- account codes are always short plain digits, but sanitize
       // anyway so a future non-numeric code can't break the export.
       const sheetName = String(group.accountCode).replace(/[/?*[\]:]/g, "-").slice(0, 31);
-      XLSX.utils.book_append_sheet(workbook, sheet, sheetName || "Cuenta");
+      XLSX.utils.book_append_sheet(workbook, sheet, sheetName || `Cuenta${index + 1}`);
     });
 
     XLSX.writeFile(workbook, `${exportFileStem()}.xlsx`);
@@ -285,18 +302,46 @@ function AuxiliaryLedgerPage({ language = "es" }) {
     if (!report?.accountGroups?.length) return;
 
     const doc = new jsPDF({ orientation: "landscape" });
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const bottomMargin = 15;
+    // Minimum space (mm) a group needs on the current page before it's
+    // worth starting here: title line + opening balance + table header +
+    // a couple of rows. Below this, forcing a page break avoids orphaning
+    // an account's title at the very bottom of the page.
+    const minGroupSpace = 35;
 
-    doc.setFontSize(14);
-    doc.text(t.pdfReportTitle, 14, 15);
-    doc.setFontSize(10);
-    doc.text(`${t.pdfPeriod}: ${report.startDate || filters.startDate} – ${report.endDate || filters.endDate}`, 14, 22);
+    const headerInfo = {
+      companyName: report.companyName,
+      reportTitle: t.pdfReportTitle,
+      period: reportPeriodLabel(),
+      generatedAtLabel: t.generatedAt,
+      generatedAt: report.generatedAt,
+    };
 
-    let cursorY = 28;
+    // The first page gets the full header (company + title + period +
+    // generated-at). Every page after that -- a new account group, or a
+    // continuation page autoTable adds on its own because one group's
+    // transactions overflow a single page -- gets the compact running
+    // header instead.
+    let isFirstPage = true;
+    const drawPageHeader = () => {
+      if (isFirstPage) {
+        isFirstPage = false;
+        return addPdfReportHeader(doc, headerInfo);
+      }
+      return addPdfRunningHeader(doc, headerInfo);
+    };
 
-    report.accountGroups.forEach((group, index) => {
-      if (index > 0) {
+    let cursorY = drawPageHeader();
+
+    report.accountGroups.forEach((group) => {
+      // Only force a new page when there isn't enough room left for this
+      // group's title, opening balance and a few rows -- accounts with
+      // few movements now share a page instead of each one starting a
+      // mostly-blank page of its own.
+      if (cursorY + minGroupSpace > pageHeight - bottomMargin) {
         doc.addPage();
-        cursorY = 15;
+        cursorY = drawPageHeader();
       }
 
       doc.setFontSize(11);
@@ -329,6 +374,12 @@ function AuxiliaryLedgerPage({ language = "es" }) {
         formatAmount(group.closingBalance),
       ]);
 
+      // If this group's own table is long enough to overflow the page,
+      // autoTable adds pages for it automatically -- give those
+      // continuation pages a running header too instead of leaving them
+      // blank on top.
+      const pageBeforeTable = doc.internal.getCurrentPageInfo().pageNumber;
+
       autoTable(doc, {
         startY: cursorY + 10,
         head: [[t.date, t.document, t.detail, t.thirdParty, t.costCenter, t.debit, t.credit, t.balance]],
@@ -340,7 +391,15 @@ function AuxiliaryLedgerPage({ language = "es" }) {
           6: { halign: "right" },
           7: { halign: "right" },
         },
+        margin: { top: 20, bottom: bottomMargin },
+        didDrawPage: (data) => {
+          if (data.pageNumber > pageBeforeTable) {
+            drawPageHeader();
+          }
+        },
       });
+
+      cursorY = doc.lastAutoTable.finalY + 8;
     });
 
     doc.save(`${exportFileStem()}.pdf`);
@@ -413,9 +472,11 @@ function AuxiliaryLedgerPage({ language = "es" }) {
       {report && (
         <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            {report.generatedAt ? (
+            {report.generatedAt || report.companyName ? (
               <p className="text-xs text-slate-400">
-                {t.generatedAt}: {String(report.generatedAt).replace("T", " ").slice(0, 16)}
+                {report.companyName && <strong className="text-slate-500">{report.companyName}</strong>}
+                {report.companyName && report.generatedAt && " — "}
+                {report.generatedAt && `${t.generatedAt}: ${formatGeneratedAt(report.generatedAt)}`}
               </p>
             ) : (
               <span />
