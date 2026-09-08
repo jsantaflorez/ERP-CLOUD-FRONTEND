@@ -12,9 +12,26 @@ import ChartOfAccountPage from "./ChartOfAccountPage";
 import TaxPage from "./TaxPage";
 import ThirdPartyPage from "./ThirdPartyPage";
 import JournalEntryPage from "./JournalEntryPage";
+import AuxiliaryLedgerPage from "./AuxiliaryLedgerPage";
+
+// Views that live under the "Reportes" submenu -- grouped here so the
+// submenu auto-expands whenever one of them is the active view (e.g. on
+// first load of a bookmarked report, or after navigating away and back),
+// instead of only expanding on an explicit click. Add new report views
+// (Balance de Comprobación, Balance General, ...) to this list as they're
+// built, and the submenu picks them up automatically.
+const REPORT_VIEWS = ["auxiliaryLedger"];
 
 function Dashboard({ user, onLogout, language, onLanguageChange }) {
   const [activeView, setActiveView] = useState("dashboard");
+  // UX FIX (2026-09-08): reports used to sit as flat, top-level nav
+  // buttons alongside Plan de Cuentas, Terceros, etc. -- with only one
+  // report (Libro Auxiliar) that was tolerable, but the user flagged it
+  // wouldn't scale once Balance de Comprobación / Balance General / etc.
+  // join it. Grouped under a collapsible "Reportes" submenu instead.
+  const [reportsMenuOpen, setReportsMenuOpen] = useState(false);
+  const isReportView = REPORT_VIEWS.includes(activeView);
+  const reportsMenuExpanded = reportsMenuOpen || isReportView;
   const t = translations[language] || translations.es;
 
   // Resolve role hierarchy dynamically supporting both legacy integers and enterprise string tokens
@@ -119,6 +136,38 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
                 >
                   {t.navThirdParties}
                 </button>
+
+                {/* REPORTS SUBMENU -- groups every report view (currently
+                    just Libro Auxiliar) under one collapsible entry instead
+                    of each report being its own flat top-level button. */}
+                <div>
+                  <button
+                    onClick={() => setReportsMenuOpen((open) => !open)}
+                    className={`flex w-full items-center justify-between rounded-xl px-4 py-3 text-left transition-colors ${
+                      isReportView ? "bg-blue-600" : "bg-slate-800 hover:bg-slate-700"
+                    }`}
+                  >
+                    <span>{t.navReports}</span>
+                    <span
+                      className={`text-xs transition-transform ${reportsMenuExpanded ? "rotate-180" : ""}`}
+                    >
+                      ▾
+                    </span>
+                  </button>
+
+                  {reportsMenuExpanded && (
+                    <div className="mt-1 flex flex-col gap-1 pl-3">
+                      <button
+                        onClick={() => setActiveView("auxiliaryLedger")}
+                        className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
+                          activeView === "auxiliaryLedger" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
+                        }`}
+                      >
+                        {t.navAuxiliaryLedger}
+                      </button>
+                    </div>
+                  )}
+                </div>
               </>
             )}
 
@@ -185,6 +234,10 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
 
         {activeView === "thirdParties" && (
           <ThirdPartyPage language={language} />
+        )}
+
+        {activeView === "auxiliaryLedger" && (
+          <AuxiliaryLedgerPage language={language} />
         )}
 
         {activeView === "users" && (

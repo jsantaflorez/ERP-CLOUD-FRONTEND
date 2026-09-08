@@ -21,6 +21,7 @@ export const API_ERROR_LABELS = {
     // chart-of-accounts account).
     PARENT_ALLOWS_MOVEMENT: "No se puede agregar un centro hijo: el centro padre permite movimiento.",
     HAS_CHILDREN_CANNOT_POST: "Este registro tiene subcuentas o centros hijos y no puede permitir movimientos/asientos directos.",
+    POSTING_ACCOUNT_HAS_MOVEMENTS: "No se puede quitar \"Cuenta de Movimiento\" porque esta cuenta ya tiene asientos contables registrados.",
     PARENT_IS_POSTING_ACCOUNT: "El registro padre es una cuenta/centro de movimiento y no puede tener hijos.",
     CATEGORY_CLASS_MISMATCH: "La categoría seleccionada no corresponde a la clase de cuenta elegida.",
     FINANCIAL_STATEMENT_CLASS_MISMATCH: "El estado financiero seleccionado no corresponde a la clase de cuenta elegida (Activo/Pasivo/Patrimonio va en Balance General; Ingreso/Gasto/Costo va en Estado de Resultados).",
@@ -54,6 +55,7 @@ export const API_ERROR_LABELS = {
     DATA_INTEGRITY_VIOLATION: "The request couldn't be processed due to a data inconsistency.",
     PARENT_ALLOWS_MOVEMENT: "Can't add a sub-center: the parent center allows movement.",
     HAS_CHILDREN_CANNOT_POST: "This record has sub-accounts or child centers and can't allow direct postings/movements.",
+    POSTING_ACCOUNT_HAS_MOVEMENTS: "Can't remove \"Posting Account\" status because this account already has journal entry movements recorded.",
     PARENT_IS_POSTING_ACCOUNT: "The parent record is a posting account/center and can't have children.",
     CATEGORY_CLASS_MISMATCH: "The selected category doesn't belong to the chosen account class.",
     FINANCIAL_STATEMENT_CLASS_MISMATCH: "The selected financial statement doesn't match the chosen account class (Asset/Liability/Equity belongs on the Balance Sheet; Revenue/Expense/Cost belongs on the Income Statement).",

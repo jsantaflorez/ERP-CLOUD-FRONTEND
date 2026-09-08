@@ -102,6 +102,36 @@ const getExpectedCodeLength = (parentId, rows) => {
   return parentLength + 2;
 };
 
+// UX FIX (2026-09-04): reverse of getExpectedCodeLength -- given how many
+// digits the code being TYPED currently has, this returns how many digits
+// its parent's code must have, per the same PUC jump rule
+// (1 -> 2 -> 4 -> +2...). Returns null when the current length doesn't
+// land on a determinable level yet (still-mid-typed codes, or a root
+// account). This is what lets the form go from "pick any of these N
+// accounts as the parent" to "here's the one account that actually fits
+// the code you're typing" -- closing the gap the user flagged: nothing
+// previously stopped picking "1105 — CAJA" as the parent of "413595".
+const getExpectedParentCodeLength = (codeLength) => {
+  if (codeLength === 2) return 1;
+  if (codeLength === 4) return 2;
+  if (codeLength >= 6 && codeLength % 2 === 0) return codeLength - 2;
+  return null;
+};
+
+// Looks up the account whose code exactly matches the parent length the
+// typed code implies (e.g. typing "4205" implies a 2-digit parent, so this
+// looks up "42"). Returns null if the code is too short/an odd length to
+// have a determinable parent yet, or if that ancestor doesn't exist in the
+// plan yet -- in either case the user still picks manually from the
+// (still prefix-filtered) dropdown below.
+const getSuggestedParent = (code, rows) => {
+  if (!code) return null;
+  const parentLength = getExpectedParentCodeLength(code.length);
+  if (!parentLength) return null;
+  const parentCode = code.slice(0, parentLength);
+  return rows.find((r) => r.code === parentCode) || null;
+};
+
 // Returns the set of ids that are descendants (children, grandchildren, ...)
 // of a given account, based on the parentCode links available on each row
 // (accounts list items expose parentCode/parentName as denormalized display
@@ -131,6 +161,43 @@ const getDescendantIds = (code, rows) => {
 // frontend so the user sees it immediately instead of discovering it via
 // a failed save. Based on parentCode links, same as getDescendantIds.
 const hasChildren = (code, rows) => rows.some((r) => r.parentCode === code);
+
+// UX FIX (2026-09-04): before this, a new account asked the user to pick
+// Clase, Categoría, Estado Financiero AND Naturaleza independently, with
+// nothing hinting how they relate -- exactly how the user hit
+// PARENT_CLASS_MISMATCH and FINANCIAL_STATEMENT_CLASS_MISMATCH creating
+// accounts "42"/"4205". In reality only two of those four are ever free
+// choices; the other two are determined (or at least suggested) by the
+// selected parent/Clase:
+//
+// Mirrors FinancialStatement.fromAccountClass() exactly. This mapping has
+// NO exceptions in the backend, so -- unlike Naturaleza below -- Estado
+// Financiero is never left as a free choice: the field is always locked
+// to whatever this returns, driven by Clase alone.
+const FINANCIAL_STATEMENT_BY_CLASS = {
+  ASSET: "BALANCE_SHEET",
+  LIABILITY: "BALANCE_SHEET",
+  EQUITY: "BALANCE_SHEET",
+  REVENUE: "INCOME_STATEMENT",
+  EXPENSE: "INCOME_STATEMENT",
+  COST: "INCOME_STATEMENT",
+};
+
+// Standard PUC debit/credit convention per class -- mirrors the doc
+// comment on the backend's AccountNature enum ("Debit accounts: Assets,
+// Expenses, Costs; Credit accounts: Liabilities, Equity, Revenue"). The
+// backend deliberately does NOT enforce this (contra-accounts like
+// "Depreciación Acumulada" are a legitimate, intentional exception), so
+// this is only ever a *suggestion* -- Naturaleza stays freely editable
+// after this fills it in, unlike Estado Financiero above.
+const DEFAULT_NATURE_BY_CLASS = {
+  ASSET: "D",
+  EXPENSE: "D",
+  COST: "D",
+  LIABILITY: "C",
+  EQUITY: "C",
+  REVENUE: "C",
+};
 
 function ChartOfAccountsPage({ language = "es" }) {
   const [rows, setRows]             = useState([]);
@@ -219,6 +286,11 @@ function ChartOfAccountsPage({ language = "es" }) {
       expectedCodeLengthHintDigits: "dígitos.",
       postingBlockedByChildren: "No puede ser cuenta de movimiento porque tiene subcuentas asociadas.",
       parentIsPostingWarning: "Esta cuenta padre es de movimiento. Debes desmarcar \"Cuenta de Movimiento\" en ella antes de guardar, o el backend rechazará el cambio.",
+      classInheritedHint: "Heredada de la cuenta padre — toda subcuenta debe compartir la clase de su padre.",
+      financialStatementAutoHint: "Se determina automáticamente según la Clase contable elegida.",
+      natureSuggestedHint: "Sugerida según la Clase — cámbiela si esta cuenta es una contra-cuenta.",
+      parentFilteredHint: "Mostrando solo cuentas compatibles con el código ingresado.",
+      parentAutoSelectedHint: "Padre seleccionado automáticamente según el código — puede cambiarlo.",
     },
     en: {
       title: "Chart of Accounts",
@@ -270,6 +342,11 @@ function ChartOfAccountsPage({ language = "es" }) {
       expectedCodeLengthHintDigits: "digits.",
       postingBlockedByChildren: "Can't be a posting account because it has sub-accounts.",
       parentIsPostingWarning: "This parent account is a posting account. You must uncheck \"Posting Account\" on it before saving, or the backend will reject the change.",
+      classInheritedHint: "Inherited from the parent account — every sub-account must share its parent's class.",
+      financialStatementAutoHint: "Determined automatically from the selected account Class.",
+      natureSuggestedHint: "Suggested based on Class — change it if this is a contra-account.",
+      parentFilteredHint: "Showing only accounts consistent with the code entered.",
+      parentAutoSelectedHint: "Parent auto-selected based on the code — you can still change it.",
     },
   }[language];
 
@@ -368,6 +445,23 @@ function ChartOfAccountsPage({ language = "es" }) {
     return rows.filter((r) => r.id !== editingId && !descendantIds.has(r.id));
   }, [rows, editingId]);
 
+  // UX FIX (2026-09-04): narrows availableParents to only the accounts
+  // whose code is actually a prefix of the code being typed -- e.g. typing
+  // "413595" only leaves "4" and "41" (if they exist) as candidates,
+  // "1105 — CAJA" simply can't appear in the list anymore. Mirrors the
+  // CHILD_CODE_MUST_START_WITH_PARENT rule the backend already enforces on
+  // save, just applied proactively to the dropdown's contents instead of
+  // discovered only after a failed submit. Falls back to the unfiltered
+  // list once no candidate matches (a brand-new branch, or intermediate
+  // accounts that don't exist yet) so the field is never left empty when a
+  // legitimate manual pick is still needed.
+  const parentCandidates = useMemo(() => {
+    const code = form.code.trim();
+    if (!code) return availableParents;
+    const prefixMatches = availableParents.filter((r) => code.startsWith(r.code));
+    return prefixMatches.length > 0 ? prefixMatches : availableParents;
+  }, [availableParents, form.code]);
+
   const resetForm = () => {
     setForm(initialForm);
     setErrors({});
@@ -433,6 +527,33 @@ function ChartOfAccountsPage({ language = "es" }) {
     resetForm();
   };
 
+  // Cascades an accountClass value (picked directly, or inherited from a
+  // newly selected parent) into every field it determines:
+  //  - financialStatement: always overwritten (strict 1:1 rule, no
+  //    exceptions -- see FINANCIAL_STATEMENT_BY_CLASS above).
+  //  - nature: overwritten with the standard suggestion, but the user can
+  //    still change it afterward (contra-accounts are legitimate).
+  //  - accountCategory: cleared only if it no longer belongs to the new
+  //    class (same rule the plain accountClass change already applied).
+  const applyAccountClass = (formState, newClass) => {
+    const next = { ...formState, accountClass: newClass };
+
+    next.financialStatement = FINANCIAL_STATEMENT_BY_CLASS[newClass] || "";
+
+    if (newClass && DEFAULT_NATURE_BY_CLASS[newClass]) {
+      next.nature = DEFAULT_NATURE_BY_CLASS[newClass];
+    }
+
+    const categoryStillValid = accountCategories.some(
+      (c) => c.value === formState.accountCategory && c.accountClass === newClass
+    );
+    if (!categoryStillValid) {
+      next.accountCategory = "";
+    }
+
+    return next;
+  };
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     let val = type === "checkbox" ? checked : value;
@@ -441,23 +562,50 @@ function ChartOfAccountsPage({ language = "es" }) {
     if (name === "name") val = value.slice(0, 150);
 
     setForm((prev) => {
-      const next = { ...prev, [name]: val };
+      let next = { ...prev, [name]: val };
 
-      // FIX: accountCategory is now filtered by accountClass (see the
-      // category <select> below). If accountClass changes, the previously
-      // selected category may no longer belong to it (e.g. SALES_REVENUE
-      // while switching from REVENUE to ASSET) — clear it instead of
-      // silently keeping an inconsistent combination. Unlike taxRegime
-      // (which has a sensible default per personType), there's no
-      // "canonical" category per class, so this clears to force an
-      // explicit re-selection rather than guessing one.
-      if (name === "accountClass") {
-        const stillValid = accountCategories.some(
-          (c) => c.value === prev.accountCategory && c.accountClass === val
-        );
-        if (!stillValid) {
-          next.accountCategory = "";
+      // UX FIX: selecting a parent inherits its Clase -- the backend
+      // requires every child to share its parent's accountClass exactly
+      // (PARENT_CLASS_MISMATCH), so there's no legitimate case where they
+      // could differ. The accountClass <select> below is locked
+      // (disabled) whenever a parent is set, so this is the only place
+      // that value gets written while a parent is selected. Clearing the
+      // parent (root account) leaves accountClass as-is for the user to
+      // pick explicitly.
+      if (name === "parentId") {
+        const parent = rows.find((r) => String(r.id) === String(val));
+        if (parent) {
+          next = applyAccountClass(next, parent.accountClass);
         }
+      }
+
+      // UX FIX (2026-09-04): as the code is typed, auto-select the parent
+      // it structurally implies (getSuggestedParent), the same way the
+      // user's legacy SIEWIN system does it -- typing "4205" auto-picks
+      // "42" as the parent instead of leaving the user to find it in a
+      // flat list. If no exact ancestor exists yet at the implied level
+      // but the CURRENTLY selected parent is still a valid prefix of the
+      // new code, it's left alone (e.g. typing on past "4135" while "41"
+      // is selected). Only cleared when it's neither the suggested match
+      // NOR still a valid prefix -- i.e. the code was edited into a shape
+      // the previously-picked parent no longer fits, which is exactly the
+      // "413595 hung off 1105" scenario this whole feature exists to
+      // prevent.
+      if (name === "code") {
+        const suggested = getSuggestedParent(val, rows);
+        const currentParent = rows.find((r) => String(r.id) === String(next.parentId));
+        const currentParentStillValid = !!currentParent && val.startsWith(currentParent.code);
+
+        if (suggested && String(suggested.id) !== String(next.parentId)) {
+          next = { ...next, parentId: String(suggested.id) };
+          next = applyAccountClass(next, suggested.accountClass);
+        } else if (!suggested && !currentParentStillValid && next.parentId !== "") {
+          next = { ...next, parentId: "" };
+        }
+      }
+
+      if (name === "accountClass") {
+        next = applyAccountClass(next, val);
       }
 
       return next;
@@ -830,18 +978,12 @@ function ChartOfAccountsPage({ language = "es" }) {
                 />
               </Field>
 
-              <Field label={t.nature} error={errors.nature}>
-                <select
-                  name="nature"
-                  value={form.nature}
-                  onChange={handleChange}
-                  className={inputCls(errors.nature)}
-                >
-                  <option value="D">D - {t.debit}</option>
-                  <option value="C">C - {t.credit}</option>
-                </select>
-              </Field>
-
+              {/* UX FIX (2026-09-04): moved above Clase/Naturaleza -- picking
+                  the parent FIRST is what drives everything below it now
+                  (Clase is inherited, Naturaleza/Estado Financiero follow
+                  from Clase), so the form now reads in the order the user
+                  actually decides things: "this account lives under X" ->
+                  the rest falls out of that. */}
               <Field label={t.parent}>
                 <select
                   name="parentId"
@@ -850,12 +992,29 @@ function ChartOfAccountsPage({ language = "es" }) {
                   className={inputCls()}
                 >
                   <option value="">{t.noParent}</option>
-                  {availableParents.map((r) => (
+                  {parentCandidates.map((r) => (
                     <option key={r.id} value={r.id}>
                       {r.code} — {r.name}
                     </option>
                   ))}
                 </select>
+                {/* UX FIX (2026-09-04): tells the user WHY the list looks
+                    short/pre-filled -- either the dropdown was narrowed to
+                    only the accounts consistent with the code they typed,
+                    or (when there's an exact structural match) the parent
+                    was already picked for them. Without this the
+                    auto-behavior could look like a bug ("why can't I see
+                    all my accounts?"). */}
+                {!editingIdRef.current && form.code.trim() && (
+                  parentCandidates.length < availableParents.length ? (
+                    <span className="text-[10px] text-slate-400">{t.parentFilteredHint}</span>
+                  ) : null
+                )}
+                {!editingIdRef.current &&
+                  getSuggestedParent(form.code.trim(), rows)?.id != null &&
+                  String(getSuggestedParent(form.code.trim(), rows).id) === String(form.parentId) && (
+                    <span className="text-[10px] text-emerald-600">{t.parentAutoSelectedHint}</span>
+                  )}
               </Field>
 
               {/* Warn (non-blocking) when the chosen parent currently is a
@@ -870,13 +1029,19 @@ function ChartOfAccountsPage({ language = "es" }) {
                   </p>
                 )}
 
+              {/* UX FIX: locked (read-only) once a parent is selected --
+                  the backend requires every child to share its parent's
+                  Clase exactly (PARENT_CLASS_MISMATCH), so there is no
+                  legitimate way for the user to pick anything else here.
+                  Only free to choose when defining a brand-new root
+                  branch (no parent). */}
               <Field label={t.accountClass} error={errors.accountClass}>
                 <select
                   name="accountClass"
                   value={form.accountClass}
                   onChange={handleChange}
-                  className={inputCls(errors.accountClass)}
-                  disabled={loadingMetadata}
+                  className={`${inputCls(errors.accountClass)} ${form.parentId ? "opacity-60 cursor-not-allowed" : ""}`}
+                  disabled={loadingMetadata || !!form.parentId}
                 >
                   <option value="">
                     {loadingMetadata ? t.loadingMetadata : t.selectOption}
@@ -887,6 +1052,31 @@ function ChartOfAccountsPage({ language = "es" }) {
                     </option>
                   ))}
                 </select>
+                {form.parentId && (
+                  <span className="text-[10px] text-amber-600">{t.classInheritedHint}</span>
+                )}
+              </Field>
+
+              {/* UX FIX: Naturaleza now follows Clase (see
+                  DEFAULT_NATURE_BY_CLASS) -- pre-filled the moment a Clase
+                  is set (directly, or inherited from the parent above),
+                  but stays fully editable: contra-accounts (e.g.
+                  "Depreciación Acumulada", an ASSET with Crédito nature)
+                  are a legitimate, deliberate exception the backend does
+                  not forbid. */}
+              <Field label={t.nature} error={errors.nature}>
+                <select
+                  name="nature"
+                  value={form.nature}
+                  onChange={handleChange}
+                  className={inputCls(errors.nature)}
+                >
+                  <option value="D">D - {t.debit}</option>
+                  <option value="C">C - {t.credit}</option>
+                </select>
+                {form.accountClass && (
+                  <span className="text-[10px] text-slate-400">{t.natureSuggestedHint}</span>
+                )}
               </Field>
 
               <Field label={t.accountCategory} error={errors.accountCategory}>
@@ -929,14 +1119,23 @@ function ChartOfAccountsPage({ language = "es" }) {
                 )}
               </Field>
 
+              {/* UX FIX: always locked, driven entirely by Clase
+                  (FINANCIAL_STATEMENT_BY_CLASS mirrors
+                  FinancialStatement.fromAccountClass() exactly, a strict
+                  1:1 mapping with zero exceptions in the backend) -- this
+                  is exactly the field whose mismatch with Clase produced
+                  the raw "Financial statement BALANCE_SHEET does not
+                  match account class REVENUE" error the user hit
+                  creating account 4205. Removing the free choice removes
+                  the error, not just its translation. */}
               <div className="md:col-span-2">
                 <Field label={t.financialStatement} error={errors.financialStatement}>
                   <select
                     name="financialStatement"
                     value={form.financialStatement}
                     onChange={handleChange}
-                    className={inputCls(errors.financialStatement)}
-                    disabled={loadingMetadata}
+                    className={`${inputCls(errors.financialStatement)} opacity-60 cursor-not-allowed`}
+                    disabled
                   >
                     <option value="">
                       {loadingMetadata ? t.loadingMetadata : t.selectOption}
@@ -947,6 +1146,7 @@ function ChartOfAccountsPage({ language = "es" }) {
                       </option>
                     ))}
                   </select>
+                  <span className="text-[10px] text-amber-600">{t.financialStatementAutoHint}</span>
                 </Field>
               </div>
 
