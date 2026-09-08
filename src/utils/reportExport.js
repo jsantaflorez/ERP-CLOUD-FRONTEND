@@ -105,3 +105,33 @@ export function buildExcelHeaderRows({ companyName, reportTitle, period, generat
   rows.push([]);
   return rows;
 }
+
+// Account-class summaries (Trial Balance's "Resumen por Clase" today; the
+// same grouping will show up in Balance de Comprobación Detallado and
+// Balance General) used to come from the backend as a ready-made display
+// string like "1 - Assets" -- hardcoded in English, with no way for a
+// Spanish-language report to show "1 - Activos" instead, since the
+// string WAS the map key. The backend now sends a bare, language-neutral
+// code ("1".."5", "6-7", or "OTHER") and this table translates it for
+// display, the same way apiErrors.js translates backend error codes.
+const ACCOUNT_CLASS_LABELS = {
+  "1": { es: "1 - Activos", en: "1 - Assets" },
+  "2": { es: "2 - Pasivos", en: "2 - Liabilities" },
+  "3": { es: "3 - Patrimonio", en: "3 - Equity" },
+  "4": { es: "4 - Ingresos", en: "4 - Revenue" },
+  "5": { es: "5 - Gastos", en: "5 - Expenses" },
+  "6-7": { es: "6/7 - Costos", en: "6/7 - Costs" },
+  OTHER: { es: "Otras", en: "Other" },
+};
+
+/**
+ * Translates a backend account-class code into a display label. Falls
+ * back to the raw code for anything not in the table above, so a future
+ * backend class never silently disappears from the report -- it just
+ * shows untranslated instead of translated.
+ */
+export function translateAccountClass(code, language = "es") {
+  const entry = ACCOUNT_CLASS_LABELS[code];
+  if (!entry) return code;
+  return entry[language] || entry.es;
+}

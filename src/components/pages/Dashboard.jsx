@@ -13,6 +13,7 @@ import TaxPage from "./TaxPage";
 import ThirdPartyPage from "./ThirdPartyPage";
 import JournalEntryPage from "./JournalEntryPage";
 import AuxiliaryLedgerPage from "./AuxiliaryLedgerPage";
+import TrialBalancePage from "./TrialBalancePage";
 
 // Views that live under the "Reportes" submenu -- grouped here so the
 // submenu auto-expands whenever one of them is the active view (e.g. on
@@ -20,7 +21,7 @@ import AuxiliaryLedgerPage from "./AuxiliaryLedgerPage";
 // instead of only expanding on an explicit click. Add new report views
 // (Balance de Comprobación, Balance General, ...) to this list as they're
 // built, and the submenu picks them up automatically.
-const REPORT_VIEWS = ["auxiliaryLedger"];
+const REPORT_VIEWS = ["auxiliaryLedger", "trialBalance"];
 
 function Dashboard({ user, onLogout, language, onLanguageChange }) {
   const [activeView, setActiveView] = useState("dashboard");
@@ -165,6 +166,14 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
                       >
                         {t.navAuxiliaryLedger}
                       </button>
+                      <button
+                        onClick={() => setActiveView("trialBalance")}
+                        className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
+                          activeView === "trialBalance" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
+                        }`}
+                      >
+                        {t.navTrialBalance}
+                      </button>
                     </div>
                   )}
                 </div>
@@ -238,6 +247,10 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
 
         {activeView === "auxiliaryLedger" && (
           <AuxiliaryLedgerPage language={language} />
+        )}
+
+        {activeView === "trialBalance" && (
+          <TrialBalancePage language={language} />
         )}
 
         {activeView === "users" && (
