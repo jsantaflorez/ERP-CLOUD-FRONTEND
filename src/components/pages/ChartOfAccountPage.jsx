@@ -132,6 +132,20 @@ const getSuggestedParent = (code, rows) => {
   return rows.find((r) => r.code === parentCode) || null;
 };
 
+// NEW (2026-09-10): looks up an account-name suggestion for the code
+// currently being typed, from the company's optional PUC template
+// (see chartTemplate / templateEntriesMap in the component). This is an
+// EXACT match on the code as typed -- the reference templates already
+// carry an entry at every valid PUC level, so as soon as the code lands
+// on a real level ("61", "110505", ...) its name is right there, exactly
+// like the user's legacy SIEWIN system. Deliberately never used to
+// auto-fill the Name field (see the "usar sugerencia" hint in the JSX) --
+// the user was explicit that this must never impose a value.
+const getTemplateNameSuggestion = (code, templateEntriesMap) => {
+  if (!code || !templateEntriesMap) return null;
+  return templateEntriesMap[code] || null;
+};
+
 // Returns the set of ids that are descendants (children, grandchildren, ...)
 // of a given account, based on the parentCode links available on each row
 // (accounts list items expose parentCode/parentName as denormalized display
@@ -209,6 +223,14 @@ function ChartOfAccountsPage({ language = "es" }) {
   const [loading, setLoading]       = useState(false);
   const [toast, setToast]           = useState(null);
 
+  // NEW (2026-09-12): lets the user keep the create form open after saving,
+  // instead of always closing it (openCreatePanel -> Guardar -> closed ->
+  // find the "Nuevo" button again -- tedious when entering many accounts
+  // in a row, e.g. seeding a PUC template). Opt-in per session: reset to
+  // false by the full resetForm(), so it never surprises a later, unrelated
+  // single-account creation.
+  const [keepCreatingAfterSave, setKeepCreatingAfterSave] = useState(false);
+
   // Snapshot of `code` at the moment editing started. Used as a
   // defense-in-depth guard in handleSave: even though the field is
   // rendered readOnly while editing, this ensures the payload can never
@@ -216,6 +238,10 @@ function ChartOfAccountsPage({ language = "es" }) {
   // any client-side tampering with the DOM/readOnly attribute — mirrors
   // the backend's own immutability rule on `code`.
   const originalCodeRef = useRef(null);
+
+  // Lets resetFormForNextAccount() return keyboard focus to the Code field
+  // so the user can keep typing the next account without touching the mouse.
+  const codeInputRef = useRef(null);
 
   // NEW: dynamically loaded from GET /v1/chart-of-accounts/metadata,
   // replacing the old hardcoded ACCOUNT_CLASS_OPTIONS/ACCOUNT_CATEGORY_OPTIONS/
@@ -225,6 +251,17 @@ function ChartOfAccountsPage({ language = "es" }) {
   const [accountCategories, setAccountCategories]     = useState([]);
   const [financialStatements, setFinancialStatements] = useState([]);
   const [loadingMetadata, setLoadingMetadata]         = useState(false);
+
+  // NEW (2026-09-10): optional per-company PUC template used to suggest an
+  // account name while the user types a code, replicating a feature from
+  // the user's legacy SIEWIN system. chartTemplate is null unless the
+  // company explicitly configured one (see Company.chartTemplate /
+  // ChartTemplateType on the backend) -- a cooperative using its own
+  // numbering, for example, simply never sees suggestions. templateEntriesMap
+  // is a { code: name } lookup built once from GET /chart-account-templates
+  // when a template is configured.
+  const [chartTemplate, setChartTemplate]         = useState(null);
+  const [templateEntriesMap, setTemplateEntriesMap] = useState({});
 
   // Reference pointer to guarantee consistent identity states during transactional operations
   const editingIdRef = useRef(null);
@@ -291,6 +328,10 @@ function ChartOfAccountsPage({ language = "es" }) {
       natureSuggestedHint: "Sugerida según la Clase — cámbiela si esta cuenta es una contra-cuenta.",
       parentFilteredHint: "Mostrando solo cuentas compatibles con el código ingresado.",
       parentAutoSelectedHint: "Padre seleccionado automáticamente según el código — puede cambiarlo.",
+      templateSuggestionHint: "Sugerencia según plantilla PUC:",
+      useSuggestion: "usar sugerencia",
+      keepCreatingLabel: "Seguir creando cuentas",
+      keepCreatingHint: "Al guardar, se abre un formulario nuevo con el mismo padre seleccionado.",
     },
     en: {
       title: "Chart of Accounts",
@@ -347,6 +388,10 @@ function ChartOfAccountsPage({ language = "es" }) {
       natureSuggestedHint: "Suggested based on Class — change it if this is a contra-account.",
       parentFilteredHint: "Showing only accounts consistent with the code entered.",
       parentAutoSelectedHint: "Parent auto-selected based on the code — you can still change it.",
+      templateSuggestionHint: "Suggestion from PUC template:",
+      useSuggestion: "use suggestion",
+      keepCreatingLabel: "Keep creating accounts",
+      keepCreatingHint: "On save, a new form opens with the same parent selected.",
     },
   }[language];
 
@@ -408,10 +453,59 @@ function ChartOfAccountsPage({ language = "es" }) {
     }
   };
 
+  /**
+   * NEW (2026-09-10): loads the current company's optional chart-of-accounts
+   * template (Company.chartTemplate on the backend, null by default). This
+   * is a pure UX nicety -- account-name suggestions -- so failures here are
+   * swallowed silently rather than shown as a page-level error; worst case
+   * is simply no suggestions, same as a company with no template configured.
+   */
+  const loadCompanyChartTemplate = async () => {
+    try {
+      const response = await api.get("/v1/companies/me");
+      if (response.data && response.data.success) {
+        setChartTemplate(response.data.data?.chartTemplate || null);
+      }
+    } catch {
+      // Non-critical -- see comment above.
+    }
+  };
+
   useEffect(() => {
     loadAccounts();
     loadMetadata();
+    loadCompanyChartTemplate();
   }, []);
+
+  // NEW (2026-09-10): fetches the full set of code/name entries for the
+  // company's configured template exactly once (whenever chartTemplate
+  // changes, which in practice is just once per page load), and builds a
+  // { code: name } map for O(1) lookups as the user types. Nothing fetched
+  // or shown at all while chartTemplate is null.
+  useEffect(() => {
+    if (!chartTemplate) {
+      setTemplateEntriesMap({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await api.get("/v1/chart-account-templates", {
+          params: { type: chartTemplate },
+        });
+        if (!cancelled && response.data && response.data.success) {
+          const map = {};
+          for (const entry of response.data.data || []) {
+            map[entry.code] = entry.name;
+          }
+          setTemplateEntriesMap(map);
+        }
+      } catch {
+        // Non-critical -- see loadCompanyChartTemplate comment above.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [chartTemplate]);
 
   const filteredRows = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
@@ -468,6 +562,31 @@ function ChartOfAccountsPage({ language = "es" }) {
     setEditingId(null);
     editingIdRef.current = null;
     originalCodeRef.current = null;
+    // Full reset (panel closing, or opening fresh for a new account) always
+    // starts "keep creating" unchecked again -- it's an opt-in per editing
+    // session, not a sticky global preference.
+    setKeepCreatingAfterSave(false);
+  };
+
+  // NEW (2026-09-12): partial reset used after a successful create when
+  // "Seguir creando cuentas" is checked -- unlike resetForm(), this keeps
+  // the form open (no setOpen(false)) and deliberately keeps parentId (and
+  // everything the parent forces: accountClass/nature/financialStatement via
+  // applyAccountClass, plus accountCategory when it's still valid for that
+  // class) so entering several sibling accounts in a row -- the whole point
+  // of this feature -- doesn't mean re-picking the same parent every time.
+  // Code/name and the per-account flags (postingAccount, requiresThirdParty,
+  // requiresCostCenter) reset to their defaults since those legitimately
+  // vary account to account.
+  const resetFormForNextAccount = () => {
+    setForm((prev) => {
+      if (!prev.parentId) return initialForm;
+      const next = { ...initialForm, parentId: prev.parentId, accountCategory: prev.accountCategory };
+      return applyAccountClass(next, prev.accountClass);
+    });
+    setErrors({});
+    // Stays in create mode -- editingId/editingIdRef/originalCodeRef were
+    // already null and remain untouched.
   };
 
   const openCreatePanel = () => {
@@ -690,7 +809,15 @@ function ChartOfAccountsPage({ language = "es" }) {
 
       if (response.data && response.data.success) {
         showToast(currentId ? t.successUpdate : t.successCreate);
-        closePanel();
+        // NEW (2026-09-12): "Seguir creando cuentas" only applies to create
+        // (currentId == null) -- editing an existing account always closes
+        // the panel as before, since there's no "next sibling" concept there.
+        if (!currentId && keepCreatingAfterSave) {
+          resetFormForNextAccount();
+          codeInputRef.current?.focus();
+        } else {
+          closePanel();
+        }
         loadAccounts();
       } else {
         showToast(response.data?.message || t.errorConn, "error");
@@ -945,6 +1072,7 @@ function ChartOfAccountsPage({ language = "es" }) {
                   (i.e. only settable at creation time). */}
               <Field label={t.code} error={errors.code}>
                 <input
+                  ref={codeInputRef}
                   name="code"
                   value={form.code}
                   onChange={handleChange}
@@ -976,6 +1104,28 @@ function ChartOfAccountsPage({ language = "es" }) {
                   placeholder="Ej: Caja General"
                   className={inputCls(errors.name)}
                 />
+                {/* NEW (2026-09-10): optional PUC-template name suggestion.
+                    Only in create mode, only while a template is configured
+                    for this company, and only when the suggestion differs
+                    from what's already typed -- shown as a clickable hint,
+                    NEVER auto-filled into the field, per the user's explicit
+                    requirement that this "nunca debe imponerse". */}
+                {!editingIdRef.current && chartTemplate && (() => {
+                  const suggestion = getTemplateNameSuggestion(form.code.trim(), templateEntriesMap);
+                  if (!suggestion || suggestion === form.name?.trim()) return null;
+                  return (
+                    <span className="text-[10px] text-slate-500">
+                      {t.templateSuggestionHint} "{suggestion}" —{" "}
+                      <button
+                        type="button"
+                        onClick={() => setForm((prev) => ({ ...prev, name: suggestion }))}
+                        className="underline text-emerald-600 hover:text-emerald-700"
+                      >
+                        {t.useSuggestion}
+                      </button>
+                    </span>
+                  );
+                })()}
               </Field>
 
               {/* UX FIX (2026-09-04): moved above Clase/Naturaleza -- picking
@@ -1192,6 +1342,23 @@ function ChartOfAccountsPage({ language = "es" }) {
                   color="blue"
                 />
               </div>
+
+              {/* NEW (2026-09-12): opt-in per session, create mode only --
+                  see resetFormForNextAccount() for what's kept vs. reset.
+                  "Cancelar" below still exits without creating another,
+                  whether or not this is checked. */}
+              {!editingIdRef.current && (
+                <div className="md:col-span-2 flex flex-col gap-1">
+                  <Toggle
+                    name="keepCreatingAfterSave"
+                    checked={keepCreatingAfterSave}
+                    onChange={(e) => setKeepCreatingAfterSave(e.target.checked)}
+                    label={t.keepCreatingLabel}
+                    color="emerald"
+                  />
+                  <p className="text-[10px] text-slate-400">{t.keepCreatingHint}</p>
+                </div>
+              )}
 
               <div className="md:col-span-2 flex gap-3 pt-4">
                 <Button type="submit" variant="primary" size="lg" fullWidth>
