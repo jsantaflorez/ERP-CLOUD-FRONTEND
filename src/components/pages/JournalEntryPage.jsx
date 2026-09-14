@@ -4,6 +4,10 @@ import Button from "../ui/Button";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { addPdfReportHeader, addPdfRunningHeader, buildExcelHeaderRows } from "../../utils/reportExport";
 
 // A brand-new line starts with both amounts empty -- the user picks either
 // a debit or a credit, never both (mirrors JournalEntryService's own rule).
@@ -48,7 +52,9 @@ function JournalEntryPage({ language = "es" }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [documentTypeId, setDocumentTypeId] = useState("");
   const [viewingEntry, setViewingEntry] = useState(null);
+  const [exporting, setExporting] = useState(false);
 
   // Catalogs for the line-item pickers
   const [accounts, setAccounts] = useState([]);
@@ -85,6 +91,13 @@ function JournalEntryPage({ language = "es" }) {
       search: "Buscar por número de documento o descripción...",
       from: "Desde", to: "Hasta",
       searchButton: "Buscar",
+      allDocumentTypes: "Todos los tipos",
+      exportExcel: "Exportar Excel", exportPdf: "Exportar PDF", exporting: "Exportando...",
+      exportTitle: "Relación de Asientos Contables",
+      generatedAt: "Generado",
+      totalsRow: "Totales",
+      exportFilterSearch: "Búsqueda", exportFilterFrom: "Desde", exportFilterTo: "Hasta",
+      exportFilterDocType: "Tipo de Documento", exportFilterNone: "Sin filtros aplicados",
       docNumber: "N° Documento", date: "Fecha", description: "Descripción",
       totalDebit: "Total Débito", totalCredit: "Total Crédito", status: "Estado",
       annulled: "Anulado", active: "Activo", view: "Ver",
@@ -138,6 +151,13 @@ function JournalEntryPage({ language = "es" }) {
       search: "Search by document number or description...",
       from: "From", to: "To",
       searchButton: "Search",
+      allDocumentTypes: "All types",
+      exportExcel: "Export to Excel", exportPdf: "Export to PDF", exporting: "Exporting...",
+      exportTitle: "Journal Entries Listing",
+      generatedAt: "Generated",
+      totalsRow: "Totals",
+      exportFilterSearch: "Search", exportFilterFrom: "From", exportFilterTo: "To",
+      exportFilterDocType: "Document Type", exportFilterNone: "No filters applied",
       docNumber: "Doc. Number", date: "Date", description: "Description",
       totalDebit: "Total Debit", totalCredit: "Total Credit", status: "Status",
       annulled: "Annulled", active: "Active", view: "View",
@@ -194,13 +214,22 @@ function JournalEntryPage({ language = "es" }) {
   // Data loading
   // ============================================================
 
+  // Shared by both the on-screen list and the export -- so "print what
+  // I'm looking at" always means exactly the filters currently applied,
+  // never a stale or partial copy of them.
+  const buildFilterParams = () => {
+    const params = new URLSearchParams();
+    if (searchTerm.trim()) params.set("searchTerm", searchTerm.trim());
+    if (startDate) params.set("startDate", startDate);
+    if (endDate) params.set("endDate", endDate);
+    if (documentTypeId) params.set("documentTypeId", documentTypeId);
+    return params;
+  };
+
   const loadEntries = async (page = 0) => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (searchTerm.trim()) params.set("searchTerm", searchTerm.trim());
-      if (startDate) params.set("startDate", startDate);
-      if (endDate) params.set("endDate", endDate);
+      const params = buildFilterParams();
       params.set("page", String(page));
       params.set("size", "10");
       params.set("sort", "entryDate,desc");
@@ -215,6 +244,21 @@ function JournalEntryPage({ language = "es" }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Fetches every entry matching the current filters, regardless of the
+  // on-screen page -- the export has to cover "the filtered range", not
+  // just the 10 rows currently visible. A generous page size is the same
+  // pattern already used to pull whole catalogs (chart of accounts,
+  // third parties) in loadCatalogs() below.
+  const fetchAllFilteredEntries = async () => {
+    const params = buildFilterParams();
+    params.set("page", "0");
+    params.set("size", "10000");
+    params.set("sort", "entryDate,asc");
+    const response = await api.get(`/v1/journal-entries?${params.toString()}`);
+    const pageData = response.data?.data;
+    return Array.isArray(pageData?.content) ? pageData.content : [];
   };
 
   const loadCatalogs = async () => {
@@ -294,6 +338,155 @@ function JournalEntryPage({ language = "es" }) {
   const activeDocumentTypes = useMemo(() => documentTypes.filter((d) => d.active), [documentTypes]);
 
   const accountById = (id) => accounts.find((a) => String(a.id) === String(id));
+  const documentTypeById = (id) => documentTypes.find((d) => String(d.id) === String(id));
+  const documentTypeLabel = (entry) => {
+    const dt = documentTypeById(entry.documentTypeId);
+    return dt ? `${dt.code} - ${dt.name}` : "";
+  };
+
+  // ============================================================
+  // Export (Excel / PDF) -- always reflects the filters currently
+  // applied on screen (search term, date range, document type), not
+  // just the current page of 10 the user happens to be looking at.
+  // ============================================================
+
+  const exportFilterSummary = () => {
+    const parts = [];
+    if (searchTerm.trim()) parts.push(`${t.exportFilterSearch}: ${searchTerm.trim()}`);
+    if (startDate) parts.push(`${t.exportFilterFrom}: ${startDate}`);
+    if (endDate) parts.push(`${t.exportFilterTo}: ${endDate}`);
+    if (documentTypeId) {
+      const dt = documentTypeById(documentTypeId);
+      if (dt) parts.push(`${t.exportFilterDocType}: ${dt.code} - ${dt.name}`);
+    }
+    return parts.length ? parts.join("   |   ") : t.exportFilterNone;
+  };
+
+  const entryTotals = (entry) => {
+    const totalDebit = (entry.items || []).reduce((s, i) => s + (i.debit || 0), 0);
+    const totalCredit = (entry.items || []).reduce((s, i) => s + (i.credit || 0), 0);
+    return { totalDebit, totalCredit };
+  };
+
+  const handleExportExcel = async () => {
+    setExporting(true);
+    try {
+      const allEntries = await fetchAllFilteredEntries();
+      if (!allEntries.length) {
+        showToast(t.noResults, "error");
+        return;
+      }
+
+      const headerInfo = {
+        companyName: activeTenantId,
+        reportTitle: t.exportTitle,
+        period: exportFilterSummary(),
+        generatedAtLabel: t.generatedAt,
+        generatedAt: new Date().toISOString(),
+      };
+
+      let grandDebit = 0;
+      let grandCredit = 0;
+      const rows = [
+        ...buildExcelHeaderRows(headerInfo),
+        [t.docNumber, t.date, t.documentType, t.description, t.totalDebit, t.totalCredit, t.status],
+        ...allEntries.map((entry) => {
+          const { totalDebit, totalCredit } = entryTotals(entry);
+          grandDebit += totalDebit;
+          grandCredit += totalCredit;
+          return [
+            entry.documentNumber,
+            entry.entryDate,
+            documentTypeLabel(entry),
+            entry.description || "",
+            totalDebit,
+            totalCredit,
+            entry.annulled ? t.annulled : t.active,
+          ];
+        }),
+        [t.totalsRow, "", "", "", grandDebit, grandCredit, ""],
+      ];
+
+      const sheet = XLSX.utils.aoa_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, sheet, t.exportTitle.slice(0, 31));
+      XLSX.writeFile(workbook, `${t.exportTitle.replace(/\s+/g, "_")}.xlsx`);
+    } catch (error) {
+      showToast(getApiErrorMessage(error, language, t.errorConn), "error");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    setExporting(true);
+    try {
+      const allEntries = await fetchAllFilteredEntries();
+      if (!allEntries.length) {
+        showToast(t.noResults, "error");
+        return;
+      }
+
+      const doc = new jsPDF({ orientation: "landscape" });
+      const bottomMargin = 15;
+
+      const headerInfo = {
+        companyName: activeTenantId,
+        reportTitle: t.exportTitle,
+        period: exportFilterSummary(),
+        generatedAtLabel: t.generatedAt,
+        generatedAt: new Date().toISOString(),
+      };
+
+      const cursorY = addPdfReportHeader(doc, headerInfo);
+
+      let grandDebit = 0;
+      let grandCredit = 0;
+      const body = allEntries.map((entry) => {
+        const { totalDebit, totalCredit } = entryTotals(entry);
+        grandDebit += totalDebit;
+        grandCredit += totalCredit;
+        return [
+          entry.documentNumber,
+          entry.entryDate,
+          documentTypeLabel(entry),
+          entry.description || "",
+          money(totalDebit),
+          money(totalCredit),
+          entry.annulled ? t.annulled : t.active,
+        ];
+      });
+      body.push([t.totalsRow, "", "", "", money(grandDebit), money(grandCredit), ""]);
+
+      // Same "continuation pages get a running header too" pattern used by
+      // every other export in the app (see AuxiliaryLedgerPage.jsx).
+      const pageBeforeTable = doc.internal.getCurrentPageInfo().pageNumber;
+
+      autoTable(doc, {
+        startY: cursorY,
+        head: [[t.docNumber, t.date, t.documentType, t.description, t.totalDebit, t.totalCredit, t.status]],
+        body,
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [30, 41, 59] },
+        columnStyles: {
+          4: { halign: "right" },
+          5: { halign: "right" },
+        },
+        margin: { top: 20, bottom: bottomMargin },
+        didDrawPage: (data) => {
+          if (data.pageNumber > pageBeforeTable) {
+            addPdfRunningHeader(doc, headerInfo);
+          }
+        },
+      });
+
+      doc.save(`${t.exportTitle.replace(/\s+/g, "_")}.pdf`);
+    } catch (error) {
+      showToast(getApiErrorMessage(error, language, t.errorConn), "error");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // ============================================================
   // Form handling
@@ -538,6 +731,9 @@ function JournalEntryPage({ language = "es" }) {
           searchTerm={searchTerm} setSearchTerm={setSearchTerm}
           startDate={startDate} setStartDate={setStartDate}
           endDate={endDate} setEndDate={setEndDate}
+          documentTypeId={documentTypeId} setDocumentTypeId={setDocumentTypeId}
+          documentTypes={documentTypes}
+          documentTypeLabel={documentTypeLabel}
           onSearch={() => loadEntries(0)}
           currentPage={currentPage}
           totalPages={totalPages}
@@ -545,6 +741,9 @@ function JournalEntryPage({ language = "es" }) {
           onViewEntry={setViewingEntry}
           onEditEntry={openEditEntry}
           onAnnulEntry={openAnnulModal}
+          exporting={exporting}
+          onExportExcel={handleExportExcel}
+          onExportPdf={handleExportPdf}
         />
       ) : (
         <JeFormView
@@ -597,7 +796,9 @@ function JournalEntryPage({ language = "es" }) {
 function JeListView({
   t, entries, loading,
   searchTerm, setSearchTerm, startDate, setStartDate, endDate, setEndDate, onSearch,
+  documentTypeId, setDocumentTypeId, documentTypes, documentTypeLabel,
   currentPage, totalPages, onPageChange, onViewEntry, onEditEntry, onAnnulEntry,
+  exporting, onExportExcel, onExportPdf,
 }) {
   return (
     <>
@@ -612,7 +813,7 @@ function JeListView({
             className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none shadow-sm focus:border-blue-500 transition-all"
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <label className="flex flex-col text-[10px] font-black text-slate-400 uppercase tracking-widest">
             {t.from}
             <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
@@ -623,8 +824,28 @@ function JeListView({
             <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
               className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500" />
           </label>
+          <label className="flex flex-col text-[10px] font-black text-slate-400 uppercase tracking-widest">
+            {t.documentType}
+            <select value={documentTypeId} onChange={(e) => setDocumentTypeId(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && onSearch()}
+              className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500">
+              <option value="">{t.allDocumentTypes}</option>
+              {documentTypes.map((d) => (
+                <option key={d.id} value={d.id}>{d.code} - {d.name}</option>
+              ))}
+            </select>
+          </label>
           <Button variant="primary" onClick={onSearch} className="self-end">{t.searchButton}</Button>
         </div>
+      </div>
+
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="secondary" size="sm" disabled={exporting} onClick={onExportExcel}>
+          {exporting ? t.exporting : t.exportExcel}
+        </Button>
+        <Button variant="secondary" size="sm" disabled={exporting} onClick={onExportPdf}>
+          {exporting ? t.exporting : t.exportPdf}
+        </Button>
       </div>
 
       <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-x-auto">
@@ -634,14 +855,14 @@ function JeListView({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                {[t.docNumber, t.date, t.description, t.totalDebit, t.totalCredit, t.status, ""].map((h) => (
-                  <th key={h} className="px-5 py-4">{h}</th>
+                {[t.docNumber, t.documentType, t.date, t.description, t.totalDebit, t.totalCredit, t.status, ""].map((h, i) => (
+                  <th key={`${h}-${i}`} className="px-5 py-4">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {entries.length === 0 ? (
-                <tr><td colSpan={7} className="py-16 text-center text-slate-400">{t.noResults}</td></tr>
+                <tr><td colSpan={8} className="py-16 text-center text-slate-400">{t.noResults}</td></tr>
               ) : (
                 entries.map((entry) => {
                   const totalDebit = (entry.items || []).reduce((s, i) => s + (i.debit || 0), 0);
@@ -649,6 +870,7 @@ function JeListView({
                   return (
                     <tr key={entry.id} className="hover:bg-slate-50/60 transition-colors">
                       <td className="px-5 py-4 font-bold text-slate-700">{entry.documentNumber}</td>
+                      <td className="px-5 py-4 text-slate-600">{documentTypeLabel(entry)}</td>
                       <td className="px-5 py-4 text-slate-600">{entry.entryDate}</td>
                       <td className="px-5 py-4 text-slate-600">{entry.description}</td>
                       <td className="px-5 py-4 text-right text-slate-600">{money(totalDebit)}</td>
