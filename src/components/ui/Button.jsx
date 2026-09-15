@@ -20,6 +20,7 @@ function Button({
   disabled  = false,
   onClick,
   className = "",
+  title,
 }) {
   const base = "inline-flex items-center justify-center gap-2 font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:opacity-50 disabled:cursor-not-allowed";
 
@@ -38,6 +39,7 @@ function Button({
       onClick={onClick}
       disabled={disabled || loading}
       className={classes}
+      title={title}
     >
       {/* Spinner visible solo cuando loading=true */}
       {loading && (
@@ -61,6 +63,10 @@ Button.propTypes = {
   disabled:  PropTypes.bool,
   onClick:   PropTypes.func,
   className: PropTypes.string,
+  // NEW (2026-09-14): optional native tooltip, e.g. to surface a keyboard
+  // shortcut ("Nuevo (Insert)") without adding visible chrome everywhere
+  // this button is reused.
+  title:     PropTypes.string,
 };
 
 export default Button;

@@ -23,7 +23,7 @@ function TaxPage({ language = "es" }) {
   const [form, setForm]                   = useState(initialForm);
   const [errors, setErrors]               = useState({});
   const [open, setOpen]                   = useState(false);
-  const [editingId, setEditingId]         = useState(null);
+  const [, setEditingId]                   = useState(null);
   const [searchTerm, setSearchTerm]       = useState("");
   const [loading, setLoading]             = useState(false);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
@@ -78,6 +78,7 @@ function TaxPage({ language = "es" }) {
       errorConn: "Error de conexión con el servidor.",
       accountLoadError: "No fue posible cargar las cuentas contables.",
       loadingAccounts: "Cargando cuentas...",
+      newShortcutHint: "(tecla Insert)",
     },
     en: {
       title: "Taxes",
@@ -118,6 +119,7 @@ function TaxPage({ language = "es" }) {
       errorConn: "Server connection error.",
       accountLoadError: "Could not load chart of accounts.",
       loadingAccounts: "Loading accounts...",
+      newShortcutHint: "(Insert key)",
     },
   }[language];
 
@@ -198,6 +200,20 @@ function TaxPage({ language = "es" }) {
     resetForm();
     setOpen(true);
   };
+
+  // NEW (2026-09-15): keyboard shortcut for "Nuevo" -- same reasoning as
+  // Plan de Cuentas / Asientos Contables: long lists shouldn't require
+  // scrolling back to the top every time. Guarded on !open so it never
+  // interrupts an in-progress create/edit.
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key !== "Insert" || open) return;
+      e.preventDefault();
+      openCreatePanel();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
 
   const openEditPanel = (item) => {
     setForm({
@@ -363,9 +379,12 @@ function TaxPage({ language = "es" }) {
         subtitle={t.subtitle}
         tenantId={activeTenantId}
         actions={
-          <Button variant="primary" onClick={openCreatePanel}>
-            + {t.new}
-          </Button>
+          <>
+            <span className="hidden text-[11px] text-slate-400 sm:inline">{t.newShortcutHint}</span>
+            <Button variant="primary" onClick={openCreatePanel} title={`${t.new} ${t.newShortcutHint}`}>
+              + {t.new}
+            </Button>
+          </>
         }
       />
 

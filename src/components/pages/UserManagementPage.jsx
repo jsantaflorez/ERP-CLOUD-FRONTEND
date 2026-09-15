@@ -1,5 +1,5 @@
 // UserManagementPage.jsx
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AppHeader from "../common/AppHeader";
 
 // 🔗 Cuando el backend esté listo, descomenta API_URL y elimina MOCK_USERS
@@ -70,6 +70,7 @@ function UserManagementPage({ language = "es", currentUser }) {
       levelLabel: "Nivel", errorConn: "Error de conexión.",
       ownAccountWarning: "No puedes desactivar tu propia cuenta.",
       newPassword: "Nueva Contraseña",
+      newShortcutHint: "(tecla Insert)",
     },
     en: {
       title: "User Management", subtitle: "Administration / User Management",
@@ -89,6 +90,7 @@ function UserManagementPage({ language = "es", currentUser }) {
       levelLabel: "Level", errorConn: "Connection error.",
       ownAccountWarning: "You cannot deactivate your own account.",
       newPassword: "New Password",
+      newShortcutHint: "(Insert key)",
     },
   }[language];
 
@@ -114,6 +116,20 @@ function UserManagementPage({ language = "es", currentUser }) {
   const closePanel = () => { setOpen(false); resetForm(); };
 
   const openCreatePanel = () => { resetForm(); setOpen(true); };
+
+  // NEW (2026-09-15): keyboard shortcut for "Nuevo Usuario" -- same
+  // reasoning as Plan de Cuentas / Asientos Contables: long lists
+  // shouldn't require scrolling back to the top every time. Guarded on
+  // !open so it never interrupts an in-progress create/edit.
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key !== "Insert" || open) return;
+      e.preventDefault();
+      openCreatePanel();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
 
   const openEditPanel = (item) => {
     setForm({
@@ -237,12 +253,16 @@ function UserManagementPage({ language = "es", currentUser }) {
         subtitle={t.subtitle}
         tenantId="tenant-demo"
         actions={
-          <button
-            onClick={openCreatePanel}
-            className="rounded-xl bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 transition-colors shadow-md shadow-blue-100"
-          >
-            + {t.new}
-          </button>
+          <>
+            <span className="hidden text-[11px] text-slate-400 sm:inline">{t.newShortcutHint}</span>
+            <button
+              onClick={openCreatePanel}
+              title={`${t.new} ${t.newShortcutHint}`}
+              className="rounded-xl bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 transition-colors shadow-md shadow-blue-100"
+            >
+              + {t.new}
+            </button>
+          </>
         }
       />
 

@@ -89,6 +89,7 @@ function DocumentTypePage({ language = "es" }) {
       consecutiveTooLow: "El nuevo consecutivo no puede ser menor al actual.",
       consecutiveInvalid: "Ingresa un número válido.",
       successConsecutiveReset: "Consecutivo actualizado correctamente.",
+      newShortcutHint: "(tecla Insert)",
     },
     en: {
       title: "Document Types", subtitle: "Transactional Configuration Master",
@@ -115,6 +116,7 @@ function DocumentTypePage({ language = "es" }) {
       consecutiveTooLow: "The new consecutive can't be lower than the current one.",
       consecutiveInvalid: "Enter a valid number.",
       successConsecutiveReset: "Consecutive updated successfully.",
+      newShortcutHint: "(Insert key)",
     },
   }[language];
 
@@ -162,6 +164,20 @@ function DocumentTypePage({ language = "es" }) {
     originalConsecutiveRef.current = null;
   };
   const openCreatePanel = () => { resetForm(); setOpen(true); };
+
+  // NEW (2026-09-15): keyboard shortcut for "Nuevo" -- same reasoning as
+  // Plan de Cuentas / Asientos Contables: long lists shouldn't require
+  // scrolling back to the top every time. Guarded on !open so it never
+  // interrupts an in-progress create/edit.
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key !== "Insert" || open) return;
+      e.preventDefault();
+      openCreatePanel();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
 
   const openEditPanel = (item) => {
     const consecutiveValue = item.currentConsecutive != null ? String(item.currentConsecutive) : "0";
@@ -364,9 +380,12 @@ function DocumentTypePage({ language = "es" }) {
         subtitle={t.subtitle}
         tenantId={activeTenantId}
         actions={
-          <Button variant="primary" onClick={openCreatePanel}>
-            + {t.new}
-          </Button>
+          <>
+            <span className="hidden text-[11px] text-slate-400 sm:inline">{t.newShortcutHint}</span>
+            <Button variant="primary" onClick={openCreatePanel} title={`${t.new} ${t.newShortcutHint}`}>
+              + {t.new}
+            </Button>
+          </>
         }
       />
 

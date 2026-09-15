@@ -332,6 +332,7 @@ function ChartOfAccountsPage({ language = "es" }) {
       useSuggestion: "usar sugerencia",
       keepCreatingLabel: "Seguir creando cuentas",
       keepCreatingHint: "Al guardar, se abre un formulario nuevo con el mismo padre seleccionado.",
+      newShortcutHint: "(tecla Insert)",
     },
     en: {
       title: "Chart of Accounts",
@@ -392,6 +393,7 @@ function ChartOfAccountsPage({ language = "es" }) {
       useSuggestion: "use suggestion",
       keepCreatingLabel: "Keep creating accounts",
       keepCreatingHint: "On save, a new form opens with the same parent selected.",
+      newShortcutHint: "(Insert key)",
     },
   }[language];
 
@@ -593,6 +595,22 @@ function ChartOfAccountsPage({ language = "es" }) {
     resetForm();
     setOpen(true);
   };
+
+  // NEW (2026-09-14): keyboard shortcut for "Nuevo" -- Plan de Cuentas can
+  // get very long, and this is the exact screen used to seed the PUC
+  // template, so requiring a scroll back to the top every time was
+  // tedious. Insert opens the create panel from anywhere on the page.
+  // Guarded on !open so it never interrupts an in-progress create/edit
+  // (it would otherwise wipe out whatever was already typed).
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key !== "Insert" || open) return;
+      e.preventDefault();
+      openCreatePanel();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
 
   const openEditPanel = (item) => {
     // FIX: previously matched by BOTH code AND name
@@ -903,9 +921,17 @@ function ChartOfAccountsPage({ language = "es" }) {
         subtitle={t.subtitle}
         tenantId={activeTenantId}
         actions={
-          <Button variant="primary" onClick={openCreatePanel}>
-            + {t.new}
-          </Button>
+          <>
+            {/* NEW (2026-09-14): the list can get very long (this is the
+                exact screen used to seed the PUC template), so scrolling
+                back up to click "Nuevo" every time is tedious. Insert opens
+                the create panel from anywhere on the page -- see the
+                keydown effect below. Shown here so it's discoverable. */}
+            <span className="hidden text-[11px] text-slate-400 sm:inline">{t.newShortcutHint}</span>
+            <Button variant="primary" onClick={openCreatePanel} title={`${t.new} ${t.newShortcutHint}`}>
+              + {t.new}
+            </Button>
+          </>
         }
       />
 

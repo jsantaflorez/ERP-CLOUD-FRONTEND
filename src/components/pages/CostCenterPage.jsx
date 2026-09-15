@@ -45,7 +45,7 @@ function CostCenterPage({ language = "es" }) {
   const [form, setForm]             = useState(initialForm);
   const [errors, setErrors]         = useState({});
   const [open, setOpen]             = useState(false);
-  const [editingId, setEditingId]   = useState(null);
+  const [, setEditingId]             = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading]       = useState(false);
   const [toast, setToast]           = useState(null);
@@ -77,6 +77,7 @@ function CostCenterPage({ language = "es" }) {
       successDeactivate: "Desactivado.", successActivate: "Activado.",
       movementBlockedByChildren: "No permite movimiento porque tiene centros hijos asociados.",
       parentAllowsMovementWarning: "Este centro padre permite movimiento. Debes desactivar \"Permite Movimiento\" en él antes de guardar, o el backend rechazará el cambio.",
+      newShortcutHint: "(tecla Insert)",
     },
     en: {
       title: "Cost Centers", subtitle: "Organizational and Operational Structure",
@@ -95,6 +96,7 @@ function CostCenterPage({ language = "es" }) {
       successDeactivate: "Deactivated.", successActivate: "Activated.",
       movementBlockedByChildren: "Movement isn't allowed because this center has child cost centers.",
       parentAllowsMovementWarning: "This parent center allows movement. You must disable \"Allows Movement\" on it before saving, or the backend will reject the change.",
+      newShortcutHint: "(Insert key)",
     },
   }[language];
 
@@ -142,6 +144,25 @@ function CostCenterPage({ language = "es" }) {
   };
 
   const closePanel = () => { setOpen(false); resetForm(); };
+
+  // NEW (2026-09-15): named so it can be reused by both the "Nuevo"
+  // button and the Insert-key shortcut below (previously only inlined in
+  // the button's onClick).
+  const openCreatePanel = () => { resetForm(); setOpen(true); };
+
+  // NEW (2026-09-15): keyboard shortcut for "Nuevo" -- same reasoning as
+  // Plan de Cuentas / Asientos Contables: long lists shouldn't require
+  // scrolling back to the top every time. Guarded on !open so it never
+  // interrupts an in-progress create/edit.
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key !== "Insert" || open) return;
+      e.preventDefault();
+      openCreatePanel();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
 
   const openEditPanel = (item) => {
     // Defensive repair: if this record has children but was somehow saved
@@ -278,9 +299,12 @@ function CostCenterPage({ language = "es" }) {
         subtitle={t.subtitle}
         tenantId={activeTenantId}
         actions={
-          <Button variant="primary" onClick={() => { resetForm(); setOpen(true); }}>
-            + {t.new}
-          </Button>
+          <>
+            <span className="hidden text-[11px] text-slate-400 sm:inline">{t.newShortcutHint}</span>
+            <Button variant="primary" onClick={openCreatePanel} title={`${t.new} ${t.newShortcutHint}`}>
+              + {t.new}
+            </Button>
+          </>
         }
       />
 

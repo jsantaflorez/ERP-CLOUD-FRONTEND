@@ -109,7 +109,7 @@ function ThirdPartyPage({ language = "es" }) {
   const [errors, setErrors]                     = useState({});
   const [open, setOpen]                         = useState(false);
   const [activeTab, setActiveTab]               = useState("basic"); // 'basic', 'location', 'accounting'
-  const [editingId, setEditingId]               = useState(null);
+  const [, setEditingId]                         = useState(null);
   const [searchTerm, setSearchTerm]             = useState("");
   const [loading, setLoading]                   = useState(false);
   const [isSaving, setIsSaving]                 = useState(false);
@@ -195,7 +195,8 @@ function ThirdPartyPage({ language = "es" }) {
       page: "Página",
       of: "de",
       previous: "Anterior",
-      next: "Siguiente"
+      next: "Siguiente",
+      newShortcutHint: "(tecla Insert)"
     },
     en: {
       title: "Third Parties",
@@ -257,7 +258,8 @@ function ThirdPartyPage({ language = "es" }) {
       page: "Page",
       of: "of",
       previous: "Previous",
-      next: "Next"
+      next: "Next",
+      newShortcutHint: "(Insert key)"
     }
   }[language];
 
@@ -371,6 +373,20 @@ const loadCatalogs = async () => {
     resetForm();
     setOpen(true);
   };
+
+  // NEW (2026-09-15): keyboard shortcut for "Nuevo Tercero" -- same
+  // reasoning as Plan de Cuentas / Asientos Contables: long lists
+  // shouldn't require scrolling back to the top every time. Guarded on
+  // !open so it never interrupts an in-progress create/edit.
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key !== "Insert" || open) return;
+      e.preventDefault();
+      openCreatePanel();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
 
   const openEditPanel = (item) => {
     const personType = item.personType || "JURIDICA";
@@ -627,9 +643,12 @@ const loadCatalogs = async () => {
         subtitle={t.subtitle}
         tenantId={activeTenantId}
         actions={
-          <Button variant="primary" onClick={openCreatePanel}>
-            + {t.new}
-          </Button>
+          <>
+            <span className="hidden text-[11px] text-slate-400 sm:inline">{t.newShortcutHint}</span>
+            <Button variant="primary" onClick={openCreatePanel} title={`${t.new} ${t.newShortcutHint}`}>
+              + {t.new}
+            </Button>
+          </>
         }
       />
 

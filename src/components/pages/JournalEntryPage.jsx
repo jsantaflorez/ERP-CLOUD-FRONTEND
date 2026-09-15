@@ -87,6 +87,7 @@ function JournalEntryPage({ language = "es" }) {
       title: "Asientos Contables",
       subtitle: "Captura y Consulta de Movimientos Contables",
       newEntry: "+ Nuevo Asiento",
+      newShortcutHint: "(tecla Insert)",
       backToList: "← Volver al listado",
       search: "Buscar por número de documento o descripción...",
       from: "Desde", to: "Hasta",
@@ -147,6 +148,7 @@ function JournalEntryPage({ language = "es" }) {
       title: "Journal Entries",
       subtitle: "Capture and Query Accounting Movements",
       newEntry: "+ New Entry",
+      newShortcutHint: "(Insert key)",
       backToList: "← Back to list",
       search: "Search by document number or description...",
       from: "From", to: "To",
@@ -499,6 +501,21 @@ function JournalEntryPage({ language = "es" }) {
     setView("form");
   };
 
+  // NEW (2026-09-14): keyboard shortcut for "+ Nuevo Asiento" -- same
+  // reasoning as the Plan de Cuentas screen (see its own comment): a long
+  // entries list means scrolling back to the top every time otherwise.
+  // Insert opens the form from anywhere, but only while on the list view
+  // -- it must never interrupt an entry already being captured or edited.
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key !== "Insert" || view !== "list") return;
+      e.preventDefault();
+      openNewEntry();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [view]);
+
   // Fetches the entry fresh from the backend rather than reusing the list
   // row: the list response omits some fields, and this guarantees the form
   // is seeded from the exact current state (in case it changed since the
@@ -716,7 +733,14 @@ function JournalEntryPage({ language = "es" }) {
         tenantId={activeTenantId}
         actions={
           view === "list" ? (
-            <Button variant="primary" onClick={openNewEntry}>{t.newEntry}</Button>
+            <>
+              {/* NEW (2026-09-14): the entries list can get very long, so
+                  scrolling back up to click "+ Nuevo Asiento" every time is
+                  tedious. Insert opens the form from anywhere on the page --
+                  see the keydown effect near openNewEntry(). */}
+              <span className="hidden text-[11px] text-slate-400 sm:inline">{t.newShortcutHint}</span>
+              <Button variant="primary" onClick={openNewEntry} title={`${t.newEntry} ${t.newShortcutHint}`}>{t.newEntry}</Button>
+            </>
           ) : (
             <Button variant="secondary" onClick={backToList}>{t.backToList}</Button>
           )
