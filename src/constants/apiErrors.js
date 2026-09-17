@@ -47,6 +47,16 @@ export const API_ERROR_LABELS = {
     ENTRY_ALREADY_ANNULLED: "Este asiento contable ya está anulado.",
     ITEM_HAS_BOTH_DEBIT_AND_CREDIT: "Cada línea del asiento debe tener débito O crédito, no ambos.",
     ITEM_MISSING_DEBIT_OR_CREDIT: "Cada línea del asiento debe tener débito o crédito.",
+    ENTRY_DATE_REQUIRED: "La fecha del asiento es obligatoria.",
+    ENTRY_DATE_IN_FUTURE: "La fecha del asiento no puede ser una fecha futura.",
+    // Accounting-period lock (AccountingPeriodService) -- blocks posting/editing
+    // once a month or fiscal year has been explicitly closed.
+    FISCAL_YEAR_CLOSED: "El año fiscal está cerrado. Ábrelo de nuevo desde Períodos Contables si necesitas contabilizar en él.",
+    ACCOUNTING_PERIOD_CLOSED: "El período contable de esa fecha está cerrado. Ábrelo de nuevo desde Períodos Contables si necesitas contabilizar en él.",
+    PERIOD_DATE_REQUIRED: "La fecha es obligatoria.",
+    INVALID_YEAR: "El año no es válido.",
+    INVALID_MONTH: "El mes no es válido.",
+    MONTHS_NOT_CLOSED_BEFORE_YEAR_END: "No se puede cerrar el año fiscal: primero debes cerrar individualmente todos los meses de enero a noviembre.",
   },
   en: {
     DUPLICATE_VALUE: "A record with this value already exists. Check the code or identifier.",
@@ -81,6 +91,16 @@ export const API_ERROR_LABELS = {
     ENTRY_ALREADY_ANNULLED: "This journal entry is already annulled.",
     ITEM_HAS_BOTH_DEBIT_AND_CREDIT: "Each entry line must have a debit OR a credit, not both.",
     ITEM_MISSING_DEBIT_OR_CREDIT: "Each entry line must have a debit or a credit.",
+    ENTRY_DATE_REQUIRED: "The entry date is required.",
+    ENTRY_DATE_IN_FUTURE: "The entry date cannot be in the future.",
+    // Accounting-period lock (AccountingPeriodService) -- blocks posting/editing
+    // once a month or fiscal year has been explicitly closed.
+    FISCAL_YEAR_CLOSED: "The fiscal year is closed. Reopen it from Accounting Periods if you need to post to it.",
+    ACCOUNTING_PERIOD_CLOSED: "The accounting period for that date is closed. Reopen it from Accounting Periods if you need to post to it.",
+    PERIOD_DATE_REQUIRED: "The date is required.",
+    INVALID_YEAR: "The year is not valid.",
+    INVALID_MONTH: "The month is not valid.",
+    MONTHS_NOT_CLOSED_BEFORE_YEAR_END: "Can't close the fiscal year: every month from January to November must be closed individually first.",
   },
 };
 

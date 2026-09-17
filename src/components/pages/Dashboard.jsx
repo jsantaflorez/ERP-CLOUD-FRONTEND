@@ -16,6 +16,7 @@ import AuxiliaryLedgerPage from "./AuxiliaryLedgerPage";
 import TrialBalancePage from "./TrialBalancePage";
 import BalanceSheetPage from "./BalanceSheetPage";
 import TrialBalanceDetailedPage from "./TrialBalanceDetailedPage";
+import AccountingPeriodPage from "./AccountingPeriodPage";
 
 // Views that live under the "Reportes" submenu -- grouped here so the
 // submenu auto-expands whenever one of them is the active view (e.g. on
@@ -199,14 +200,25 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
             )}
 
             {isAuthorizedManagement && (
-              <button
-                onClick={() => setActiveView("users")}
-                className={`rounded-xl px-4 py-3 text-left transition-colors ${
-                  activeView === "users" ? "bg-blue-600" : "bg-slate-800 hover:bg-slate-700"
-                }`}
-              >
-                {t.navUsers}
-              </button>
+              <>
+                <button
+                  onClick={() => setActiveView("accountingPeriod")}
+                  className={`rounded-xl px-4 py-3 text-left transition-colors ${
+                    activeView === "accountingPeriod" ? "bg-blue-600" : "bg-slate-800 hover:bg-slate-700"
+                  }`}
+                >
+                  {t.navAccountingPeriod}
+                </button>
+
+                <button
+                  onClick={() => setActiveView("users")}
+                  className={`rounded-xl px-4 py-3 text-left transition-colors ${
+                    activeView === "users" ? "bg-blue-600" : "bg-slate-800 hover:bg-slate-700"
+                  }`}
+                >
+                  {t.navUsers}
+                </button>
+              </>
             )}
           </nav>
         </div>
@@ -277,6 +289,10 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
 
         {activeView === "trialBalanceDetailed" && (
           <TrialBalanceDetailedPage language={language} />
+        )}
+
+        {activeView === "accountingPeriod" && (
+          <AccountingPeriodPage language={language} />
         )}
 
         {activeView === "users" && (

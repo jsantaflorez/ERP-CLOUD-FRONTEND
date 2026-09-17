@@ -24,6 +24,7 @@ const translations = {
     navBalanceSheet: "Balance General",
     navTrialBalanceDetailed: "Balance de Comprobación Detallado",
     navJournalEntry: "Asientos Contables",
+    navAccountingPeriod: "Períodos Contables",
     navUsers: "Usuarios",
   },
 
@@ -52,6 +53,7 @@ const translations = {
     navBalanceSheet: "Balance Sheet",
     navTrialBalanceDetailed: "Detailed Trial Balance",
     navJournalEntry: "Journal Entries",
+    navAccountingPeriod: "Accounting Periods",
     navUsers: "Users",
   },
 };
