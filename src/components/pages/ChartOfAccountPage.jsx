@@ -223,6 +223,26 @@ function ChartOfAccountsPage({ language = "es" }) {
   const [loading, setLoading]       = useState(false);
   const [toast, setToast]           = useState(null);
 
+  // NEW (2026-09-25): "+"/"-" tree toggle per account group, requested
+  // while the user was reviewing the Cost Center report fix (2026-09-22
+  // note in pendientes.md). Every account with children gets its own
+  // independent toggle (not just the top level) -- collapsing a group
+  // hides ALL of its descendants, not just its direct children, via
+  // isCodeHiddenByCollapse below walking up the parentCode chain. Starts
+  // fully expanded (empty set = nothing collapsed) and is plain component
+  // state on purpose -- the user confirmed this should NOT persist across
+  // reloads or between visits to the screen.
+  const [collapsedCodes, setCollapsedCodes] = useState(() => new Set());
+
+  const toggleCollapse = (code) => {
+    setCollapsedCodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  };
+
   // NEW (2026-09-12): lets the user keep the create form open after saving,
   // instead of always closing it (openCreatePanel -> Guardar -> closed ->
   // find the "Nuevo" button again -- tedious when entering many accounts
@@ -333,6 +353,8 @@ function ChartOfAccountsPage({ language = "es" }) {
       keepCreatingLabel: "Seguir creando cuentas",
       keepCreatingHint: "Al guardar, se abre un formulario nuevo con el mismo padre seleccionado.",
       newShortcutHint: "(tecla Insert)",
+      expandGroup: "Expandir grupo",
+      collapseGroup: "Contraer grupo",
     },
     en: {
       title: "Chart of Accounts",
@@ -394,6 +416,8 @@ function ChartOfAccountsPage({ language = "es" }) {
       keepCreatingLabel: "Keep creating accounts",
       keepCreatingHint: "On save, a new form opens with the same parent selected.",
       newShortcutHint: "(Insert key)",
+      expandGroup: "Expand group",
+      collapseGroup: "Collapse group",
     },
   }[language];
 
@@ -522,6 +546,32 @@ function ChartOfAccountsPage({ language = "es" }) {
         r.accountClass?.toLowerCase().includes(term)
     );
   }, [rows, searchTerm]);
+
+  // Lookup by code, used to walk up the parentCode chain when deciding
+  // whether a row is hidden by a collapsed ancestor (see visibleRows).
+  const rowsByCode = useMemo(() => {
+    const map = new Map();
+    rows.forEach((r) => map.set(r.code, r));
+    return map;
+  }, [rows]);
+
+  const isCodeHiddenByCollapse = (row) => {
+    let parentCode = row.parentCode;
+    while (parentCode) {
+      if (collapsedCodes.has(parentCode)) return true;
+      parentCode = rowsByCode.get(parentCode)?.parentCode;
+    }
+    return false;
+  };
+
+  // While actively searching, show the flat matching results uncollapsed
+  // (same behavior as before this feature existed) -- collapsing a group
+  // that contains a search match would hide the very thing being looked
+  // for. Collapse only applies when browsing the full tree.
+  const visibleRows = useMemo(() => {
+    if (searchTerm.trim()) return filteredRows;
+    return filteredRows.filter((r) => !isCodeHiddenByCollapse(r));
+  }, [filteredRows, searchTerm, collapsedCodes, rowsByCode]);
 
   // FIX: previously depended on `[rows]` only, while filtering using
   // `editingIdRef.current` — a ref mutation doesn't trigger a re-render or
@@ -968,16 +1018,36 @@ function ChartOfAccountsPage({ language = "es" }) {
             </thead>
 
             <tbody className="divide-y divide-gray-50">
-              {filteredRows.length === 0 ? (
+              {visibleRows.length === 0 ? (
                 <tr>
                   <td colSpan={12} className="py-16 text-center text-slate-400">
                     {t.noResults}
                   </td>
                 </tr>
               ) : (
-                filteredRows.map((item) => (
+                visibleRows.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="px-5 py-4 font-bold text-slate-700">{item.code}</td>
+                    <td className="px-5 py-4 font-bold text-slate-700">
+                      <span
+                        className="inline-flex items-center gap-1.5"
+                        style={{ paddingLeft: `${((item.level || 1) - 1) * 16}px` }}
+                      >
+                        {hasChildren(item.code, rows) ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleCollapse(item.code)}
+                            title={collapsedCodes.has(item.code) ? t.expandGroup : t.collapseGroup}
+                            aria-label={collapsedCodes.has(item.code) ? t.expandGroup : t.collapseGroup}
+                            className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-slate-300 text-[10px] font-black leading-none text-slate-500 transition-colors hover:bg-slate-100"
+                          >
+                            {collapsedCodes.has(item.code) ? "+" : "\u2212"}
+                          </button>
+                        ) : (
+                          <span className="inline-block h-4 w-4 shrink-0" aria-hidden="true" />
+                        )}
+                        {item.code}
+                      </span>
+                    </td>
                     <td className="px-5 py-4 text-slate-600">{item.name}</td>
 
                     <td className="px-5 py-4 text-center">
