@@ -7,7 +7,13 @@ import { getApiErrorMessage } from "../../constants/apiErrors";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { addPdfReportHeader, addPdfRunningHeader, buildExcelHeaderRows, formatGeneratedAt } from "../../utils/reportExport";
+import {
+  addPdfReportHeader,
+  addPdfRunningHeader,
+  addPdfSignatureLines,
+  buildExcelHeaderRows,
+  formatGeneratedAt,
+} from "../../utils/reportExport";
 
 // NEW (2026-09-08): third report screen, after Libro Auxiliar and Balance
 // de Comprobación. Backend already returns each section's name in both
@@ -55,6 +61,8 @@ function BalanceSheetPage({ language = "es" }) {
       exportPdf: "Exportar PDF",
       pdfReportTitle: "Balance General",
       pdfAsOfDate: "Al",
+      managerSignature: "GERENTE",
+      accountantSignature: "CONTADOR",
     },
     en: {
       title: "Balance Sheet",
@@ -82,6 +90,8 @@ function BalanceSheetPage({ language = "es" }) {
       exportPdf: "Export to PDF",
       pdfReportTitle: "Balance Sheet",
       pdfAsOfDate: "As of",
+      managerSignature: "MANAGER",
+      accountantSignature: "ACCOUNTANT",
     },
   }[language];
 
@@ -254,6 +264,13 @@ function BalanceSheetPage({ language = "es" }) {
         }
       },
     });
+
+    addPdfSignatureLines(
+      doc,
+      { leftLabel: t.managerSignature, rightLabel: t.accountantSignature },
+      doc.lastAutoTable.finalY,
+      headerInfo
+    );
 
     doc.save(`${exportFileStem()}.pdf`);
   };
@@ -455,6 +472,23 @@ function BalanceSheetPage({ language = "es" }) {
                   <span>{t.totalLiabilitiesAndEquity}</span>
                   <span>{formatAmount(report.totalLiabilitiesAndEquity)}</span>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {hasData(report) && (
+            <div className="grid grid-cols-2 gap-10 px-6 pt-10 pb-2">
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-full border-t border-slate-400" />
+                <span className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                  {t.managerSignature}
+                </span>
+              </div>
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-full border-t border-slate-400" />
+                <span className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                  {t.accountantSignature}
+                </span>
               </div>
             </div>
           )}

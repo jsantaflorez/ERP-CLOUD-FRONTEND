@@ -87,6 +87,51 @@ export function addPdfRunningHeader(doc, { companyName, generatedAtLabel, genera
 }
 
 /**
+ * Draws two blank signature lines side by side near the bottom of the
+ * PDF (left/right labels underneath, e.g. "GERENTE" / "CONTADOR") --
+ * first requested for Balance General (2026-09-25), written here rather
+ * than inline so any other report can reuse it later. Starts below
+ * whatever content ends at `afterY` (e.g. an autoTable's `finalY`); if
+ * there isn't enough room left on the current page, adds a new page
+ * first (repeating the running header via `headerInfo`, same as
+ * autoTable's own didDrawPage callback does) instead of overlapping the
+ * table or running off the bottom margin. Returns the Y coordinate the
+ * lines were drawn at.
+ */
+export function addPdfSignatureLines(doc, { leftLabel, rightLabel }, afterY, headerInfo) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const bottomMargin = 15;
+  const gapAboveLines = 22;
+
+  let y = afterY + gapAboveLines;
+  if (y + 10 > pageHeight - bottomMargin) {
+    doc.addPage();
+    y = (headerInfo ? addPdfRunningHeader(doc, headerInfo) : 15) + gapAboveLines;
+  }
+
+  const sideMargin = 20;
+  const gapBetween = 15;
+  const halfWidth = (pageWidth - sideMargin * 2 - gapBetween) / 2;
+
+  const leftX1 = sideMargin;
+  const leftX2 = sideMargin + halfWidth;
+  const rightX1 = leftX2 + gapBetween;
+  const rightX2 = rightX1 + halfWidth;
+
+  doc.setDrawColor(0);
+  doc.line(leftX1, y, leftX2, y);
+  doc.line(rightX1, y, rightX2, y);
+
+  doc.setFontSize(9);
+  doc.setTextColor(0);
+  doc.text(leftLabel, (leftX1 + leftX2) / 2, y + 5, { align: "center" });
+  doc.text(rightLabel, (rightX1 + rightX2) / 2, y + 5, { align: "center" });
+
+  return y;
+}
+
+/**
  * Builds the header rows (array-of-arrays, ready for
  * XLSX.utils.aoa_to_sheet) shared by every exported report sheet:
  *   Company Name
