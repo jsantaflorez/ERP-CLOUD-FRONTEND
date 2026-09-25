@@ -6,24 +6,18 @@ import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
 import { formatGeneratedAt } from "../../utils/reportExport";
 
-// NEW (2026-09-21): third report screen, after Libro Auxiliar and Balance
-// de Comprobación. First built as a simple period-totals report (no
-// opening/closing balance), then upgraded the same day after the user
-// showed a real report from their previous system: a cost center
-// attached to a balance-sheet account (e.g. inventory, cartera) DOES
-// carry a genuine accumulated balance, the same way the account itself
-// does -- so this needed the same shape as the Auxiliary Ledger
-// (Saldo Inicial + movements + Nuevo Saldo), just grouped by cost center
-// instead of account. One real difference from the account-grouped
-// ledger: a single cost center's transactions can come from several
-// different accounts, so each row shows its own account code/name
-// (the account-grouped ledger doesn't need that column, since there the
-// account is already the group's header).
-// Export to Excel/PDF deliberately left out of this first version, same
-// as the original period-totals cut -- can be added later the same way
-// TrialBalancePage/AuxiliaryLedgerPage already do it.
-function CostCenterBalancePage({ language = "es" }) {
+// NEW (2026-09-24): "Estado de Cuenta por Tercero", built right after
+// CostCenterBalancePage using the exact same Auxiliar-style shape (Saldo
+// Inicial + movimientos + Nuevo Saldo), grouped by third party instead
+// of cost center, plus an optional cost center filter (per the same
+// reference report the user showed for the Cost Center version). A
+// third party's transactions can span several accounts AND several cost
+// centers, so each row shows its own account and cost center instead of
+// the group carrying a single fixed one.
+// Export to Excel/PDF deliberately left out, same as Cost Center Balance.
+function ThirdPartyBalancePage({ language = "es" }) {
   const [accounts, setAccounts] = useState([]);
+  const [thirdParties, setThirdParties] = useState([]);
   const [costCenters, setCostCenters] = useState([]);
   const [loadingCatalogs, setLoadingCatalogs] = useState(false);
 
@@ -34,6 +28,7 @@ function CostCenterBalancePage({ language = "es" }) {
     startDate: firstOfMonth,
     endDate: today,
     accountId: "", // "" = todas las cuentas
+    thirdPartyId: "", // "" = todos los terceros
     costCenterId: "", // "" = todos los centros de costo
   });
 
@@ -47,12 +42,14 @@ function CostCenterBalancePage({ language = "es" }) {
 
   const t = {
     es: {
-      title: "Auxiliar por Centro de Costo",
-      subtitle: "Saldo inicial, movimientos y saldo corriente por centro de costo",
+      title: "Estado de Cuenta por Tercero",
+      subtitle: "Saldo inicial, movimientos y saldo corriente por tercero",
       startDate: "Fecha Inicial",
       endDate: "Fecha Final",
       account: "Cuenta",
       allAccounts: "— Todas las cuentas —",
+      thirdParty: "Tercero",
+      allThirdParties: "— Todos los terceros —",
       costCenter: "Centro de Costo",
       allCostCenters: "— Todos los centros de costo —",
       generate: "Generar",
@@ -66,7 +63,7 @@ function CostCenterBalancePage({ language = "es" }) {
       document: "Documento",
       detail: "Detalle",
       accountCol: "Cuenta",
-      thirdParty: "Tercero",
+      costCenterCol: "Centro de Costo",
       debit: "Débito",
       credit: "Crédito",
       balance: "Nuevo Saldo",
@@ -77,16 +74,18 @@ function CostCenterBalancePage({ language = "es" }) {
       generatedAt: "Generado",
       errorConn: "Error de conexión con el servidor.",
       grandTotals: "Totales Generales",
-      hideEmpty: "Ocultar grupos sin movimiento (S.I., movimientos y saldo final en cero)",
-      allHidden: "Todos los grupos tienen saldo inicial, movimientos y saldo final en cero (ocultos por el filtro).",
+      hideEmpty: "Ocultar terceros sin movimiento (S.I., movimientos y saldo final en cero)",
+      allHidden: "Todos los terceros tienen saldo inicial, movimientos y saldo final en cero (ocultos por el filtro).",
     },
     en: {
-      title: "Auxiliary Ledger by Cost Center",
-      subtitle: "Opening balance, movements and running balance per cost center",
+      title: "Third Party Statement",
+      subtitle: "Opening balance, movements and running balance per third party",
       startDate: "Start Date",
       endDate: "End Date",
       account: "Account",
       allAccounts: "— All accounts —",
+      thirdParty: "Third Party",
+      allThirdParties: "— All third parties —",
       costCenter: "Cost Center",
       allCostCenters: "— All cost centers —",
       generate: "Generate",
@@ -100,7 +99,7 @@ function CostCenterBalancePage({ language = "es" }) {
       document: "Document",
       detail: "Detail",
       accountCol: "Account",
-      thirdParty: "Third Party",
+      costCenterCol: "Cost Center",
       debit: "Debit",
       credit: "Credit",
       balance: "New Balance",
@@ -111,8 +110,8 @@ function CostCenterBalancePage({ language = "es" }) {
       generatedAt: "Generated",
       errorConn: "Server connection error.",
       grandTotals: "Grand Totals",
-      hideEmpty: "Hide groups with no activity (opening, movements and closing balance all zero)",
-      allHidden: "Every group has zero opening balance, movements and closing balance (hidden by the filter).",
+      hideEmpty: "Hide third parties with no activity (opening, movements and closing balance all zero)",
+      allHidden: "Every third party has zero opening balance, movements and closing balance (hidden by the filter).",
     },
   }[language];
 
@@ -128,8 +127,9 @@ function CostCenterBalancePage({ language = "es" }) {
   const loadCatalogs = async () => {
     setLoadingCatalogs(true);
     try {
-      const [accRes, ccRes] = await Promise.allSettled([
+      const [accRes, tpRes, ccRes] = await Promise.allSettled([
         api.get("/v1/chart-of-accounts", { params: { size: 500, sort: "code" } }),
+        api.get("/v1/third-parties?page=0&size=1000"),
         api.get("/v1/cost-centers"),
       ]);
 
@@ -143,6 +143,21 @@ function CostCenterBalancePage({ language = "es" }) {
         setAccounts(list.filter((a) => a.postingAccount));
       }
 
+      if (tpRes.status === "fulfilled") {
+        // ThirdPartyController#list returns the Spring Page<> directly,
+        // not wrapped in the usual ApiResponse envelope -- same fallback
+        // chain JournalEntryPage.jsx already uses for this endpoint.
+        const raw = tpRes.value.data;
+        const list = Array.isArray(raw?.content)
+          ? raw.content
+          : Array.isArray(raw?.data)
+          ? raw.data
+          : Array.isArray(raw)
+          ? raw
+          : [];
+        setThirdParties(list.filter((tp) => tp.active));
+      }
+
       if (ccRes.status === "fulfilled" && ccRes.value.data?.success) {
         const payloadData = ccRes.value.data.data;
         const list = Array.isArray(payloadData)
@@ -151,13 +166,11 @@ function CostCenterBalancePage({ language = "es" }) {
             ? payloadData.content
             : [];
         // Only cost centers that can actually receive movements show up
-        // in journal entries -- same reasoning as filtering accounts to
-        // postingAccount above (a header/grouping-only cost center would
-        // just come back empty every time).
+        // in journal entries -- same reasoning as CostCenterBalancePage.
         setCostCenters(list.filter((cc) => cc.allowsMovement));
       }
     } catch (error) {
-      console.error("Failed to load filters for cost center ledger", error);
+      console.error("Failed to load filters for third party statement", error);
     } finally {
       setLoadingCatalogs(false);
     }
@@ -188,6 +201,9 @@ function CostCenterBalancePage({ language = "es" }) {
     const selectedAccount = filters.accountId
       ? accounts.find((a) => String(a.id) === String(filters.accountId))
       : null;
+    const selectedThirdParty = filters.thirdPartyId
+      ? thirdParties.find((tp) => String(tp.id) === String(filters.thirdPartyId))
+      : null;
     const selectedCostCenter = filters.costCenterId
       ? costCenters.find((cc) => String(cc.id) === String(filters.costCenterId))
       : null;
@@ -200,6 +216,9 @@ function CostCenterBalancePage({ language = "es" }) {
       params.startCode = selectedAccount.code;
       params.endCode = selectedAccount.code;
     }
+    if (selectedThirdParty) {
+      params.thirdPartyDocument = selectedThirdParty.documentNumber;
+    }
     if (selectedCostCenter) {
       params.costCenterCode = selectedCostCenter.code;
     }
@@ -207,7 +226,7 @@ function CostCenterBalancePage({ language = "es" }) {
     setLoading(true);
     setReport(null);
     try {
-      const response = await api.get("/v1/reports/cost-center-balance", { params });
+      const response = await api.get("/v1/reports/third-party-balance", { params });
       if (response.data && response.data.success) {
         setReport(response.data.data);
       } else {
@@ -221,12 +240,12 @@ function CostCenterBalancePage({ language = "es" }) {
   };
 
   // Groups where opening balance, movements and closing balance are all
-  // zero are real (e.g. a cost center that only had activity outside
+  // zero are real (e.g. a third party that only had activity outside
   // this date range), but usually not worth showing in a report that
-  // already covers "todos los centros de costo" -- this lets the user
-  // opt into hiding them instead of always doing it server-side.
+  // already covers "todos los terceros" -- this lets the user opt into
+  // hiding them instead of always doing it server-side.
   const visibleGroups = useMemo(() => {
-    const groups = report?.costCenterGroups || [];
+    const groups = report?.thirdPartyGroups || [];
     if (!hideEmptyGroups) return groups;
     return groups.filter((g) => {
       const si = Number(g.openingBalance) || 0;
@@ -281,6 +300,25 @@ function CostCenterBalancePage({ language = "es" }) {
             onChange={handleFilterChange}
             className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
           />
+        </div>
+
+        <div className="flex min-w-[260px] flex-col gap-1">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+            {t.thirdParty}
+          </label>
+          <select
+            name="thirdPartyId"
+            value={filters.thirdPartyId}
+            onChange={handleFilterChange}
+            className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+          >
+            <option value="">{t.allThirdParties}</option>
+            {thirdParties.map((tp) => (
+              <option key={tp.id} value={tp.id}>
+                {tp.documentNumber} — {tp.legalDisplayName}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="flex min-w-[220px] flex-col gap-1">
@@ -352,13 +390,13 @@ function CostCenterBalancePage({ language = "es" }) {
             </p>
           )}
 
-          {(!report.costCenterGroups || report.costCenterGroups.length === 0) && (
+          {(!report.thirdPartyGroups || report.thirdPartyGroups.length === 0) && (
             <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-slate-400 shadow-sm">
               {t.noResults}
             </div>
           )}
 
-          {report.costCenterGroups?.length > 0 && visibleGroups.length === 0 && (
+          {report.thirdPartyGroups?.length > 0 && visibleGroups.length === 0 && (
             <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-slate-400 shadow-sm">
               {t.allHidden}
             </div>
@@ -366,13 +404,13 @@ function CostCenterBalancePage({ language = "es" }) {
 
           {visibleGroups.map((group) => (
             <div
-              key={group.costCenterCode}
+              key={group.thirdPartyDocument}
               className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm"
             >
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-slate-50 px-5 py-4">
                 <div>
-                  <span className="font-bold text-slate-700">{group.costCenterCode}</span>{" "}
-                  <span className="text-slate-600">{group.costCenterName}</span>
+                  <span className="font-bold text-slate-700">{group.thirdPartyDocument}</span>{" "}
+                  <span className="text-slate-600">{group.thirdPartyName}</span>
                 </div>
                 <div className="text-xs text-slate-500">
                   {t.openingBalance}:{" "}
@@ -390,7 +428,7 @@ function CostCenterBalancePage({ language = "es" }) {
                       <th className="px-4 py-3">{t.document}</th>
                       <th className="px-4 py-3">{t.detail}</th>
                       <th className="px-4 py-3">{t.accountCol}</th>
-                      <th className="px-4 py-3">{t.thirdParty}</th>
+                      <th className="px-4 py-3">{t.costCenterCol}</th>
                       <th className="px-4 py-3 text-right">{t.debit}</th>
                       <th className="px-4 py-3 text-right">{t.credit}</th>
                       <th className="px-4 py-3 text-right">{t.balance}</th>
@@ -405,7 +443,7 @@ function CostCenterBalancePage({ language = "es" }) {
                         <td className="px-4 py-2.5 text-slate-500">
                           {tx.accountCode ? `${tx.accountCode} — ${tx.accountName || ""}` : "—"}
                         </td>
-                        <td className="px-4 py-2.5 text-slate-500">{tx.thirdPartyName || "—"}</td>
+                        <td className="px-4 py-2.5 text-slate-500">{tx.costCenterCode || "—"}</td>
                         <td className="px-4 py-2.5 text-right text-slate-700">
                           {formatAmount(tx.debit)}
                         </td>
@@ -455,4 +493,4 @@ function CostCenterBalancePage({ language = "es" }) {
   );
 }
 
-export default CostCenterBalancePage;
+export default ThirdPartyBalancePage;

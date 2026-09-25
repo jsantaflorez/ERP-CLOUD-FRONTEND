@@ -15,6 +15,7 @@ import JournalEntryPage from "./JournalEntryPage";
 import AuxiliaryLedgerPage from "./AuxiliaryLedgerPage";
 import TrialBalancePage from "./TrialBalancePage";
 import CostCenterBalancePage from "./CostCenterBalancePage";
+import ThirdPartyBalancePage from "./ThirdPartyBalancePage";
 import BalanceSheetPage from "./BalanceSheetPage";
 import TrialBalanceDetailedPage from "./TrialBalanceDetailedPage";
 import AccountingPeriodPage from "./AccountingPeriodPage";
@@ -25,7 +26,7 @@ import AccountingPeriodPage from "./AccountingPeriodPage";
 // instead of only expanding on an explicit click. Add new report views
 // (Balance de Comprobación, Balance General, ...) to this list as they're
 // built, and the submenu picks them up automatically.
-const REPORT_VIEWS = ["auxiliaryLedger", "trialBalance", "balanceSheet", "trialBalanceDetailed", "costCenterBalance"];
+const REPORT_VIEWS = ["auxiliaryLedger", "trialBalance", "balanceSheet", "trialBalanceDetailed", "costCenterBalance", "thirdPartyBalance"];
 
 function Dashboard({ user, onLogout, language, onLanguageChange }) {
   const [activeView, setActiveView] = useState("dashboard");
@@ -202,6 +203,14 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
                       >
                         {t.navCostCenterBalance}
                       </button>
+                      <button
+                        onClick={() => setActiveView("thirdPartyBalance")}
+                        className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
+                          activeView === "thirdPartyBalance" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
+                        }`}
+                      >
+                        {t.navThirdPartyBalance}
+                      </button>
                     </div>
                   )}
                 </div>
@@ -302,6 +311,10 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
 
         {activeView === "costCenterBalance" && (
           <CostCenterBalancePage language={language} />
+        )}
+
+        {activeView === "thirdPartyBalance" && (
+          <ThirdPartyBalancePage language={language} />
         )}
 
         {activeView === "accountingPeriod" && (
