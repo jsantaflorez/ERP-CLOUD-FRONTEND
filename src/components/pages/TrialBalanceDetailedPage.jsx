@@ -53,7 +53,6 @@ function TrialBalanceDetailedPage({ language = "es" }) {
       openingBalance: "Apertura",
       periodDebit: "Débito Periodo",
       periodCredit: "Crédito Periodo",
-      netMovement: "Neto",
       closingBalance: "Cierre",
       totalsRow: "Totales",
       balanced: "Balanceado: Débitos del Periodo = Créditos del Periodo",
@@ -82,7 +81,6 @@ function TrialBalanceDetailedPage({ language = "es" }) {
       openingBalance: "Opening",
       periodDebit: "Period Debit",
       periodCredit: "Period Credit",
-      netMovement: "Net",
       closingBalance: "Closing",
       totalsRow: "Totals",
       balanced: "Balanced: Period Debits = Period Credits",
@@ -180,17 +178,15 @@ function TrialBalanceDetailedPage({ language = "es" }) {
         t.openingBalance,
         t.periodDebit,
         t.periodCredit,
-        t.netMovement,
         t.closingBalance,
       ],
       ...report.lines.map((line) => [
         line.accountCode,
-        line.accountName,
+        `${"  ".repeat(Math.max((line.level || 1) - 1, 0))}${line.accountName}`,
         translateAccountClass(line.accountClass, language),
         rawAmount(line.openingBalance),
         rawAmount(line.periodDebit),
         rawAmount(line.periodCredit),
-        rawAmount(line.netMovement),
         rawAmount(line.closingBalance),
       ]),
       [
@@ -200,14 +196,12 @@ function TrialBalanceDetailedPage({ language = "es" }) {
         rawAmount(report.totalOpeningBalance),
         rawAmount(report.totalPeriodDebit),
         rawAmount(report.totalPeriodCredit),
-        rawAmount(report.totalNetMovement),
         rawAmount(report.totalClosingBalance),
       ],
       [],
       [t.summaryByClass],
       ...summaryEntries.map(([classCode, balance]) => [
         translateAccountClass(classCode, language),
-        "",
         "",
         "",
         "",
@@ -250,14 +244,19 @@ function TrialBalanceDetailedPage({ language = "es" }) {
     doc.setTextColor(0);
     cursorY += 6;
 
+    // Header (non-posting) rows carry their descendants' rolled-up totals
+    // as a group subtotal -- bold + shaded in the PDF via didParseCell
+    // below, matched back to each body row by index
+    // (isHeaderFlags[i] <-> body[i]).
+    const isHeaderFlags = report.lines.map((line) => line.postingAccount === false);
+
     const body = report.lines.map((line) => [
       line.accountCode,
-      line.accountName,
+      `${"  ".repeat(Math.max((line.level || 1) - 1, 0))}${line.accountName}`,
       translateAccountClass(line.accountClass, language),
       formatAmount(line.openingBalance),
       formatAmount(line.periodDebit),
       formatAmount(line.periodCredit),
-      formatAmount(line.netMovement),
       formatAmount(line.closingBalance),
     ]);
     body.push([
@@ -267,7 +266,6 @@ function TrialBalanceDetailedPage({ language = "es" }) {
       formatAmount(report.totalOpeningBalance),
       formatAmount(report.totalPeriodDebit),
       formatAmount(report.totalPeriodCredit),
-      formatAmount(report.totalNetMovement),
       formatAmount(report.totalClosingBalance),
     ]);
 
@@ -286,7 +284,6 @@ function TrialBalanceDetailedPage({ language = "es" }) {
           t.openingBalance,
           t.periodDebit,
           t.periodCredit,
-          t.netMovement,
           t.closingBalance,
         ],
       ],
@@ -298,9 +295,14 @@ function TrialBalanceDetailedPage({ language = "es" }) {
         4: { halign: "right" },
         5: { halign: "right" },
         6: { halign: "right" },
-        7: { halign: "right" },
       },
       margin: { top: 20, bottom: bottomMargin },
+      didParseCell: (data) => {
+        if (data.section === "body" && isHeaderFlags[data.row.index]) {
+          data.cell.styles.fontStyle = "bold";
+          data.cell.styles.fillColor = [241, 245, 249];
+        }
+      },
       didDrawPage: (data) => {
         if (data.pageNumber > pageBeforeTable) {
           addPdfRunningHeader(doc, headerInfo);
@@ -433,35 +435,63 @@ function TrialBalanceDetailedPage({ language = "es" }) {
                       <th className="px-4 py-3 text-right">{t.openingBalance}</th>
                       <th className="px-4 py-3 text-right">{t.periodDebit}</th>
                       <th className="px-4 py-3 text-right">{t.periodCredit}</th>
-                      <th className="px-4 py-3 text-right">{t.netMovement}</th>
                       <th className="px-4 py-3 text-right">{t.closingBalance}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {report.lines.map((line) => (
-                      <tr key={line.accountCode} className="hover:bg-slate-50/60">
-                        <td className="px-4 py-2.5 font-semibold text-slate-700">{line.accountCode}</td>
-                        <td className="px-4 py-2.5 text-slate-600">{line.accountName}</td>
-                        <td className="px-4 py-2.5 text-slate-500">
-                          {translateAccountClass(line.accountClass, language)}
-                        </td>
-                        <td className="px-4 py-2.5 text-right text-slate-700">
-                          {formatAmount(line.openingBalance)}
-                        </td>
-                        <td className="px-4 py-2.5 text-right text-slate-700">
-                          {formatAmount(line.periodDebit)}
-                        </td>
-                        <td className="px-4 py-2.5 text-right text-slate-700">
-                          {formatAmount(line.periodCredit)}
-                        </td>
-                        <td className="px-4 py-2.5 text-right text-slate-700">
-                          {formatAmount(line.netMovement)}
-                        </td>
-                        <td className="px-4 py-2.5 text-right font-semibold text-slate-800">
-                          {formatAmount(line.closingBalance)}
-                        </td>
-                      </tr>
-                    ))}
+                    {report.lines.map((line) => {
+                      const isHeader = line.postingAccount === false;
+                      return (
+                        <tr
+                          key={line.accountCode}
+                          className={isHeader ? "bg-slate-50/80 hover:bg-slate-100" : "hover:bg-slate-50/60"}
+                        >
+                          <td
+                            className={`px-4 py-2.5 ${
+                              isHeader ? "font-bold text-slate-800" : "font-semibold text-slate-700"
+                            }`}
+                          >
+                            <span style={{ paddingLeft: `${((line.level || 1) - 1) * 16}px` }}>
+                              {line.accountCode}
+                            </span>
+                          </td>
+                          <td className={`px-4 py-2.5 ${isHeader ? "font-bold text-slate-800" : "text-slate-600"}`}>
+                            {line.accountName}
+                          </td>
+                          <td className="px-4 py-2.5 text-slate-500">
+                            {translateAccountClass(line.accountClass, language)}
+                          </td>
+                          <td
+                            className={`px-4 py-2.5 text-right ${
+                              isHeader ? "font-bold text-slate-800" : "text-slate-700"
+                            }`}
+                          >
+                            {formatAmount(line.openingBalance)}
+                          </td>
+                          <td
+                            className={`px-4 py-2.5 text-right ${
+                              isHeader ? "font-bold text-slate-800" : "text-slate-700"
+                            }`}
+                          >
+                            {formatAmount(line.periodDebit)}
+                          </td>
+                          <td
+                            className={`px-4 py-2.5 text-right ${
+                              isHeader ? "font-bold text-slate-800" : "text-slate-700"
+                            }`}
+                          >
+                            {formatAmount(line.periodCredit)}
+                          </td>
+                          <td
+                            className={`px-4 py-2.5 text-right font-semibold ${
+                              isHeader ? "text-slate-900" : "text-slate-800"
+                            }`}
+                          >
+                            {formatAmount(line.closingBalance)}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                   <tfoot>
                     <tr className="border-t bg-slate-50 font-semibold text-slate-700">
@@ -471,7 +501,6 @@ function TrialBalanceDetailedPage({ language = "es" }) {
                       <td className="px-4 py-3 text-right">{formatAmount(report.totalOpeningBalance)}</td>
                       <td className="px-4 py-3 text-right">{formatAmount(report.totalPeriodDebit)}</td>
                       <td className="px-4 py-3 text-right">{formatAmount(report.totalPeriodCredit)}</td>
-                      <td className="px-4 py-3 text-right">{formatAmount(report.totalNetMovement)}</td>
                       <td className="px-4 py-3 text-right">{formatAmount(report.totalClosingBalance)}</td>
                     </tr>
                   </tfoot>
