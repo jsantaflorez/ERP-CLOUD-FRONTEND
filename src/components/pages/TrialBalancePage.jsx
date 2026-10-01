@@ -7,7 +7,7 @@ import { getApiErrorMessage } from "../../constants/apiErrors";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { addPdfReportHeader, addPdfRunningHeader, buildExcelHeaderRows, formatGeneratedAt, translateAccountClass } from "../../utils/reportExport";
+import { addPdfReportHeader, addPdfRunningHeader, buildExcelHeaderRows, formatGeneratedAt, translateAccountClass, todayLocalIso } from "../../utils/reportExport";
 
 // NEW (2026-09-08): second report screen, after Libro Auxiliar. Simpler
 // shape than the ledger -- one cut-off date, one flat list of every
@@ -16,7 +16,7 @@ import { addPdfReportHeader, addPdfRunningHeader, buildExcelHeaderRows, formatGe
 // reportExport.js header helpers so the exported PDF/Excel match every
 // other report in this section (company name + generation date/time).
 function TrialBalancePage({ language = "es" }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocalIso();
   const [asOfDate, setAsOfDate] = useState(today);
 
   const [report, setReport] = useState(null);

@@ -45,6 +45,23 @@ export function nowLocalIso() {
 }
 
 /**
+ * Same bug, different shape (found 2026-10-01 while fixing a related one in
+ * JournalEntryPage.jsx): several report filter screens default their
+ * date-range inputs to "today" via `new Date().toISOString().slice(0, 10)`.
+ * That's also always UTC, so near midnight for a user behind UTC (Colombia,
+ * UTC-5) it silently defaults to TOMORROW's date instead of today -- and on
+ * at least one screen (Balance General) it's also used as `max=` on a date
+ * input, which would even let the user pick a day ahead of their real
+ * "today". Use this instead of `new Date().toISOString().slice(0, 10)`
+ * anywhere "today" (date-only, no time) is needed.
+ */
+export function todayLocalIso() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
  * Writes a standard report header onto a jsPDF document at the given
  * (or default) starting Y position:
  *   Company Name        (bold, larger)

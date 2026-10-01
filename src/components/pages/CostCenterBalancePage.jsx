@@ -4,7 +4,7 @@ import Button from "../ui/Button";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
-import { formatGeneratedAt } from "../../utils/reportExport";
+import { formatGeneratedAt, todayLocalIso } from "../../utils/reportExport";
 
 // NEW (2026-09-21): third report screen, after Libro Auxiliar and Balance
 // de Comprobación. First built as a simple period-totals report (no
@@ -27,7 +27,7 @@ function CostCenterBalancePage({ language = "es" }) {
   const [costCenters, setCostCenters] = useState([]);
   const [loadingCatalogs, setLoadingCatalogs] = useState(false);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocalIso();
   const firstOfMonth = `${today.slice(0, 7)}-01`;
 
   const [filters, setFilters] = useState({

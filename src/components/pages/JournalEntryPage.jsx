@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
 import api from "../../services/api";
@@ -7,7 +7,9 @@ import { getApiErrorMessage } from "../../constants/apiErrors";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { addPdfReportHeader, addPdfRunningHeader, buildExcelHeaderRows, nowLocalIso } from "../../utils/reportExport";
+import { addPdfReportHeader, addPdfRunningHeader, buildExcelHeaderRows, nowLocalIso, todayLocalIso } from "../../utils/reportExport";
+import AccountQuickCreateModal from "../common/AccountQuickCreateModal";
+import CostCenterQuickCreateModal from "../common/CostCenterQuickCreateModal";
 
 // A brand-new line starts with both amounts empty -- the user picks either
 // a debit or a credit, never both (mirrors JournalEntryService's own rule).
@@ -21,7 +23,7 @@ const emptyItem = () => ({
 });
 
 const emptyForm = () => ({
-  entryDate: new Date().toISOString().slice(0, 10),
+  entryDate: todayLocalIso(),
   documentTypeId: "",
   description: "",
   items: [emptyItem(), emptyItem()],
@@ -41,7 +43,7 @@ const money = (n) =>
     maximumFractionDigits: 2,
   });
 
-function JournalEntryPage({ language = "es" }) {
+function JournalEntryPage({ language = "es", onDirtyChange }) {
   const [view, setView] = useState("list"); // "list" | "form"
 
   // List/search state
@@ -65,6 +67,12 @@ function JournalEntryPage({ language = "es" }) {
 
   // Form state
   const [form, setForm] = useState(emptyForm());
+  // NEW (2026-10-01): snapshot of `form` the last time it was in a known-
+  // clean state (a fresh blank form, or an entry freshly loaded for
+  // editing) -- compared against the live `form` below to tell whether
+  // the user has typed anything since, for the "unsaved changes" warning.
+  // A ref, not state: updating it must never itself trigger a re-render.
+  const pristineFormRef = useRef(JSON.stringify(emptyForm()));
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
@@ -111,12 +119,15 @@ function JournalEntryPage({ language = "es" }) {
       items: "Líneas del Asiento", addLine: "+ Agregar línea",
       removeLine: "Quitar",
       account: "Cuenta", selectAccount: "Seleccione una cuenta",
+      newAccountQuick: "Crear nueva cuenta",
       thirdParty: "Tercero", selectThirdParty: "Seleccione un tercero",
       costCenter: "Centro de Costo", selectCostCenter: "Seleccione un centro de costo",
+      newCostCenterQuick: "Crear nuevo centro de costo",
       debit: "Débito", credit: "Crédito", lineDescription: "Descripción (opcional)",
       totalDebitLabel: "Total Débitos:", totalCreditLabel: "Total Créditos:",
       difference: "Diferencia:", balanced: "Balanceado", unbalanced: "Descuadrado",
       save: "Guardar Asiento", cancel: "Cancelar", saving: "Guardando...",
+      unsavedChangesWarning: "Hay cambios sin guardar en este comprobante. ¿Desea salir de todos modos? Se perderán los datos digitados.",
       loadingCatalogs: "Cargando catálogos...",
       errorConn: "Error de conexión con el servidor.",
       successCreate: "¡Asiento contable creado!",
@@ -175,12 +186,15 @@ function JournalEntryPage({ language = "es" }) {
       items: "Entry Lines", addLine: "+ Add line",
       removeLine: "Remove",
       account: "Account", selectAccount: "Select an account",
+      newAccountQuick: "Create new account",
       thirdParty: "Third Party", selectThirdParty: "Select a third party",
       costCenter: "Cost Center", selectCostCenter: "Select a cost center",
+      newCostCenterQuick: "Create new cost center",
       debit: "Debit", credit: "Credit", lineDescription: "Description (optional)",
       totalDebitLabel: "Total Debits:", totalCreditLabel: "Total Credits:",
       difference: "Difference:", balanced: "Balanced", unbalanced: "Unbalanced",
       save: "Save Entry", cancel: "Cancel", saving: "Saving...",
+      unsavedChangesWarning: "This entry has unsaved changes. Leave anyway? The data you typed will be lost.",
       loadingCatalogs: "Loading catalogs...",
       errorConn: "Server connection error.",
       successCreate: "Journal entry created!",
@@ -501,7 +515,9 @@ function JournalEntryPage({ language = "es" }) {
   // ============================================================
 
   const openNewEntry = () => {
-    setForm(emptyForm());
+    const blank = emptyForm();
+    setForm(blank);
+    pristineFormRef.current = JSON.stringify(blank);
     setErrors({});
     setEditingId(null);
     setView("form");
@@ -533,7 +549,7 @@ function JournalEntryPage({ language = "es" }) {
     try {
       const response = await api.get(`/v1/journal-entries/${entry.id}`);
       const data = response.data?.data;
-      setForm({
+      const loadedForm = {
         entryDate: data.entryDate,
         documentTypeId: data.documentTypeId != null ? String(data.documentTypeId) : "",
         description: data.description || "",
@@ -545,7 +561,9 @@ function JournalEntryPage({ language = "es" }) {
           credit: item.credit ? String(item.credit) : "",
           description: item.description || "",
         })),
-      });
+      };
+      setForm(loadedForm);
+      pristineFormRef.current = JSON.stringify(loadedForm);
       setEditingId(entry.id);
     } catch (error) {
       showToast(getApiErrorMessage(error, language, t.errorConn), "error");
@@ -560,6 +578,50 @@ function JournalEntryPage({ language = "es" }) {
     setForm(emptyForm());
     setErrors({});
     setEditingId(null);
+  };
+
+  // NEW (2026-10-01): "unsaved changes" safety net (see pendientes.md) --
+  // a general-purpose backstop alongside the account/cost-center "+"
+  // buttons above, for any other way a comprobante being typed could get
+  // abandoned (closing the tab, or navigating to an unrelated screen via
+  // Dashboard's sidebar). Only meaningful while the form is actually open;
+  // comparing JSON strings is simple and plenty fast for a form this size.
+  const isDirty = view === "form" && JSON.stringify(form) !== pristineFormRef.current;
+
+  // Reports dirty state up to Dashboard, which guards its own sidebar
+  // navigation (and logout) the same way requestLeaveForm guards this
+  // page's own "volver al listado"/"cancelar". Also reports false on
+  // unmount, so a stale "dirty" never lingers once this page is gone.
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDirty]);
+
+  useEffect(() => {
+    return () => onDirtyChange?.(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Browser-level backstop for closing the tab/window outright -- modern
+  // browsers ignore the custom message and show their own generic one, but
+  // setting returnValue is still what triggers that native prompt at all.
+  useEffect(() => {
+    if (!isDirty) return;
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDirty]);
+
+  // Guards ONLY the two user-facing "leave the form" buttons (header's
+  // "Volver al listado" and the form's own "Cancelar") -- never used by
+  // handleSave()'s own internal call to the raw backToList() below, so a
+  // successful save never pops a spurious confirmation.
+  const requestLeaveForm = () => {
+    if (isDirty && !window.confirm(t.unsavedChangesWarning)) return;
+    backToList();
   };
 
   const handleHeaderChange = (e) => {
@@ -589,6 +651,24 @@ function JournalEntryPage({ language = "es" }) {
       items[index] = item;
       return { ...prev, items };
     });
+  };
+
+  // NEW (2026-10-01): called by the "+" quick-create modals (see
+  // AccountQuickCreateModal.jsx / CostCenterQuickCreateModal.jsx) after a
+  // successful save. Appends the new record to this page's own catalog
+  // state -- so it's immediately available in every line's dropdown, not
+  // just the one that opened the modal -- and auto-selects it on the
+  // specific line that triggered the create, via the same handleItemChange
+  // used for a normal manual selection (so the usual accountId-change
+  // side effect of clearing thirdPartyId/costCenterId still applies).
+  const handleAccountCreated = (index, newAccount) => {
+    setAccounts((prev) => [...prev, newAccount].sort((a, b) => a.code.localeCompare(b.code)));
+    handleItemChange(index, "accountId", String(newAccount.id));
+  };
+
+  const handleCostCenterCreated = (index, newCostCenter) => {
+    setCostCenters((prev) => [...prev, newCostCenter].sort((a, b) => a.code.localeCompare(b.code)));
+    handleItemChange(index, "costCenterId", String(newCostCenter.id));
   };
 
   const addLine = () => {
@@ -748,7 +828,7 @@ function JournalEntryPage({ language = "es" }) {
               <Button variant="primary" onClick={openNewEntry} title={`${t.newEntry} ${t.newShortcutHint}`}>{t.newEntry}</Button>
             </>
           ) : (
-            <Button variant="secondary" onClick={backToList}>{t.backToList}</Button>
+            <Button variant="secondary" onClick={requestLeaveForm}>{t.backToList}</Button>
           )
         }
       />
@@ -789,13 +869,18 @@ function JournalEntryPage({ language = "es" }) {
           activeThirdParties={activeThirdParties}
           activeCostCenters={activeCostCenters}
           accountById={accountById}
+          accounts={accounts}
+          costCenters={costCenters}
+          language={language}
           totals={totals}
           onHeaderChange={handleHeaderChange}
           onItemChange={handleItemChange}
           onAddLine={addLine}
           onRemoveLine={removeLine}
+          onAccountCreated={handleAccountCreated}
+          onCostCenterCreated={handleCostCenterCreated}
           onSubmit={handleSave}
-          onCancel={backToList}
+          onCancel={requestLeaveForm}
         />
       )}
 
@@ -966,9 +1051,18 @@ function JeListView({
 function JeFormView({
   t, form, errors, saving, loadingCatalogs, loadingEntry, isEditing,
   documentTypes, postableAccounts, activeThirdParties, activeCostCenters, accountById,
+  accounts, costCenters, language,
   totals, onHeaderChange, onItemChange, onAddLine, onRemoveLine, onSubmit, onCancel,
+  onAccountCreated, onCostCenterCreated,
 }) {
   const selectedDocType = documentTypes.find((d) => String(d.id) === String(form.documentTypeId));
+  // NEW (2026-10-01): tracks which item row's "+" button opened a
+  // quick-create modal (null = none open). Lives here, not in the parent,
+  // since it's pure "what's this form's UI currently showing" state --
+  // the parent only needs to know about the result (onAccountCreated /
+  // onCostCenterCreated), not which line is mid-creation.
+  const [accountModalIndex, setAccountModalIndex] = useState(null);
+  const [costCenterModalIndex, setCostCenterModalIndex] = useState(null);
 
   if (loadingEntry) {
     return (
@@ -979,6 +1073,7 @@ function JeFormView({
   }
 
   return (
+    <>
     <form onSubmit={onSubmit} className="space-y-6">
       {isEditing && (
         <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">{t.editingTitle}</h3>
@@ -1047,14 +1142,21 @@ function JeFormView({
                 return (
                   <tr key={index}>
                     <td className="px-3 py-2 align-top">
-                      <select value={item.accountId}
-                        onChange={(e) => onItemChange(index, "accountId", e.target.value)}
-                        className={jeInputCls(lineErr.accountId)}>
-                        <option value="">{t.selectAccount}</option>
-                        {postableAccounts.map((a) => (
-                          <option key={a.id} value={a.id}>{a.code} - {a.name}</option>
-                        ))}
-                      </select>
+                      <div className="flex gap-1">
+                        <select value={item.accountId}
+                          onChange={(e) => onItemChange(index, "accountId", e.target.value)}
+                          className={jeInputCls(lineErr.accountId)}>
+                          <option value="">{t.selectAccount}</option>
+                          {postableAccounts.map((a) => (
+                            <option key={a.id} value={a.id}>{a.code} - {a.name}</option>
+                          ))}
+                        </select>
+                        <button type="button" onClick={() => setAccountModalIndex(index)}
+                          title={t.newAccountQuick}
+                          className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 text-slate-400 hover:text-blue-600 hover:border-blue-300 text-lg leading-none">
+                          +
+                        </button>
+                      </div>
                       {lineErr.accountId && <p className="text-[10px] text-red-500 mt-1">{lineErr.accountId}</p>}
                       {lineErr.amount && <p className="text-[10px] text-red-500 mt-1">{lineErr.amount}</p>}
                     </td>
@@ -1078,14 +1180,21 @@ function JeFormView({
                     <td className="px-3 py-2 align-top">
                       {acc?.requiresCostCenter ? (
                         <>
-                          <select value={item.costCenterId}
-                            onChange={(e) => onItemChange(index, "costCenterId", e.target.value)}
-                            className={jeInputCls(lineErr.costCenterId)}>
-                            <option value="">{t.selectCostCenter}</option>
-                            {activeCostCenters.map((c) => (
-                              <option key={c.id} value={c.id}>{c.code} - {c.name}</option>
-                            ))}
-                          </select>
+                          <div className="flex gap-1">
+                            <select value={item.costCenterId}
+                              onChange={(e) => onItemChange(index, "costCenterId", e.target.value)}
+                              className={jeInputCls(lineErr.costCenterId)}>
+                              <option value="">{t.selectCostCenter}</option>
+                              {activeCostCenters.map((c) => (
+                                <option key={c.id} value={c.id}>{c.code} - {c.name}</option>
+                              ))}
+                            </select>
+                            <button type="button" onClick={() => setCostCenterModalIndex(index)}
+                              title={t.newCostCenterQuick}
+                              className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 text-slate-400 hover:text-blue-600 hover:border-blue-300 text-lg leading-none">
+                              +
+                            </button>
+                          </div>
                           {lineErr.costCenterId && <p className="text-[10px] text-red-500 mt-1">{lineErr.costCenterId}</p>}
                         </>
                       ) : (
@@ -1141,6 +1250,31 @@ function JeFormView({
         <Button type="button" variant="secondary" size="lg" onClick={onCancel}>{t.cancel}</Button>
       </div>
     </form>
+
+    {accountModalIndex !== null && (
+      <AccountQuickCreateModal
+        language={language}
+        rows={accounts}
+        onCreated={(newAccount) => {
+          onAccountCreated(accountModalIndex, newAccount);
+          setAccountModalIndex(null);
+        }}
+        onClose={() => setAccountModalIndex(null)}
+      />
+    )}
+
+    {costCenterModalIndex !== null && (
+      <CostCenterQuickCreateModal
+        language={language}
+        rows={costCenters}
+        onCreated={(newCostCenter) => {
+          onCostCenterCreated(costCenterModalIndex, newCostCenter);
+          setCostCenterModalIndex(null);
+        }}
+        onClose={() => setCostCenterModalIndex(null)}
+      />
+    )}
+    </>
   );
 }
 

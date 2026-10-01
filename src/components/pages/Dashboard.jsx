@@ -40,6 +40,31 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
   const reportsMenuExpanded = reportsMenuOpen || isReportView;
   const t = translations[language] || translations.es;
 
+  // NEW (2026-10-01): "unsaved changes" safety net (see pendientes.md).
+  // JournalEntryPage reports its own dirty state up here via onDirtyChange
+  // -- Dashboard doesn't know WHAT changed, only that navigating away from
+  // "journalEntry" right now would lose it. Every sidebar nav button (and
+  // logout) goes through the guards below instead of calling
+  // setActiveView/onLogout directly. Scoped to journalEntry only for now --
+  // no other screen reports a dirty state (see pendientes.md on why this
+  // was not extended to the simpler CRUD screens, which don't share
+  // JournalEntryPage's "lose a half-typed multi-line form" risk profile).
+  const [journalEntryDirty, setJournalEntryDirty] = useState(false);
+
+  const changeView = (view) => {
+    if (journalEntryDirty && activeView === "journalEntry" && view !== "journalEntry") {
+      if (!window.confirm(t.unsavedChangesWarning)) return;
+    }
+    setActiveView(view);
+  };
+
+  const handleLogout = () => {
+    if (journalEntryDirty && activeView === "journalEntry") {
+      if (!window.confirm(t.unsavedChangesWarning)) return;
+    }
+    onLogout();
+  };
+
   // Resolve role hierarchy dynamically supporting both legacy integers and enterprise string tokens
   const userLevel = user?.level;
   const isAuthorizedOperational = userLevel === "Administrator" || userLevel === "ADMIN" || (Number(userLevel) <= 3);
@@ -79,7 +104,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
           {/* NAVIGATION LINKS */}
           <nav className="flex flex-col gap-3">
             <button
-              onClick={() => setActiveView("dashboard")}
+              onClick={() => changeView("dashboard")}
               className={`rounded-xl px-4 py-3 text-left transition-colors ${
                 activeView === "dashboard" ? "bg-blue-600" : "bg-slate-800 hover:bg-slate-700"
               }`}
@@ -90,7 +115,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
             {isAuthorizedOperational && (
               <>
                 <button
-                  onClick={() => setActiveView("journalEntry")}
+                  onClick={() => changeView("journalEntry")}
                   className={`rounded-xl px-4 py-3 text-left transition-colors ${
                     activeView === "journalEntry" ? "bg-blue-600" : "bg-slate-800 hover:bg-slate-700"
                   }`}
@@ -99,7 +124,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
                 </button>
 
                 <button
-                  onClick={() => setActiveView("documentType")}
+                  onClick={() => changeView("documentType")}
                   className={`rounded-xl px-4 py-3 text-left transition-colors ${
                     activeView === "documentType" ? "bg-blue-600" : "bg-slate-800 hover:bg-slate-700"
                   }`}
@@ -108,7 +133,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
                 </button>
 
                 <button
-                  onClick={() => setActiveView("costCenter")}
+                  onClick={() => changeView("costCenter")}
                   className={`rounded-xl px-4 py-3 text-left transition-colors ${
                     activeView === "costCenter" ? "bg-blue-600" : "bg-slate-800 hover:bg-slate-700"
                   }`}
@@ -117,7 +142,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
                 </button>
 
                 <button
-                  onClick={() => setActiveView("chartOfAccount")}
+                  onClick={() => changeView("chartOfAccount")}
                   className={`rounded-xl px-4 py-3 text-left transition-colors ${
                     activeView === "chartOfAccount" ? "bg-blue-600" : "bg-slate-800 hover:bg-slate-700"
                   }`}
@@ -126,7 +151,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
                 </button>
 
                 <button
-                  onClick={() => setActiveView("tax")}
+                  onClick={() => changeView("tax")}
                   className={`rounded-xl px-4 py-3 text-left transition-colors ${
                     activeView === "tax" ? "bg-blue-600" : "bg-slate-800 hover:bg-slate-700"
                   }`}
@@ -135,7 +160,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
                 </button>
 
                 <button
-                  onClick={() => setActiveView("thirdParties")}
+                  onClick={() => changeView("thirdParties")}
                   className={`rounded-xl px-4 py-3 text-left transition-colors ${
                     activeView === "thirdParties" ? "bg-blue-600" : "bg-slate-800 hover:bg-slate-700"
                   }`}
@@ -164,7 +189,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
                   {reportsMenuExpanded && (
                     <div className="mt-1 flex flex-col gap-1 pl-3">
                       <button
-                        onClick={() => setActiveView("auxiliaryLedger")}
+                        onClick={() => changeView("auxiliaryLedger")}
                         className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
                           activeView === "auxiliaryLedger" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
                         }`}
@@ -172,7 +197,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
                         {t.navAuxiliaryLedger}
                       </button>
                       <button
-                        onClick={() => setActiveView("trialBalance")}
+                        onClick={() => changeView("trialBalance")}
                         className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
                           activeView === "trialBalance" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
                         }`}
@@ -180,7 +205,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
                         {t.navTrialBalance}
                       </button>
                       <button
-                        onClick={() => setActiveView("balanceSheet")}
+                        onClick={() => changeView("balanceSheet")}
                         className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
                           activeView === "balanceSheet" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
                         }`}
@@ -188,7 +213,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
                         {t.navBalanceSheet}
                       </button>
                       <button
-                        onClick={() => setActiveView("trialBalanceDetailed")}
+                        onClick={() => changeView("trialBalanceDetailed")}
                         className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
                           activeView === "trialBalanceDetailed" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
                         }`}
@@ -196,7 +221,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
                         {t.navTrialBalanceDetailed}
                       </button>
                       <button
-                        onClick={() => setActiveView("costCenterBalance")}
+                        onClick={() => changeView("costCenterBalance")}
                         className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
                           activeView === "costCenterBalance" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
                         }`}
@@ -204,7 +229,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
                         {t.navCostCenterBalance}
                       </button>
                       <button
-                        onClick={() => setActiveView("thirdPartyBalance")}
+                        onClick={() => changeView("thirdPartyBalance")}
                         className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
                           activeView === "thirdPartyBalance" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
                         }`}
@@ -220,7 +245,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
             {isAuthorizedManagement && (
               <>
                 <button
-                  onClick={() => setActiveView("accountingPeriod")}
+                  onClick={() => changeView("accountingPeriod")}
                   className={`rounded-xl px-4 py-3 text-left transition-colors ${
                     activeView === "accountingPeriod" ? "bg-blue-600" : "bg-slate-800 hover:bg-slate-700"
                   }`}
@@ -229,7 +254,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
                 </button>
 
                 <button
-                  onClick={() => setActiveView("users")}
+                  onClick={() => changeView("users")}
                   className={`rounded-xl px-4 py-3 text-left transition-colors ${
                     activeView === "users" ? "bg-blue-600" : "bg-slate-800 hover:bg-slate-700"
                   }`}
@@ -243,7 +268,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
 
         {/* SESSION LOGOUT */}
         <button
-          onClick={onLogout}
+          onClick={handleLogout}
           className="rounded-xl bg-red-600 px-4 py-3 font-medium transition-colors hover:bg-red-700"
         >
           {t.logout}
@@ -270,7 +295,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
         )}
 
         {activeView === "journalEntry" && (
-          <JournalEntryPage language={language} />
+          <JournalEntryPage language={language} onDirtyChange={setJournalEntryDirty} />
         )}
 
         {activeView === "documentType" && (

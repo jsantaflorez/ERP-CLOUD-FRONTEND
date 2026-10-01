@@ -13,6 +13,7 @@ import {
   buildExcelHeaderRows,
   formatGeneratedAt,
   translateAccountClass,
+  todayLocalIso,
 } from "../../utils/reportExport";
 
 // NEW (2026-09-08): fourth and last of the originally-planned report
@@ -23,7 +24,7 @@ import {
 // getAccountClassDisplay() already returns bare codes for both Trial
 // Balance reports, so no further backend change was needed here.
 function TrialBalanceDetailedPage({ language = "es" }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocalIso();
   const firstOfMonth = `${today.slice(0, 7)}-01`;
 
   const [startDate, setStartDate] = useState(firstOfMonth);

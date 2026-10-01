@@ -7,7 +7,7 @@ import { getApiErrorMessage } from "../../constants/apiErrors";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { addPdfReportHeader, addPdfRunningHeader, buildExcelHeaderRows, formatGeneratedAt } from "../../utils/reportExport";
+import { addPdfReportHeader, addPdfRunningHeader, buildExcelHeaderRows, formatGeneratedAt, todayLocalIso } from "../../utils/reportExport";
 
 // NEW (2026-09-08): first report screen wired into the frontend. The
 // backend has had /v1/reports/auxiliary-ledger (and 3 other report
@@ -22,7 +22,7 @@ function AuxiliaryLedgerPage({ language = "es" }) {
   const [accounts, setAccounts] = useState([]);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocalIso();
   const firstOfMonth = `${today.slice(0, 7)}-01`;
 
   const [filters, setFilters] = useState({

@@ -28,6 +28,7 @@ const translations = {
     navJournalEntry: "Asientos Contables",
     navAccountingPeriod: "Períodos Contables",
     navUsers: "Usuarios",
+    unsavedChangesWarning: "Hay cambios sin guardar en el comprobante. ¿Desea salir de todos modos? Se perderán los datos digitados.",
   },
 
   en: {
@@ -59,6 +60,7 @@ const translations = {
     navJournalEntry: "Journal Entries",
     navAccountingPeriod: "Accounting Periods",
     navUsers: "Users",
+    unsavedChangesWarning: "This entry has unsaved changes. Leave anyway? The data you typed will be lost.",
   },
 };
 

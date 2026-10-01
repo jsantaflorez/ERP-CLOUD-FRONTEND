@@ -13,6 +13,7 @@ import {
   addPdfSignatureLines,
   buildExcelHeaderRows,
   formatGeneratedAt,
+  todayLocalIso,
 } from "../../utils/reportExport";
 
 // NEW (2026-09-08): third report screen, after Libro Auxiliar and Balance
@@ -24,7 +25,7 @@ import {
 // can be eyeballed against each other the way a printed balance sheet
 // reads.
 function BalanceSheetPage({ language = "es" }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocalIso();
   const [asOfDate, setAsOfDate] = useState(today);
 
   const [report, setReport] = useState(null);
