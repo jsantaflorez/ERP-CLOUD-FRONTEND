@@ -7,7 +7,7 @@ import { getApiErrorMessage } from "../../constants/apiErrors";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { addPdfReportHeader, addPdfRunningHeader, buildExcelHeaderRows } from "../../utils/reportExport";
+import { addPdfReportHeader, addPdfRunningHeader, buildExcelHeaderRows, nowLocalIso } from "../../utils/reportExport";
 
 // A brand-new line starts with both amounts empty -- the user picks either
 // a debit or a credit, never both (mirrors JournalEntryService's own rule).
@@ -128,6 +128,9 @@ function JournalEntryPage({ language = "es" }) {
       unbalancedError: "El asiento no está balanceado. Los débitos deben ser iguales a los créditos.",
       detailTitle: "Detalle del Asiento",
       close: "Cerrar",
+      printPdf: "Imprimir PDF",
+      voucherTitle: "Comprobante Contable",
+      printedAtLabel: "Impreso",
       noThirdParty: "— Sin tercero —", noCostCenter: "— Sin centro de costo —",
       documentTypeHint: "Próximo número",
       edit: "Editar", annul: "Anular",
@@ -189,6 +192,9 @@ function JournalEntryPage({ language = "es" }) {
       unbalancedError: "The entry is unbalanced. Debits must equal credits.",
       detailTitle: "Entry Detail",
       close: "Close",
+      printPdf: "Print PDF",
+      voucherTitle: "Accounting Voucher",
+      printedAtLabel: "Printed",
       noThirdParty: "— No third party —", noCostCenter: "— No cost center —",
       documentTypeHint: "Next number",
       edit: "Edit", annul: "Annul",
@@ -384,7 +390,7 @@ function JournalEntryPage({ language = "es" }) {
         reportTitle: t.exportTitle,
         period: exportFilterSummary(),
         generatedAtLabel: t.generatedAt,
-        generatedAt: new Date().toISOString(),
+        generatedAt: nowLocalIso(),
       };
 
       let grandDebit = 0;
@@ -437,7 +443,7 @@ function JournalEntryPage({ language = "es" }) {
         reportTitle: t.exportTitle,
         period: exportFilterSummary(),
         generatedAtLabel: t.generatedAt,
-        generatedAt: new Date().toISOString(),
+        generatedAt: nowLocalIso(),
       };
 
       const cursorY = addPdfReportHeader(doc, headerInfo);
@@ -794,7 +800,13 @@ function JournalEntryPage({ language = "es" }) {
       )}
 
       {viewingEntry && (
-        <JeDetailModal t={t} entry={viewingEntry} onClose={() => setViewingEntry(null)} />
+        <JeDetailModal
+          t={t}
+          entry={viewingEntry}
+          documentTypeLabel={documentTypeLabel}
+          companyName={activeTenantId}
+          onClose={() => setViewingEntry(null)}
+        />
       )}
 
       {annulTarget && (
@@ -1136,9 +1148,82 @@ function JeFormView({
 // Read-only detail modal
 // ============================================================
 
-function JeDetailModal({ t, entry, onClose }) {
+function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose }) {
   const totalDebit = (entry.items || []).reduce((s, i) => s + (i.debit || 0), 0);
   const totalCredit = (entry.items || []).reduce((s, i) => s + (i.credit || 0), 0);
+
+  // NEW (2026-09-30): print the voucher as a standalone PDF, launched from
+  // inside "Ver" rather than a separate button on the list row -- opening
+  // the detail first is the natural review-before-printing step, and it
+  // avoids a fourth button crowding Ver/Editar/Anular on narrow screens
+  // (see pendientes.md for the fuller reasoning). No signature lines --
+  // this isn't handed to someone else to sign, just the voucher for the
+  // user's own record. The only timestamp is when it was PRINTED, taken
+  // client-side at the moment of the click (there's no server-side
+  // "generation" step to date instead, unlike the list's own PDF export).
+  const handlePrintPdf = () => {
+    const doc = new jsPDF({ orientation: "landscape" });
+
+    const headerInfo = {
+      companyName,
+      reportTitle: `${t.voucherTitle} — ${entry.documentNumber}`,
+      period: [entry.entryDate, documentTypeLabel(entry)].filter(Boolean).join("   ·   "),
+      generatedAtLabel: t.printedAtLabel,
+      generatedAt: nowLocalIso(),
+    };
+
+    let cursorY = addPdfReportHeader(doc, headerInfo);
+
+    if (entry.description) {
+      doc.setFontSize(9);
+      doc.setTextColor(60);
+      doc.text(entry.description, 14, cursorY);
+      doc.setTextColor(0);
+      cursorY += 6;
+    }
+
+    if (entry.annulled) {
+      doc.setFontSize(9);
+      doc.setTextColor(185, 28, 28);
+      doc.text(`${t.annulled}${entry.annulmentReason ? `: ${entry.annulmentReason}` : ""}`, 14, cursorY);
+      doc.setTextColor(0);
+      cursorY += 6;
+    }
+
+    const body = (entry.items || []).map((item) => [
+      `${item.accountCode} - ${item.accountName}`,
+      item.thirdPartyName || "—",
+      item.costCenterName || "—",
+      money(item.debit),
+      money(item.credit),
+    ]);
+    body.push([t.totalsRow, "", "", money(totalDebit), money(totalCredit)]);
+
+    // Same "continuation pages get a running header too" pattern used by
+    // every other PDF export in this app -- a voucher is usually short,
+    // but a long multi-line entry can still overflow one page.
+    const pageBeforeTable = doc.internal.getCurrentPageInfo().pageNumber;
+
+    autoTable(doc, {
+      startY: cursorY,
+      head: [[t.account, t.thirdParty, t.costCenter, t.debit, t.credit]],
+      body,
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [30, 41, 59] },
+      columnStyles: {
+        3: { halign: "right" },
+        4: { halign: "right" },
+      },
+      margin: { top: 20, bottom: 15 },
+      didDrawPage: (data) => {
+        if (data.pageNumber > pageBeforeTable) {
+          addPdfRunningHeader(doc, headerInfo);
+        }
+      },
+    });
+
+    doc.save(`${t.voucherTitle.replace(/\s+/g, "_")}_${entry.documentNumber}.pdf`);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -1190,7 +1275,8 @@ function JeDetailModal({ t, entry, onClose }) {
           </table>
         </div>
 
-        <div className="px-8 pb-6">
+        <div className="px-8 pb-6 flex gap-3">
+          <Button variant="primary" onClick={handlePrintPdf}>{t.printPdf}</Button>
           <Button variant="secondary" onClick={onClose}>{t.close}</Button>
         </div>
       </div>

@@ -25,6 +25,26 @@ export function formatGeneratedAt(generatedAt) {
 }
 
 /**
+ * Returns the current moment as a naive "YYYY-MM-DDTHH:mm:ss" string in
+ * the BROWSER'S OWN local time zone -- this is the shape formatGeneratedAt()
+ * above expects, the same shape Spring sends for a LocalDateTime field
+ * (which has no time zone of its own; it's already the server's local
+ * time, as-is). `new Date().toISOString()` looks like the obvious way to
+ * stamp "now" but always converts to UTC first, which silently shows the
+ * wrong hour -- and can even roll over to the wrong day near midnight --
+ * for anyone not in UTC. Found 2026-10-01: the Journal Entry voucher's
+ * printed-at timestamp showed "00:xx" for a user several hours behind
+ * UTC. Use this instead of `new Date().toISOString()` for any
+ * client-side-generated timestamp meant to be shown via
+ * formatGeneratedAt() / addPdfReportHeader() / addPdfRunningHeader().
+ */
+export function nowLocalIso() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/**
  * Writes a standard report header onto a jsPDF document at the given
  * (or default) starting Y position:
  *   Company Name        (bold, larger)
