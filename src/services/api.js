@@ -5,7 +5,7 @@ import { getActiveSession } from './tenantSession';
  * Configure the central Axios instance pointing to the Spring Boot backend API.
  */
 const api = axios.create({
-  baseURL: 'http://localhost:8080/api', // Adjust if your Spring Boot port differs
+  baseURL: 'http://localhost:8081/api', // NOTE (2026-10-06): 8080 is taken by another local project on this machine -- backend now runs on 8081, see erp-cloud/application-local.properties.
   headers: {
     'Content-Type': 'application/json',
   },
