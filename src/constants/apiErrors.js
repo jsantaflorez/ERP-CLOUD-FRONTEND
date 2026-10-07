@@ -57,6 +57,14 @@ export const API_ERROR_LABELS = {
     INVALID_YEAR: "El año no es válido.",
     INVALID_MONTH: "El mes no es válido.",
     MONTHS_NOT_CLOSED_BEFORE_YEAR_END: "No se puede cerrar el año fiscal: primero debes cerrar individualmente todos los meses de enero a noviembre.",
+    // Cierre de Año (AccountingPeriodService.closeYear/reopenYear) -- NEW (2026-10-03)
+    GAIN_LOSS_ACCOUNTS_MUST_DIFFER: "La cuenta de Ganancia y la de Pérdida deben ser diferentes.",
+    CLOSING_ACCOUNT_REQUIRED: "Debes seleccionar la cuenta de Ganancia y la cuenta de Pérdida.",
+    INVALID_CLOSING_ACCOUNT: "La cuenta seleccionada no es válida. Debe ser una cuenta de movimiento de Patrimonio (clase 3) de esta compañía.",
+    CLOSING_ACCOUNT_CANNOT_REQUIRE_DIMENSIONS: "La cuenta elegida no puede exigir Tercero ni Centro de Costo: la línea de cierre contra ella siempre es consolidada.",
+    RESULT_ACCOUNTS_MISSING_THIRD_PARTY_OR_COST_CENTER: "No se puede cerrar el año automáticamente: hay cuentas de resultado que exigen Tercero o Centro de Costo con movimientos que no lo tienen. Corrige esos movimientos antes de cerrar.",
+    PRIOR_YEAR_NOT_CLOSED: "No se puede cerrar este año: el año anterior debe cerrarse primero.",
+    NEXT_YEAR_MUST_BE_OPEN_BEFORE_REOPEN: "No se puede reabrir este año porque el año siguiente todavía está cerrado. Reabre primero el año siguiente.",
   },
   en: {
     DUPLICATE_VALUE: "A record with this value already exists. Check the code or identifier.",
@@ -101,6 +109,14 @@ export const API_ERROR_LABELS = {
     INVALID_YEAR: "The year is not valid.",
     INVALID_MONTH: "The month is not valid.",
     MONTHS_NOT_CLOSED_BEFORE_YEAR_END: "Can't close the fiscal year: every month from January to November must be closed individually first.",
+    // Cierre de Año (AccountingPeriodService.closeYear/reopenYear) -- NEW (2026-10-03)
+    GAIN_LOSS_ACCOUNTS_MUST_DIFFER: "The Gain and Loss accounts must be different.",
+    CLOSING_ACCOUNT_REQUIRED: "You must select both the Gain account and the Loss account.",
+    INVALID_CLOSING_ACCOUNT: "The selected account isn't valid. It must be a posting Equity account (class 3) belonging to this company.",
+    CLOSING_ACCOUNT_CANNOT_REQUIRE_DIMENSIONS: "The chosen account can't require a Third Party or Cost Center: its closing line is always a single consolidated amount.",
+    RESULT_ACCOUNTS_MISSING_THIRD_PARTY_OR_COST_CENTER: "Can't close the year automatically: some result accounts require a Third Party or Cost Center and have movements missing one. Fix those movements before closing.",
+    PRIOR_YEAR_NOT_CLOSED: "Can't close this year: the prior year must be closed first.",
+    NEXT_YEAR_MUST_BE_OPEN_BEFORE_REOPEN: "Can't reopen this year because the following year is still closed. Reopen the following year first.",
   },
 };
 

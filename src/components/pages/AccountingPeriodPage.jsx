@@ -12,6 +12,19 @@ function AccountingPeriodPage({ language = "es" }) {
   const [loading, setLoading]     = useState(false);
   const [toast, setToast]         = useState(null);
 
+  // Ganancia/Pérdida account picklist + company-level suggestion for the
+  // year-end closing screen, loaded once on mount (GET
+  // /v1/accounting-periods/closing-options) and reused by both the
+  // "Cerrar Año Fiscal" panel (pre-fills from suggestedGain/LossAccountId)
+  // and the "Cuentas de Cierre por Defecto" panel (same equityAccounts
+  // picklist, different purpose: editing the company-level suggestion
+  // itself, not closing a specific year).
+  const [closingOptions, setClosingOptions] = useState({
+    equityAccounts: [],
+    suggestedGainAccountId: null,
+    suggestedLossAccountId: null,
+  });
+
   // "Cerrar Mes" panel
   const [closeMonthOpen, setCloseMonthOpen]     = useState(false);
   const [closeMonthForm, setCloseMonthForm]     = useState(defaultMonthForm());
@@ -32,6 +45,14 @@ function AccountingPeriodPage({ language = "es" }) {
   const [reopenError, setReopenError]   = useState("");
   const [savingReopen, setSavingReopen] = useState(false);
 
+  // "Cuentas de Cierre por Defecto" panel (company-level suggestion,
+  // PATCH /v1/companies/me/closing-defaults) -- NEW (2026-10-05).
+  const [closingDefaultsOpen, setClosingDefaultsOpen]     = useState(false);
+  const [closingDefaultsForm, setClosingDefaultsForm]     = useState({ defaultGainAccountId: "", defaultLossAccountId: "" });
+  const [closingDefaultsErrors, setClosingDefaultsErrors] = useState({});
+  const [loadingClosingDefaults, setLoadingClosingDefaults] = useState(false);
+  const [savingClosingDefaults, setSavingClosingDefaults]   = useState(false);
+
   const { session } = useAuth();
   const activeTenantId = session.companyName || session.companyId;
 
@@ -43,9 +64,11 @@ function AccountingPeriodPage({ language = "es" }) {
       closeYear: "Cerrar Año Fiscal",
       reopenMonth: "Reabrir Mes",
       reopenYear: "Reabrir Año",
+      closingDefaultsBtn: "Cuentas de Cierre",
       period: "Período", status: "Estado", yearSeal: "Cierre Anual",
       closedBy: "Cerrado por", closedAt: "Cerrado el", closingNotes: "Notas de Cierre",
       reopenedBy: "Reabierto por", reopenedAt: "Reabierto el", reopeningNotes: "Notas de Reapertura",
+      closingVoucher: "Comprobante de Cierre",
       actions: "Acciones",
       open: "Abierto", closed: "Cerrado", yes: "Sí", no: "No",
       noResults: "No hay períodos cerrados todavía.",
@@ -64,15 +87,27 @@ function AccountingPeriodPage({ language = "es" }) {
       reopenYearTitle: "Reabrir Año Fiscal",
       reopenYearHint: "Quita el sello anual. Los meses cerrados individualmente permanecen cerrados.",
       confirmCloseMonth: "¿Cerrar este período? No se podrán contabilizar asientos en esa fecha hasta que se reabra.",
-      confirmCloseYear: "¿Cerrar el año fiscal completo? No se podrá contabilizar en ningún mes de ese año hasta que se reabra.",
+      confirmCloseYear: "¿Cerrar el año fiscal completo? El sistema generará automáticamente el comprobante de cierre. No se podrá contabilizar en ningún mes de ese año hasta que se reabra.",
       confirmReopenMonth: "¿Reabrir este período?",
-      confirmReopenYear: "¿Reabrir el año fiscal completo?",
+      confirmReopenYear: "¿Reabrir el año fiscal completo? Esto anula el comprobante de cierre generado (no lo borra).",
       successCloseMonth: "Período cerrado.",
       successCloseYear: "Año fiscal cerrado.",
+      successCloseYearWithVoucher: (doc) => `Año fiscal cerrado. Comprobante de cierre: ${doc}.`,
       successReopenMonth: "Período reabierto.",
       successReopenYear: "Año fiscal reabierto.",
       errorConn: "Error de conexión con el servidor.",
       monthNames: ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"],
+      // Ganancia/Pérdida dropdowns (year-end closing) -- NEW (2026-10-05)
+      gainAccount: "Cuenta de Ganancia",
+      lossAccount: "Cuenta de Pérdida",
+      selectAccount: "Selecciona una cuenta...",
+      gainLossMustDiffer: "La cuenta de Ganancia y la de Pérdida deben ser diferentes.",
+      noEquityAccounts: "No hay cuentas auxiliares de Patrimonio (clase 3) configuradas todavía. Crea al menos dos en Plan de Cuentas antes de cerrar el año.",
+      closingDefaultsTitle: "Cuentas de Cierre por Defecto",
+      closingDefaultsHint: "Sugerencia de cuenta de Ganancia/Pérdida que se precarga al cerrar cualquier año. Se puede confirmar o cambiar para cada año específico al momento de cerrarlo — esto solo guarda la sugerencia de la compañía.",
+      noSuggestion: "Sin sugerencia",
+      successClosingDefaults: "Cuentas de cierre por defecto actualizadas.",
+      loadingClosingDefaults: "Cargando...",
     },
     en: {
       title: "Accounting Periods",
@@ -81,9 +116,11 @@ function AccountingPeriodPage({ language = "es" }) {
       closeYear: "Close Fiscal Year",
       reopenMonth: "Reopen Month",
       reopenYear: "Reopen Year",
+      closingDefaultsBtn: "Closing Accounts",
       period: "Period", status: "Status", yearSeal: "Year Seal",
       closedBy: "Closed By", closedAt: "Closed At", closingNotes: "Closing Notes",
       reopenedBy: "Reopened By", reopenedAt: "Reopened At", reopeningNotes: "Reopening Notes",
+      closingVoucher: "Closing Voucher",
       actions: "Actions",
       open: "Open", closed: "Closed", yes: "Yes", no: "No",
       noResults: "No periods have been closed yet.",
@@ -102,15 +139,26 @@ function AccountingPeriodPage({ language = "es" }) {
       reopenYearTitle: "Reopen Fiscal Year",
       reopenYearHint: "Removes the annual seal. Individually closed months remain closed.",
       confirmCloseMonth: "Close this period? No entries can be posted to that date until it's reopened.",
-      confirmCloseYear: "Close the entire fiscal year? No month in that year can receive postings until it's reopened.",
+      confirmCloseYear: "Close the entire fiscal year? The system will automatically generate the closing voucher. No month in that year can receive postings until it's reopened.",
       confirmReopenMonth: "Reopen this period?",
-      confirmReopenYear: "Reopen the entire fiscal year?",
+      confirmReopenYear: "Reopen the entire fiscal year? This annuls the generated closing voucher (never deletes it).",
       successCloseMonth: "Period closed.",
       successCloseYear: "Fiscal year closed.",
+      successCloseYearWithVoucher: (doc) => `Fiscal year closed. Closing voucher: ${doc}.`,
       successReopenMonth: "Period reopened.",
       successReopenYear: "Fiscal year reopened.",
       errorConn: "Server connection error.",
       monthNames: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+      gainAccount: "Gain Account",
+      lossAccount: "Loss Account",
+      selectAccount: "Select an account...",
+      gainLossMustDiffer: "The Gain and Loss accounts must be different.",
+      noEquityAccounts: "No posting Equity accounts (class 3) are configured yet. Create at least two in Chart of Accounts before closing the year.",
+      closingDefaultsTitle: "Default Closing Accounts",
+      closingDefaultsHint: "Suggested Gain/Loss account pre-filled whenever any year is closed. It can still be confirmed or changed for each specific year at closing time -- this only saves the company's suggestion.",
+      noSuggestion: "No suggestion",
+      successClosingDefaults: "Default closing accounts updated.",
+      loadingClosingDefaults: "Loading...",
     },
   }[language];
 
@@ -133,8 +181,28 @@ function AccountingPeriodPage({ language = "es" }) {
     }
   };
 
+  // NEW (2026-10-05): Ganancia/Pérdida picklist + company suggestion for
+  // the year-end closing screen. Loaded once on mount, independent of
+  // whether the user ever opens the closing panel -- cheap, and it needs
+  // to be ready the instant "Cerrar Año Fiscal" opens so the two dropdowns
+  // aren't empty while a second request is still in flight.
+  const loadClosingOptions = async () => {
+    try {
+      const response = await api.get("/v1/accounting-periods/closing-options");
+      if (response.data && response.data.success) {
+        setClosingOptions(response.data.data);
+      }
+    } catch {
+      // Silent: the closing screen still works with empty dropdowns (the
+      // user just has to pick manually), and the error would otherwise
+      // fire on every page load for companies with no chart of accounts
+      // configured yet.
+    }
+  };
+
   useEffect(() => {
     loadPeriods();
+    loadClosingOptions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -197,7 +265,14 @@ function AccountingPeriodPage({ language = "es" }) {
 
   // ── Cerrar Año Fiscal ───────────────────────────────────────────────
   const openCloseYearPanel = () => {
-    setCloseYearForm(defaultYearForm());
+    // Pre-fill from the company's suggested accounts (if configured) --
+    // the user still confirms or changes them before submitting, nothing
+    // here is force-selected or hidden from them.
+    setCloseYearForm({
+      ...defaultYearForm(),
+      gainAccountId: closingOptions.suggestedGainAccountId ? String(closingOptions.suggestedGainAccountId) : "",
+      lossAccountId: closingOptions.suggestedLossAccountId ? String(closingOptions.suggestedLossAccountId) : "",
+    });
     setCloseYearErrors({});
     setCloseYearOpen(true);
   };
@@ -213,6 +288,15 @@ function AccountingPeriodPage({ language = "es" }) {
     const year = Number(closeYearForm.year);
     if (!closeYearForm.year || isNaN(year) || year < 1900 || year > 2100) errs.year = t.yearInvalid;
     if (!closeYearForm.notes?.trim()) errs.notes = t.required;
+    if (!closeYearForm.gainAccountId) errs.gainAccountId = t.required;
+    if (!closeYearForm.lossAccountId) errs.lossAccountId = t.required;
+    if (
+      closeYearForm.gainAccountId &&
+      closeYearForm.lossAccountId &&
+      closeYearForm.gainAccountId === closeYearForm.lossAccountId
+    ) {
+      errs.lossAccountId = t.gainLossMustDiffer;
+    }
     setCloseYearErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -226,10 +310,15 @@ function AccountingPeriodPage({ language = "es" }) {
     try {
       const response = await api.post(
         `/v1/accounting-periods/${closeYearForm.year}/close-year`,
-        { notes: closeYearForm.notes.trim() }
+        {
+          notes: closeYearForm.notes.trim(),
+          gainAccountId: Number(closeYearForm.gainAccountId),
+          lossAccountId: Number(closeYearForm.lossAccountId),
+        }
       );
       if (response.data && response.data.success) {
-        showToast(t.successCloseYear);
+        const doc = response.data.data?.closingEntryDocumentNumber;
+        showToast(doc ? t.successCloseYearWithVoucher(doc) : t.successCloseYear);
         closeCloseYearPanel();
         loadPeriods();
       } else {
@@ -294,6 +383,78 @@ function AccountingPeriodPage({ language = "es" }) {
     }
   };
 
+  // ── Cuentas de Cierre por Defecto (compañía) ────────────────────────
+  // NEW (2026-10-05): PATCH /v1/companies/me/closing-defaults. Lazily
+  // loads the company's current defaults only when this panel is opened
+  // (unlike closingOptions, which loads on mount because the close-year
+  // panel needs it ready immediately).
+  const openClosingDefaultsPanel = async () => {
+    setClosingDefaultsOpen(true);
+    setClosingDefaultsErrors({});
+    setLoadingClosingDefaults(true);
+    try {
+      const response = await api.get("/v1/companies/me");
+      const company = response.data?.data;
+      setClosingDefaultsForm({
+        defaultGainAccountId: company?.defaultGainAccountId ? String(company.defaultGainAccountId) : "",
+        defaultLossAccountId: company?.defaultLossAccountId ? String(company.defaultLossAccountId) : "",
+      });
+    } catch (error) {
+      showToast(getApiErrorMessage(error, language, t.errorConn), "error");
+    } finally {
+      setLoadingClosingDefaults(false);
+    }
+  };
+  const closeClosingDefaultsPanel = () => setClosingDefaultsOpen(false);
+
+  const handleClosingDefaultsChange = (e) => {
+    const { name, value } = e.target;
+    setClosingDefaultsForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const validateClosingDefaultsForm = () => {
+    const errs = {};
+    // Both fields are optional (empty = "no suggestion yet") -- the rule
+    // only applies once two concrete accounts are actually chosen, same
+    // as the backend's check in CompanyService.updateClosingDefaults().
+    if (
+      closingDefaultsForm.defaultGainAccountId &&
+      closingDefaultsForm.defaultLossAccountId &&
+      closingDefaultsForm.defaultGainAccountId === closingDefaultsForm.defaultLossAccountId
+    ) {
+      errs.defaultLossAccountId = t.gainLossMustDiffer;
+    }
+    setClosingDefaultsErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const submitClosingDefaults = async (e) => {
+    e.preventDefault();
+    if (!validateClosingDefaultsForm()) return;
+    setSavingClosingDefaults(true);
+    try {
+      const response = await api.patch("/v1/companies/me/closing-defaults", {
+        defaultGainAccountId: closingDefaultsForm.defaultGainAccountId
+          ? Number(closingDefaultsForm.defaultGainAccountId)
+          : null,
+        defaultLossAccountId: closingDefaultsForm.defaultLossAccountId
+          ? Number(closingDefaultsForm.defaultLossAccountId)
+          : null,
+      });
+      if (response.data && response.data.success) {
+        showToast(t.successClosingDefaults);
+        closeClosingDefaultsPanel();
+        loadClosingOptions(); // refresh suggestions used by "Cerrar Año Fiscal"
+      } else {
+        showToast(getApiErrorMessage({ response }, language, t.errorConn), "error");
+      }
+    } catch (error) {
+      showToast(getApiErrorMessage(error, language, t.errorConn), "error");
+    } finally {
+      setSavingClosingDefaults(false);
+    }
+  };
+
   const sortedPeriods = useMemo(
     () => [...periods].sort((a, b) => (b.year - a.year) || (b.month - a.month)),
     [periods]
@@ -315,6 +476,9 @@ function AccountingPeriodPage({ language = "es" }) {
         tenantId={activeTenantId}
         actions={
           <>
+            <Button variant="ghost" onClick={openClosingDefaultsPanel}>
+              ⚙ {t.closingDefaultsBtn}
+            </Button>
             <Button variant="secondary" onClick={openCloseYearPanel}>
               {t.closeYear}
             </Button>
@@ -336,7 +500,7 @@ function AccountingPeriodPage({ language = "es" }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                {[t.period, t.status, t.yearSeal, t.closedBy, t.closedAt, t.closingNotes, t.reopenedBy, t.reopenedAt, t.reopeningNotes, t.actions].map((h) => (
+                {[t.period, t.status, t.yearSeal, t.closingVoucher, t.closedBy, t.closedAt, t.closingNotes, t.reopenedBy, t.reopenedAt, t.reopeningNotes, t.actions].map((h) => (
                   <th key={h} className="px-5 py-4 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -344,7 +508,7 @@ function AccountingPeriodPage({ language = "es" }) {
             <tbody className="divide-y divide-gray-50">
               {sortedPeriods.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-16 text-center text-slate-400">{t.noResults}</td>
+                  <td colSpan={11} className="py-16 text-center text-slate-400">{t.noResults}</td>
                 </tr>
               ) : (
                 sortedPeriods.map((p) => (
@@ -365,6 +529,18 @@ function AccountingPeriodPage({ language = "es" }) {
                       <span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase ${(p.isYearClose ?? p.yearClose) ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-500"}`}>
                         {(p.isYearClose ?? p.yearClose) ? t.yes : t.no}
                       </span>
+                    </td>
+                    <td className="px-5 py-4 text-slate-600 whitespace-nowrap">
+                      {p.closingEntryDocumentNumber ? (
+                        <span
+                          className="font-mono text-xs font-bold text-purple-700"
+                          title={`${t.gainAccount}: ${p.gainAccountCode || "—"} ${p.gainAccountName || ""} · ${t.lossAccount}: ${p.lossAccountCode || "—"} ${p.lossAccountName || ""}`}
+                        >
+                          {p.closingEntryDocumentNumber}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
                     </td>
                     <td className="px-5 py-4 text-slate-600 whitespace-nowrap">{p.closedBy || "—"}</td>
                     <td className="px-5 py-4 text-slate-400 whitespace-nowrap">{formatDateTime(p.closedAt)}</td>
@@ -448,7 +624,7 @@ function AccountingPeriodPage({ language = "es" }) {
       {closeYearOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={closeCloseYearPanel} />
-          <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl flex flex-col">
+          <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-y-auto">
             <div className="border-b border-slate-100 px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-black text-slate-800">{t.closeYearTitle}</h2>
               <button onClick={closeCloseYearPanel} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
@@ -460,6 +636,30 @@ function AccountingPeriodPage({ language = "es" }) {
               <Field label={t.year} error={closeYearErrors.year}>
                 <input type="number" name="year" value={closeYearForm.year} onChange={handleCloseYearChange}
                   min="1900" max="2100" className={inputCls(closeYearErrors.year)} />
+              </Field>
+
+              {closingOptions.equityAccounts.length === 0 && (
+                <p className="text-xs text-red-500">{t.noEquityAccounts}</p>
+              )}
+
+              <Field label={t.gainAccount} error={closeYearErrors.gainAccountId}>
+                <select name="gainAccountId" value={closeYearForm.gainAccountId} onChange={handleCloseYearChange}
+                  className={inputCls(closeYearErrors.gainAccountId)}>
+                  <option value="">{t.selectAccount}</option>
+                  {closingOptions.equityAccounts.map((a) => (
+                    <option key={a.id} value={a.id}>{a.code} - {a.name}</option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label={t.lossAccount} error={closeYearErrors.lossAccountId}>
+                <select name="lossAccountId" value={closeYearForm.lossAccountId} onChange={handleCloseYearChange}
+                  className={inputCls(closeYearErrors.lossAccountId)}>
+                  <option value="">{t.selectAccount}</option>
+                  {closingOptions.equityAccounts.map((a) => (
+                    <option key={a.id} value={a.id}>{a.code} - {a.name}</option>
+                  ))}
+                </select>
               </Field>
 
               <Field label={t.notes} error={closeYearErrors.notes}>
@@ -526,6 +726,56 @@ function AccountingPeriodPage({ language = "es" }) {
           </div>
         </div>
       )}
+
+      {/* ── Cuentas de Cierre por Defecto (compañía) ── */}
+      {closingDefaultsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={closeClosingDefaultsPanel} />
+          <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl flex flex-col">
+            <div className="border-b border-slate-100 px-6 py-4 flex items-center justify-between">
+              <h2 className="text-lg font-black text-slate-800">{t.closingDefaultsTitle}</h2>
+              <button onClick={closeClosingDefaultsPanel} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+            </div>
+
+            {loadingClosingDefaults ? (
+              <div className="px-6 py-10 text-center text-sm text-slate-400">{t.loadingClosingDefaults}</div>
+            ) : (
+              <form onSubmit={submitClosingDefaults} className="px-6 py-5 flex flex-col gap-4">
+                <p className="text-xs text-slate-400">{t.closingDefaultsHint}</p>
+
+                <Field label={t.gainAccount} error={closingDefaultsErrors.defaultGainAccountId}>
+                  <select name="defaultGainAccountId" value={closingDefaultsForm.defaultGainAccountId}
+                    onChange={handleClosingDefaultsChange} className={inputCls(closingDefaultsErrors.defaultGainAccountId)}>
+                    <option value="">{t.noSuggestion}</option>
+                    {closingOptions.equityAccounts.map((a) => (
+                      <option key={a.id} value={a.id}>{a.code} - {a.name}</option>
+                    ))}
+                  </select>
+                </Field>
+
+                <Field label={t.lossAccount} error={closingDefaultsErrors.defaultLossAccountId}>
+                  <select name="defaultLossAccountId" value={closingDefaultsForm.defaultLossAccountId}
+                    onChange={handleClosingDefaultsChange} className={inputCls(closingDefaultsErrors.defaultLossAccountId)}>
+                    <option value="">{t.noSuggestion}</option>
+                    {closingOptions.equityAccounts.map((a) => (
+                      <option key={a.id} value={a.id}>{a.code} - {a.name}</option>
+                    ))}
+                  </select>
+                </Field>
+
+                <div className="flex gap-3 pt-2">
+                  <Button type="submit" variant="primary" size="lg" fullWidth loading={savingClosingDefaults}>
+                    {t.save === "Cerrar" ? "Guardar" : "Save"}
+                  </Button>
+                  <Button type="button" variant="secondary" size="lg" fullWidth onClick={closeClosingDefaultsPanel} disabled={savingClosingDefaults}>
+                    {t.cancel}
+                  </Button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -535,7 +785,7 @@ function defaultMonthForm() {
   return { year: String(now.getFullYear()), month: String(now.getMonth() + 1), notes: "" };
 }
 function defaultYearForm() {
-  return { year: String(now.getFullYear()), notes: "" };
+  return { year: String(now.getFullYear()), notes: "", gainAccountId: "", lossAccountId: "" };
 }
 
 const inputCls = (err) =>
