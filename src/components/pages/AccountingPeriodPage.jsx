@@ -216,8 +216,31 @@ function AccountingPeriodPage({ language = "es" }) {
   };
 
   // ── Cerrar Mes ──────────────────────────────────────────────────────
+  // Closed months are shown disabled in the dropdown (NEW 2026-10-10) --
+  // the user noticed they could pick an already-closed month and
+  // resubmit, silently overwriting its original closedAt/closedBy/
+  // closingNotes (now also blocked server-side with PERIOD_ALREADY_CLOSED,
+  // but this avoids the user ever landing on a disallowed option at all).
+  const closedMonthsForYear = (year) => {
+    const y = Number(year);
+    const set = new Set();
+    periods.forEach((p) => {
+      if (Number(p.year) === y && !(p.isOpen ?? p.open)) set.add(Number(p.month));
+    });
+    return set;
+  };
+  const firstOpenMonth = (closedSet, preferred) => {
+    if (!closedSet.has(Number(preferred))) return String(preferred);
+    for (let m = 1; m <= 12; m++) {
+      if (!closedSet.has(m)) return String(m);
+    }
+    return String(preferred); // all 12 closed -- nothing better to offer
+  };
+
   const openCloseMonthPanel = () => {
-    setCloseMonthForm(defaultMonthForm());
+    const base = defaultMonthForm();
+    base.month = firstOpenMonth(closedMonthsForYear(base.year), base.month);
+    setCloseMonthForm(base);
     setCloseMonthErrors({});
     setCloseMonthOpen(true);
   };
@@ -225,7 +248,13 @@ function AccountingPeriodPage({ language = "es" }) {
 
   const handleCloseMonthChange = (e) => {
     const { name, value } = e.target;
-    setCloseMonthForm((prev) => ({ ...prev, [name]: value }));
+    setCloseMonthForm((prev) => {
+      const next = { ...prev, [name]: value };
+      if (name === "year") {
+        next.month = firstOpenMonth(closedMonthsForYear(value), next.month);
+      }
+      return next;
+    });
   };
 
   const validateCloseMonthForm = () => {
@@ -512,7 +541,7 @@ function AccountingPeriodPage({ language = "es" }) {
                 </tr>
               ) : (
                 sortedPeriods.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50/60 transition-colors">
+                  <tr key={p.id ?? p.periodCode ?? `${p.year}-${p.month}`} className="hover:bg-slate-50/60 transition-colors">
                     <td className="px-5 py-4 font-mono font-bold text-slate-700 whitespace-nowrap">
                       {p.periodCode || `${p.year}-${String(p.month).padStart(2, "0")}`}
                     </td>
@@ -594,9 +623,15 @@ function AccountingPeriodPage({ language = "es" }) {
                 <Field label={t.month} error={closeMonthErrors.month}>
                   <select name="month" value={closeMonthForm.month} onChange={handleCloseMonthChange}
                     className={inputCls(closeMonthErrors.month)}>
-                    {t.monthNames.map((name, idx) => (
-                      <option key={idx} value={idx + 1}>{name}</option>
-                    ))}
+                    {t.monthNames.map((name, idx) => {
+                      const monthNum = idx + 1;
+                      const isClosed = closedMonthsForYear(closeMonthForm.year).has(monthNum);
+                      return (
+                        <option key={idx} value={monthNum} disabled={isClosed}>
+                          {name}{isClosed ? ` (${t.closed})` : ""}
+                        </option>
+                      );
+                    })}
                   </select>
                 </Field>
               </div>

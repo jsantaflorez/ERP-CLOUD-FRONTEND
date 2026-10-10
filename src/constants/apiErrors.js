@@ -53,6 +53,7 @@ export const API_ERROR_LABELS = {
     // once a month or fiscal year has been explicitly closed.
     FISCAL_YEAR_CLOSED: "El año fiscal está cerrado. Ábrelo de nuevo desde Períodos Contables si necesitas contabilizar en él.",
     ACCOUNTING_PERIOD_CLOSED: "El período contable de esa fecha está cerrado. Ábrelo de nuevo desde Períodos Contables si necesitas contabilizar en él.",
+    PERIOD_ALREADY_CLOSED: "Ese mes ya está cerrado. Reábrelo primero desde Períodos Contables si necesitas corregir la fecha o las notas de cierre.",
     PERIOD_DATE_REQUIRED: "La fecha es obligatoria.",
     INVALID_YEAR: "El año no es válido.",
     INVALID_MONTH: "El mes no es válido.",
@@ -105,6 +106,7 @@ export const API_ERROR_LABELS = {
     // once a month or fiscal year has been explicitly closed.
     FISCAL_YEAR_CLOSED: "The fiscal year is closed. Reopen it from Accounting Periods if you need to post to it.",
     ACCOUNTING_PERIOD_CLOSED: "The accounting period for that date is closed. Reopen it from Accounting Periods if you need to post to it.",
+    PERIOD_ALREADY_CLOSED: "That month is already closed. Reopen it first from Accounting Periods if you need to correct the closing date or notes.",
     PERIOD_DATE_REQUIRED: "The date is required.",
     INVALID_YEAR: "The year is not valid.",
     INVALID_MONTH: "The month is not valid.",
