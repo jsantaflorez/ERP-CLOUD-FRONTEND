@@ -56,6 +56,9 @@ function BalanceSheetPage({ language = "es" }) {
       balance: "Saldo",
       balanced: "Balanceado: Activos = Pasivo + Patrimonio",
       outOfBalance: "¡Fuera de Balance! Revise los asientos contables.",
+      outOfBalanceDifference: "Diferencia",
+      assetsExceed: "Activos > Pasivo + Patrimonio",
+      liabilitiesEquityExceed: "Pasivo + Patrimonio > Activos",
       generatedAt: "Generado",
       errorConn: "Error de conexión con el servidor.",
       exportExcel: "Exportar Excel",
@@ -85,6 +88,9 @@ function BalanceSheetPage({ language = "es" }) {
       balance: "Balance",
       balanced: "Balanced: Assets = Liabilities + Equity",
       outOfBalance: "Out of balance! Review journal entries.",
+      outOfBalanceDifference: "Difference",
+      assetsExceed: "Assets > Liabilities + Equity",
+      liabilitiesEquityExceed: "Liabilities + Equity > Assets",
       generatedAt: "Generated",
       errorConn: "Server connection error.",
       exportExcel: "Export to Excel",
@@ -110,6 +116,19 @@ function BalanceSheetPage({ language = "es" }) {
   const rawAmount = (value) => {
     const num = Number(value);
     return !value || Number.isNaN(num) ? 0 : num;
+  };
+
+  // When the equation doesn't hold, the backend already computes the
+  // exact gap (BalanceSheetReport.getBalanceDifference(), serialized as
+  // balanceDifference: totalAssets - totalLiabilitiesAndEquity). Shown
+  // alongside the out-of-balance warning so the user doesn't have to
+  // subtract the two totals by hand to know how far off it is, or which
+  // side is too high.
+  const balanceDifferenceLabel = () => {
+    if (!report || report.balanced) return "";
+    const diff = Number(report.balanceDifference ?? 0);
+    const side = diff > 0 ? t.assetsExceed : t.liabilitiesEquityExceed;
+    return `${t.outOfBalanceDifference}: ${formatAmount(Math.abs(diff))} (${side})`;
   };
 
   const sectionLabel = (section) =>
@@ -199,6 +218,7 @@ function BalanceSheetPage({ language = "es" }) {
       ...buildGroupRows(report.equitySections, t.equity.toUpperCase(), t.totalEquity, report.totalEquity, rawAmount),
       [],
       [t.totalLiabilitiesAndEquity, rawAmount(report.totalLiabilitiesAndEquity)],
+      ...(report.balanced ? [] : [[t.outOfBalanceDifference, rawAmount(report.balanceDifference)]]),
     ];
 
     const sheet = XLSX.utils.aoa_to_sheet(rows);
@@ -229,6 +249,12 @@ function BalanceSheetPage({ language = "es" }) {
       doc.setTextColor(185, 28, 28);
     }
     doc.text(report.balanced ? t.balanced : t.outOfBalance, 14, cursorY);
+    if (!report.balanced) {
+      cursorY += 5;
+      doc.setFontSize(9);
+      doc.text(balanceDifferenceLabel(), 14, cursorY);
+      doc.setFontSize(10);
+    }
     doc.setTextColor(0);
     cursorY += 6;
 
@@ -342,6 +368,9 @@ function BalanceSheetPage({ language = "es" }) {
             }`}
           >
             {report.balanced ? t.balanced : t.outOfBalance}
+            {!report.balanced && (
+              <div className="mt-1 text-xs font-normal">{balanceDifferenceLabel()}</div>
+            )}
           </div>
 
           {!hasData(report) && (

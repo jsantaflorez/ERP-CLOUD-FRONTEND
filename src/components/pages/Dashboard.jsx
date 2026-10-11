@@ -16,6 +16,7 @@ import AuxiliaryLedgerPage from "./AuxiliaryLedgerPage";
 import TrialBalancePage from "./TrialBalancePage";
 import CostCenterBalancePage from "./CostCenterBalancePage";
 import ThirdPartyBalancePage from "./ThirdPartyBalancePage";
+import JournalBookPage from "./JournalBookPage";
 import BalanceSheetPage from "./BalanceSheetPage";
 import TrialBalanceDetailedPage from "./TrialBalanceDetailedPage";
 import AccountingPeriodPage from "./AccountingPeriodPage";
@@ -26,7 +27,7 @@ import AccountingPeriodPage from "./AccountingPeriodPage";
 // instead of only expanding on an explicit click. Add new report views
 // (Balance de Comprobación, Balance General, ...) to this list as they're
 // built, and the submenu picks them up automatically.
-const REPORT_VIEWS = ["auxiliaryLedger", "trialBalance", "balanceSheet", "trialBalanceDetailed", "costCenterBalance", "thirdPartyBalance"];
+const REPORT_VIEWS = ["auxiliaryLedger", "trialBalance", "balanceSheet", "trialBalanceDetailed", "costCenterBalance", "thirdPartyBalance", "journalBook"];
 
 function Dashboard({ user, onLogout, language, onLanguageChange }) {
   const [activeView, setActiveView] = useState("dashboard");
@@ -236,6 +237,14 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
                       >
                         {t.navThirdPartyBalance}
                       </button>
+                      <button
+                        onClick={() => changeView("journalBook")}
+                        className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
+                          activeView === "journalBook" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
+                        }`}
+                      >
+                        {t.navJournalBook}
+                      </button>
                     </div>
                   )}
                 </div>
@@ -340,6 +349,10 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
 
         {activeView === "thirdPartyBalance" && (
           <ThirdPartyBalancePage language={language} />
+        )}
+
+        {activeView === "journalBook" && (
+          <JournalBookPage language={language} />
         )}
 
         {activeView === "accountingPeriod" && (
