@@ -82,7 +82,7 @@ function AccountingPeriodPage({ language = "es" }) {
       save: "Cerrar", cancel: "Cancelar", confirm: "Confirmar",
       closeMonthTitle: "Cerrar un Mes",
       closeYearTitle: "Cerrar Año Fiscal",
-      closeYearHint: "Requiere que los meses de enero a noviembre de ese año ya estén cerrados individualmente.",
+      closeYearHint: "Solo exige cerrar individualmente los meses de enero a noviembre que tengan movimientos contables -- un mes sin asientos se salta solo. Diciembre NO necesita cerrarse antes: el cierre de año lo cierra automáticamente, así que conviene dejarlo abierto hasta terminar los ajustes de fin de año (inventario, provisiones, etc.).",
       reopenMonthTitle: "Reabrir Período",
       reopenYearTitle: "Reabrir Año Fiscal",
       reopenYearHint: "Quita el sello anual. Los meses cerrados individualmente permanecen cerrados.",
@@ -93,6 +93,9 @@ function AccountingPeriodPage({ language = "es" }) {
       successCloseMonth: "Período cerrado.",
       successCloseYear: "Año fiscal cerrado.",
       successCloseYearWithVoucher: (doc) => `Año fiscal cerrado. Comprobante de cierre: ${doc}.`,
+      // 2026-10-12: names the exact month(s) still needing an individual close, using monthNames below -- replaces the old fixed "enero a noviembre" text, which read as if all eleven months needed closing.
+      monthsNotClosedDetail: (monthLabels) =>
+        `No se puede cerrar el año fiscal: primero debes cerrar individualmente ${monthLabels.length > 1 ? "estos meses, que tienen movimientos" : "este mes, que tiene movimientos"}: ${monthLabels.join(", ")}.`,
       successReopenMonth: "Período reabierto.",
       successReopenYear: "Año fiscal reabierto.",
       errorConn: "Error de conexión con el servidor.",
@@ -134,7 +137,7 @@ function AccountingPeriodPage({ language = "es" }) {
       save: "Close", cancel: "Cancel", confirm: "Confirm",
       closeMonthTitle: "Close a Month",
       closeYearTitle: "Close Fiscal Year",
-      closeYearHint: "Requires January through November of that year to already be individually closed.",
+      closeYearHint: "Only months from January to November that actually have journal entries need to be closed individually -- a month with no activity is skipped automatically. December does NOT need to be closed beforehand: closing the year closes it automatically, so it's best left open until every year-end adjustment (inventory, accruals, etc.) is posted.",
       reopenMonthTitle: "Reopen Period",
       reopenYearTitle: "Reopen Fiscal Year",
       reopenYearHint: "Removes the annual seal. Individually closed months remain closed.",
@@ -145,6 +148,8 @@ function AccountingPeriodPage({ language = "es" }) {
       successCloseMonth: "Period closed.",
       successCloseYear: "Fiscal year closed.",
       successCloseYearWithVoucher: (doc) => `Fiscal year closed. Closing voucher: ${doc}.`,
+      monthsNotClosedDetail: (monthLabels) =>
+        `Can't close the fiscal year: ${monthLabels.length > 1 ? "these months, which have activity" : "this month, which has activity"} must be closed individually first: ${monthLabels.join(", ")}.`,
       successReopenMonth: "Period reopened.",
       successReopenYear: "Fiscal year reopened.",
       errorConn: "Server connection error.",
@@ -330,6 +335,26 @@ function AccountingPeriodPage({ language = "es" }) {
     return Object.keys(errs).length === 0;
   };
 
+  // 2026-10-12: MONTHS_NOT_CLOSED_BEFORE_YEAR_END now rides the exact
+  // missing months in the response's `data` field (see
+  // AccountingPeriodService.validateAllMonthsClosedBeforeYearEnd() /
+  // BusinessException.getDetails()) -- naming them here instead of the
+  // old fixed "enero a noviembre" text, which read as if all eleven
+  // months needed an individual close instead of just the ones with
+  // real activity.
+  const getCloseYearErrorMessage = (errorLike) => {
+    const body = errorLike?.response?.data;
+    if (body?.message === "MONTHS_NOT_CLOSED_BEFORE_YEAR_END" && Array.isArray(body?.data) && body.data.length > 0) {
+      const monthLabels = body.data
+        .map((monthNumber) => t.monthNames[monthNumber - 1])
+        .filter(Boolean);
+      if (monthLabels.length > 0) {
+        return t.monthsNotClosedDetail(monthLabels);
+      }
+    }
+    return getApiErrorMessage(errorLike, language, t.errorConn);
+  };
+
   const submitCloseYear = async (e) => {
     e.preventDefault();
     if (!validateCloseYearForm()) return;
@@ -351,10 +376,10 @@ function AccountingPeriodPage({ language = "es" }) {
         closeCloseYearPanel();
         loadPeriods();
       } else {
-        showToast(getApiErrorMessage({ response }, language, t.errorConn), "error");
+        showToast(getCloseYearErrorMessage({ response }), "error");
       }
     } catch (error) {
-      showToast(getApiErrorMessage(error, language, t.errorConn), "error");
+      showToast(getCloseYearErrorMessage(error), "error");
     } finally {
       setSavingCloseYear(false);
     }
