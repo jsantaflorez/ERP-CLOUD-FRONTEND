@@ -249,7 +249,12 @@ function ChartOfAccountsPage({ language = "es" }) {
   // in a row, e.g. seeding a PUC template). Opt-in per session: reset to
   // false by the full resetForm(), so it never surprises a later, unrelated
   // single-account creation.
-  const [keepCreatingAfterSave, setKeepCreatingAfterSave] = useState(false);
+  // NEW (2026-10-13, user request): defaults to ON -- most of the time
+  // the user opening this screen is about to type several sibling
+  // accounts in a row, not just one, so starting checked saves the
+  // manual toggle every single time instead of saving it only after the
+  // first one.
+  const [keepCreatingAfterSave, setKeepCreatingAfterSave] = useState(true);
 
   // Snapshot of `code` at the moment editing started. Used as a
   // defense-in-depth guard in handleSave: even though the field is
@@ -615,9 +620,11 @@ function ChartOfAccountsPage({ language = "es" }) {
     editingIdRef.current = null;
     originalCodeRef.current = null;
     // Full reset (panel closing, or opening fresh for a new account) always
-    // starts "keep creating" unchecked again -- it's an opt-in per editing
-    // session, not a sticky global preference.
-    setKeepCreatingAfterSave(false);
+    // starts "keep creating" CHECKED again (2026-10-13, user request) --
+    // it's the default for a fresh create session, not a sticky global
+    // preference remembered across unrelated visits to this screen; the
+    // user turns it off by hand only once they're done with their batch.
+    setKeepCreatingAfterSave(true);
   };
 
   // NEW (2026-09-12): partial reset used after a successful create when
@@ -1439,10 +1446,12 @@ function ChartOfAccountsPage({ language = "es" }) {
                 />
               </div>
 
-              {/* NEW (2026-09-12): opt-in per session, create mode only --
-                  see resetFormForNextAccount() for what's kept vs. reset.
+              {/* NEW (2026-09-12): create mode only -- see
+                  resetFormForNextAccount() for what's kept vs. reset.
                   "Cancelar" below still exits without creating another,
-                  whether or not this is checked. */}
+                  whether or not this is checked. On by default since
+                  2026-10-13 (user request) -- the user turns it off by
+                  hand once their batch of accounts is done. */}
               {!editingIdRef.current && (
                 <div className="md:col-span-2 flex flex-col gap-1">
                   <Toggle
