@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
 import api from "../../services/api"; // Centralized Axios instance configured for multi-tenancy
@@ -44,6 +44,31 @@ function AccountingPeriodPage({ language = "es" }) {
   const [reopenNotes, setReopenNotes]   = useState("");
   const [reopenError, setReopenError]   = useState("");
   const [savingReopen, setSavingReopen] = useState(false);
+
+  // "Cerrar Mes" from a specific row -- NEW (2026-10-12, user request):
+  // same shape as reopenTarget above, but for closing one exact
+  // year/month directly from its row action button, instead of going
+  // through the top "+ Cerrar Mes" panel's year/month dropdowns (which
+  // stays too, for closing a month that isn't on screen right now).
+  const [closeRowTarget, setCloseRowTarget] = useState(null); // { year, month, periodCode }
+  const [closeRowNotes, setCloseRowNotes]   = useState("");
+  const [closeRowError, setCloseRowError]   = useState("");
+  const [savingCloseRow, setSavingCloseRow] = useState(false);
+
+  // Collapsible year groups -- NEW (2026-10-12, user request): the
+  // periods table keeps growing as more fiscal years accumulate, so each
+  // year group can be collapsed to just its header row. Starts fully
+  // expanded (same convention as the Plan de Cuentas account tree) and
+  // resets on every reload -- not persisted, this is plain UI state.
+  const [collapsedYears, setCollapsedYears] = useState(() => new Set());
+  const toggleYearCollapsed = (year) => {
+    setCollapsedYears((prev) => {
+      const next = new Set(prev);
+      if (next.has(year)) next.delete(year);
+      else next.add(year);
+      return next;
+    });
+  };
 
   // "Cuentas de Cierre por Defecto" panel (company-level suggestion,
   // PATCH /v1/companies/me/closing-defaults) -- NEW (2026-10-05).
@@ -386,6 +411,42 @@ function AccountingPeriodPage({ language = "es" }) {
   };
 
   // ── Reabrir (mes o año) ─────────────────────────────────────────────
+  const openCloseRowTarget = (period) => {
+    setCloseRowTarget({ year: period.year, month: period.month, periodCode: period.periodCode });
+    setCloseRowNotes("");
+    setCloseRowError("");
+  };
+  const closeCloseRowPanel = () => setCloseRowTarget(null);
+
+  const submitCloseRow = async (e) => {
+    e.preventDefault();
+    if (!closeRowTarget) return;
+    if (!closeRowNotes.trim()) {
+      setCloseRowError(t.required);
+      return;
+    }
+    if (!window.confirm(t.confirmCloseMonth)) return;
+
+    setSavingCloseRow(true);
+    try {
+      const response = await api.post(
+        `/v1/accounting-periods/${closeRowTarget.year}/${closeRowTarget.month}/close`,
+        { notes: closeRowNotes.trim() }
+      );
+      if (response.data && response.data.success) {
+        showToast(t.successCloseMonth);
+        closeCloseRowPanel();
+        loadPeriods();
+      } else {
+        showToast(getApiErrorMessage({ response }, language, t.errorConn), "error");
+      }
+    } catch (error) {
+      showToast(getApiErrorMessage(error, language, t.errorConn), "error");
+    } finally {
+      setSavingCloseRow(false);
+    }
+  };
+
   const openReopenMonth = (period) => {
     setReopenTarget({ kind: "month", year: period.year, month: period.month, periodCode: period.periodCode });
     setReopenNotes("");
@@ -514,6 +575,23 @@ function AccountingPeriodPage({ language = "es" }) {
     [periods]
   );
 
+  // Grouped by year for the collapsible headers below -- NEW
+  // (2026-10-12). sortedPeriods is already year-desc/month-desc, so
+  // walking it in order and starting a new group whenever the year
+  // changes preserves that same order inside each group too.
+  const periodsByYear = useMemo(() => {
+    const groups = [];
+    for (const p of sortedPeriods) {
+      const last = groups[groups.length - 1];
+      if (last && last.year === p.year) {
+        last.rows.push(p);
+      } else {
+        groups.push({ year: p.year, rows: [p] });
+      }
+    }
+    return groups;
+  }, [sortedPeriods]);
+
   return (
     <div className="space-y-6 p-4">
       {toast && (
@@ -565,7 +643,29 @@ function AccountingPeriodPage({ language = "es" }) {
                   <td colSpan={11} className="py-16 text-center text-slate-400">{t.noResults}</td>
                 </tr>
               ) : (
-                sortedPeriods.map((p) => (
+                periodsByYear.map(({ year, rows }) => {
+                  const isCollapsed = collapsedYears.has(year);
+                  return (
+                    <Fragment key={year}>
+                      {/* NEW (2026-10-12, user request): the table keeps
+                          growing as more fiscal years pile up, so each
+                          year is a collapsible group -- the row itself is
+                          the +/- toggle, not just the little button
+                          inside it, so it's easy to click without aiming. */}
+                      <tr
+                        className="cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors"
+                        onClick={() => toggleYearCollapsed(year)}
+                      >
+                        <td colSpan={11} className="px-5 py-3">
+                          <div className="flex items-center gap-2 font-black text-slate-700">
+                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-slate-200 text-sm leading-none text-slate-600">
+                              {isCollapsed ? "+" : "−"}
+                            </span>
+                            {t.year} {year}
+                          </div>
+                        </td>
+                      </tr>
+                      {!isCollapsed && rows.map((p) => (
                   <tr key={p.id ?? p.periodCode ?? `${p.year}-${p.month}`} className="hover:bg-slate-50/60 transition-colors">
                     <td className="px-5 py-4 font-mono font-bold text-slate-700 whitespace-nowrap">
                       {p.periodCode || `${p.year}-${String(p.month).padStart(2, "0")}`}
@@ -617,12 +717,23 @@ function AccountingPeriodPage({ language = "es" }) {
                             {t.reopenMonth}
                           </Button>
                         ) : (
-                          <span className="text-slate-300 text-xs">—</span>
+                          // NEW (2026-10-12, user request): an open month
+                          // used to show nothing here ("—") -- now it
+                          // offers "Cerrar Mes" directly from its own
+                          // row, same action slot that shows "Reabrir
+                          // Mes" once it's closed, so it behaves like one
+                          // toggle control instead of two separate paths.
+                          <Button variant="ghost" size="sm" onClick={() => openCloseRowTarget(p)}>
+                            {t.closeMonth}
+                          </Button>
                         )}
                       </div>
                     </td>
                   </tr>
-                ))
+                      ))}
+                    </Fragment>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -779,6 +890,48 @@ function AccountingPeriodPage({ language = "es" }) {
                   {t.confirm}
                 </Button>
                 <Button type="button" variant="secondary" size="lg" fullWidth onClick={closeReopenPanel} disabled={savingReopen}>
+                  {t.cancel}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* NEW (2026-10-12, user request): "Cerrar Mes" from a specific
+          row, same shape as the reopen modal above but posting to the
+          close endpoint for that one fixed year/month. */}
+      {closeRowTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={closeCloseRowPanel} />
+          <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl flex flex-col">
+            <div className="border-b border-slate-100 px-6 py-4 flex items-center justify-between">
+              <h2 className="text-lg font-black text-slate-800">{t.closeMonthTitle}</h2>
+              <button onClick={closeCloseRowPanel} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+            </div>
+
+            <form onSubmit={submitCloseRow} className="px-6 py-5 flex flex-col gap-4">
+              <div className="rounded-xl bg-slate-50 px-4 py-3">
+                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                  {t.period}
+                </div>
+                <div className="text-sm font-mono font-bold text-slate-800">
+                  {closeRowTarget.periodCode || `${closeRowTarget.year}-${String(closeRowTarget.month).padStart(2, "0")}`}
+                </div>
+              </div>
+
+              <Field label={t.notes} error={closeRowError}>
+                <textarea value={closeRowNotes}
+                  onChange={(e) => { setCloseRowNotes(e.target.value); setCloseRowError(""); }}
+                  maxLength={500} rows={3} placeholder={t.notesPlaceholder}
+                  className={inputCls(closeRowError)} autoFocus />
+              </Field>
+
+              <div className="flex gap-3 pt-2">
+                <Button type="submit" variant="primary" size="lg" fullWidth loading={savingCloseRow}>
+                  {t.confirm}
+                </Button>
+                <Button type="button" variant="secondary" size="lg" fullWidth onClick={closeCloseRowPanel} disabled={savingCloseRow}>
                   {t.cancel}
                 </Button>
               </div>
