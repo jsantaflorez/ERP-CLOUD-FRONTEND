@@ -19,6 +19,7 @@ import ThirdPartyBalancePage from "./ThirdPartyBalancePage";
 import JournalBookPage from "./JournalBookPage";
 import BalanceSheetPage from "./BalanceSheetPage";
 import TrialBalanceDetailedPage from "./TrialBalanceDetailedPage";
+import IncomeStatementPage from "./IncomeStatementPage";
 import AccountingPeriodPage from "./AccountingPeriodPage";
 
 // Views that live under the "Reportes" submenu -- grouped here so the
@@ -27,7 +28,7 @@ import AccountingPeriodPage from "./AccountingPeriodPage";
 // instead of only expanding on an explicit click. Add new report views
 // (Balance de Comprobación, Balance General, ...) to this list as they're
 // built, and the submenu picks them up automatically.
-const REPORT_VIEWS = ["auxiliaryLedger", "trialBalance", "balanceSheet", "trialBalanceDetailed", "costCenterBalance", "thirdPartyBalance", "journalBook"];
+const REPORT_VIEWS = ["auxiliaryLedger", "trialBalance", "balanceSheet", "trialBalanceDetailed", "incomeStatement", "costCenterBalance", "thirdPartyBalance", "journalBook"];
 
 function Dashboard({ user, onLogout, language, onLanguageChange }) {
   const [activeView, setActiveView] = useState("dashboard");
@@ -222,6 +223,14 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
                         {t.navTrialBalanceDetailed}
                       </button>
                       <button
+                        onClick={() => changeView("incomeStatement")}
+                        className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
+                          activeView === "incomeStatement" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
+                        }`}
+                      >
+                        {t.navIncomeStatement}
+                      </button>
+                      <button
                         onClick={() => changeView("costCenterBalance")}
                         className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
                           activeView === "costCenterBalance" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
@@ -341,6 +350,10 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
 
         {activeView === "trialBalanceDetailed" && (
           <TrialBalanceDetailedPage language={language} />
+        )}
+
+        {activeView === "incomeStatement" && (
+          <IncomeStatementPage language={language} />
         )}
 
         {activeView === "costCenterBalance" && (

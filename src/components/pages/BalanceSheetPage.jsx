@@ -183,7 +183,13 @@ function BalanceSheetPage({ language = "es" }) {
       const label = sectionLabel(section);
       rows.push([label, ""]);
       (section.accountLines || []).forEach((line) => {
-        rows.push([`  ${line.accountCode} - ${line.accountName}`, amountFn(line.balance)]);
+        // Computed lines (e.g. "Utilidad del Ejercicio (sin cerrar)")
+        // carry no real account code -- skip the " - " separator for
+        // those so the export doesn't show a dangling dash.
+        rows.push([
+          line.accountCode ? `  ${line.accountCode} - ${line.accountName}` : `  ${line.accountName}`,
+          amountFn(line.balance),
+        ]);
       });
       rows.push([`  ${t.subtotal}: ${label}`, amountFn(section.sectionTotal)]);
     });
