@@ -27,6 +27,11 @@ const emptyItem = () => ({
   debit: "",
   credit: "",
   description: "",
+  // NEW (2026-10-14): base gravable for a line whose account is
+  // parameterized with a Tax -- see taxByAccountId below. Ignored by the
+  // backend (and left null in the payload) when the account isn't
+  // tax-linked.
+  taxBase: "",
 });
 
 const emptyForm = () => ({
@@ -50,6 +55,29 @@ const money = (n) =>
     maximumFractionDigits: 2,
   });
 
+// NEW (2026-10-14): mirrors JournalEntryService.handleTax()'s formula
+// exactly (base x rate / 100, zeroed below the Tax's minimumBase) so the
+// on-screen preview matches what the server will actually post -- this is
+// a UI preview only, the server always recalculates and is authoritative.
+const computeTaxAmount = (tax, base) => {
+  if (!tax) return 0;
+  const absBase = Math.abs(toNumber(base));
+  const minimumBase = toNumber(tax.minimumBase);
+  if (minimumBase > 0 && absBase < minimumBase) return 0;
+  const rate = toNumber(tax.rate);
+  return Math.round(absBase * rate) / 100;
+};
+
+// Returns the debit/credit a line will actually be saved with: the raw
+// manual entry for a plain line, or -- for a line whose account is
+// tax-linked -- the computed tax amount placed on debit or credit per
+// tax.sign ("D"/"C"), same as the backend.
+const effectiveAmounts = (item, tax) => {
+  if (!tax) return { debit: toNumber(item.debit), credit: toNumber(item.credit) };
+  const amount = computeTaxAmount(tax, item.taxBase);
+  return tax.sign === "D" ? { debit: amount, credit: 0 } : { debit: 0, credit: amount };
+};
+
 function JournalEntryPage({ language = "es", onDirtyChange }) {
   const [view, setView] = useState("list"); // "list" | "form"
 
@@ -70,6 +98,7 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
   const [thirdParties, setThirdParties] = useState([]);
   const [costCenters, setCostCenters] = useState([]);
   const [documentTypes, setDocumentTypes] = useState([]);
+  const [taxes, setTaxes] = useState([]);
   const [loadingCatalogs, setLoadingCatalogs] = useState(false);
 
   // Form state
@@ -142,6 +171,10 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
       itemRequiresThirdParty: "Esta cuenta requiere un tercero",
       itemRequiresCostCenter: "Esta cuenta requiere un centro de costo",
       itemNeedsOneAmount: "Cada línea debe tener débito O crédito, no ambos ni ninguno",
+      taxBase: "Base",
+      itemRequiresTaxBase: "Esta cuenta tiene un impuesto asociado: digite la base gravable",
+      itemTaxBaseBelowMinimum: "La base no alcanza el mínimo configurado para este impuesto -- no aplica. Elimine la línea o aumente la base",
+      taxComputedHint: "Calculado automáticamente a partir de la base y la tarifa del impuesto",
       needAtLeastOneAccount: "Seleccione una cuenta en cada línea",
       unbalancedError: "El asiento no está balanceado. Los débitos deben ser iguales a los créditos.",
       detailTitle: "Detalle del Asiento",
@@ -210,6 +243,10 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
       itemRequiresThirdParty: "This account requires a third party",
       itemRequiresCostCenter: "This account requires a cost center",
       itemNeedsOneAmount: "Each line must have a debit OR a credit, not both or neither",
+      taxBase: "Base",
+      itemRequiresTaxBase: "This account has a linked tax: enter the taxable base",
+      itemTaxBaseBelowMinimum: "The base doesn't reach this tax's configured minimum -- it doesn't apply. Remove the line or increase the base",
+      taxComputedHint: "Automatically calculated from the tax's base and rate",
       needAtLeastOneAccount: "Select an account on every line",
       unbalancedError: "The entry is unbalanced. Debits must equal credits.",
       detailTitle: "Entry Detail",
@@ -295,7 +332,7 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
   const loadCatalogs = async () => {
     setLoadingCatalogs(true);
     try {
-      const [accRes, tpRes, ccRes, dtRes] = await Promise.allSettled([
+      const [accRes, tpRes, ccRes, dtRes, taxRes] = await Promise.allSettled([
         // /v1/chart-of-accounts is paginated (Spring PageImpl), same as
         // /v1/third-parties -- unlike /v1/cost-centers and
         // /v1/document-types, which return flat arrays. Mirrors the
@@ -307,6 +344,10 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
         api.get("/v1/third-parties?page=0&size=1000"),
         api.get("/v1/cost-centers"),
         api.get("/v1/document-types"),
+        // NEW (2026-10-14): the Tax catalog, so a line's account can be
+        // matched to its parameterized Tax (if any) -- same flat-array
+        // envelope TaxPage.jsx already reads ({success, data: [...]}).
+        api.get("/v1/taxes"),
       ]);
 
       if (accRes.status === "fulfilled") {
@@ -338,6 +379,10 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
         const data = dtRes.value.data?.data ?? dtRes.value.data;
         setDocumentTypes(Array.isArray(data) ? data : []);
       }
+      if (taxRes.status === "fulfilled") {
+        const data = taxRes.value.data?.data ?? taxRes.value.data;
+        setTaxes(Array.isArray(data) ? data : []);
+      }
     } catch (error) {
       showToast(getApiErrorMessage(error, language, t.errorConn), "error");
     } finally {
@@ -359,6 +404,18 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
     [accounts]
   );
   const activeThirdParties = useMemo(() => thirdParties.filter((tp) => tp.active), [thirdParties]);
+  // NEW (2026-10-14): maps a chart-of-accounts id to its parameterized
+  // Tax, if any -- enforced unique by the backend (uk_tax_company_account,
+  // one Tax per account), so a plain object keyed by accountId is enough.
+  // Only active taxes are offered; an inactive one is treated the same as
+  // "not tax-linked" here (the backend would reject it anyway).
+  const taxByAccountId = useMemo(() => {
+    const map = {};
+    for (const tax of taxes) {
+      if (tax.active && tax.accountId != null) map[tax.accountId] = tax;
+    }
+    return map;
+  }, [taxes]);
   // Only leaf-level cost centers that allow movement can receive postings --
   // a parent center (allowsMovement=false, enforced by CostCenterService)
   // is a grouping node, not a valid target for a journal entry line.
@@ -593,6 +650,10 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
           debit: item.debit ? String(item.debit) : "",
           credit: item.credit ? String(item.credit) : "",
           description: item.description || "",
+          // NEW (2026-10-14): round-trips the base for a tax-linked line
+          // so re-opening an existing entry shows it again instead of a
+          // blank Base field next to its already-posted amount.
+          taxBase: item.taxBase != null ? String(item.taxBase) : "",
         })),
       };
       setForm(loadedForm);
@@ -679,6 +740,7 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
       if (field === "accountId") {
         item.thirdPartyId = "";
         item.costCenterId = "";
+        item.taxBase = "";
       }
 
       items[index] = item;
@@ -716,11 +778,17 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
   };
 
   const totals = useMemo(() => {
-    const totalDebit = form.items.reduce((sum, i) => sum + toNumber(i.debit), 0);
-    const totalCredit = form.items.reduce((sum, i) => sum + toNumber(i.credit), 0);
+    const totalDebit = form.items.reduce((sum, i) => {
+      const { debit } = effectiveAmounts(i, taxByAccountId[i.accountId]);
+      return sum + debit;
+    }, 0);
+    const totalCredit = form.items.reduce((sum, i) => {
+      const { credit } = effectiveAmounts(i, taxByAccountId[i.accountId]);
+      return sum + credit;
+    }, 0);
     const difference = Math.round((totalDebit - totalCredit) * 100) / 100;
     return { totalDebit, totalCredit, difference, isBalanced: difference === 0 };
-  }, [form.items]);
+  }, [form.items, taxByAccountId]);
 
   const validate = () => {
     const errs = {};
@@ -733,9 +801,28 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
         lineErrs.accountId = t.required;
       } else {
         const acc = accountById(item.accountId);
-        const hasDebit = toNumber(item.debit) > 0;
-        const hasCredit = toNumber(item.credit) > 0;
-        if (hasDebit === hasCredit) lineErrs.amount = t.itemNeedsOneAmount;
+        const tax = taxByAccountId[item.accountId];
+        if (tax) {
+          // Tax-linked line: the server derives debit/credit from the
+          // base, so the base is what's required here, not a manual
+          // debit/credit (those inputs are disabled for this line anyway).
+          const base = toNumber(item.taxBase);
+          const minimumBase = toNumber(tax.minimumBase);
+          if (base <= 0) {
+            lineErrs.taxBase = t.itemRequiresTaxBase;
+          } else if (minimumBase > 0 && base < minimumBase) {
+            // Caught here too (not just server-side in handleTax()): a
+            // base below the minimum can't compute to a valid line (the
+            // server rejects it outright, it never silently zeroes it),
+            // so block the submit with a clear message instead of
+            // letting the user hit the backend's English exception text.
+            lineErrs.taxBase = t.itemTaxBaseBelowMinimum;
+          }
+        } else {
+          const hasDebit = toNumber(item.debit) > 0;
+          const hasCredit = toNumber(item.credit) > 0;
+          if (hasDebit === hasCredit) lineErrs.amount = t.itemNeedsOneAmount;
+        }
         if (acc?.requiresThirdParty && !item.thirdPartyId) lineErrs.thirdPartyId = t.itemRequiresThirdParty;
         if (acc?.requiresCostCenter && !item.costCenterId) lineErrs.costCenterId = t.itemRequiresCostCenter;
       }
@@ -757,14 +844,19 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
       entryDate: form.entryDate,
       documentTypeId: Number(form.documentTypeId),
       description: form.description.trim() || null,
-      items: form.items.map((item) => ({
-        accountId: Number(item.accountId),
-        thirdPartyId: item.thirdPartyId ? Number(item.thirdPartyId) : null,
-        costCenterId: item.costCenterId ? Number(item.costCenterId) : null,
-        debit: toNumber(item.debit),
-        credit: toNumber(item.credit),
-        description: item.description?.trim() || null,
-      })),
+      items: form.items.map((item) => {
+        const tax = taxByAccountId[item.accountId];
+        const amounts = effectiveAmounts(item, tax);
+        return {
+          accountId: Number(item.accountId),
+          thirdPartyId: item.thirdPartyId ? Number(item.thirdPartyId) : null,
+          costCenterId: item.costCenterId ? Number(item.costCenterId) : null,
+          debit: amounts.debit,
+          credit: amounts.credit,
+          description: item.description?.trim() || null,
+          taxBase: tax && item.taxBase !== "" ? toNumber(item.taxBase) : null,
+        };
+      }),
     };
 
     setSaving(true);
@@ -917,6 +1009,7 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
           activeThirdParties={activeThirdParties}
           activeCostCenters={activeCostCenters}
           accountById={accountById}
+          taxByAccountId={taxByAccountId}
           accounts={accounts}
           costCenters={costCenters}
           language={language}
@@ -1105,6 +1198,7 @@ function JeListView({
 function JeFormView({
   t, form, errors, saving, loadingCatalogs, loadingEntry, isEditing,
   documentTypes, postableAccounts, activeThirdParties, activeCostCenters, accountById,
+  taxByAccountId,
   accounts, costCenters, language,
   totals, onHeaderChange, onItemChange, onAddLine, onRemoveLine, onSubmit, onCancel,
   onAccountCreated, onCostCenterCreated,
@@ -1183,6 +1277,7 @@ function JeFormView({
                 <th className="px-3 py-2 min-w-[220px]">{t.account}</th>
                 <th className="px-3 py-2 min-w-[180px]">{t.thirdParty}</th>
                 <th className="px-3 py-2 min-w-[180px]">{t.costCenter}</th>
+                <th className="px-3 py-2 w-28">{t.taxBase}</th>
                 <th className="px-3 py-2 w-32">{t.debit}</th>
                 <th className="px-3 py-2 w-32">{t.credit}</th>
                 <th className="px-3 py-2 min-w-[160px]">{t.lineDescription}</th>
@@ -1192,6 +1287,7 @@ function JeFormView({
             <tbody className="divide-y divide-gray-50">
               {form.items.map((item, index) => {
                 const acc = accountById(item.accountId);
+                const tax = taxByAccountId[item.accountId];
                 const lineErr = errors.items?.[index] || {};
                 return (
                   <tr key={index}>
@@ -1256,16 +1352,43 @@ function JeFormView({
                       )}
                     </td>
                     <td className="px-3 py-2 align-top">
-                      <input type="number" min="0" step="0.01" value={item.debit}
-                        onChange={(e) => onItemChange(index, "debit", e.target.value)}
-                        disabled={toNumber(item.credit) > 0}
-                        className={jeInputCls()} placeholder="0.00" />
+                      {tax ? (
+                        <>
+                          <input type="number" min="0" step="0.01" value={item.taxBase}
+                            onChange={(e) => onItemChange(index, "taxBase", e.target.value)}
+                            className={jeInputCls(lineErr.taxBase)} placeholder="0.00" />
+                          <p className="text-[10px] text-slate-400 mt-1">{tax.code} · {tax.rate}%</p>
+                          {lineErr.taxBase && <p className="text-[10px] text-red-500 mt-1">{lineErr.taxBase}</p>}
+                        </>
+                      ) : (
+                        <span className="text-[11px] text-slate-300">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-2 align-top">
-                      <input type="number" min="0" step="0.01" value={item.credit}
-                        onChange={(e) => onItemChange(index, "credit", e.target.value)}
-                        disabled={toNumber(item.debit) > 0}
-                        className={jeInputCls()} placeholder="0.00" />
+                      {tax ? (
+                        <input type="text" readOnly
+                          value={money(effectiveAmounts(item, tax).debit)}
+                          title={t.taxComputedHint}
+                          className={`${jeInputCls()} bg-slate-50 text-slate-500 cursor-not-allowed`} />
+                      ) : (
+                        <input type="number" min="0" step="0.01" value={item.debit}
+                          onChange={(e) => onItemChange(index, "debit", e.target.value)}
+                          disabled={toNumber(item.credit) > 0}
+                          className={jeInputCls()} placeholder="0.00" />
+                      )}
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      {tax ? (
+                        <input type="text" readOnly
+                          value={money(effectiveAmounts(item, tax).credit)}
+                          title={t.taxComputedHint}
+                          className={`${jeInputCls()} bg-slate-50 text-slate-500 cursor-not-allowed`} />
+                      ) : (
+                        <input type="number" min="0" step="0.01" value={item.credit}
+                          onChange={(e) => onItemChange(index, "credit", e.target.value)}
+                          disabled={toNumber(item.debit) > 0}
+                          className={jeInputCls()} placeholder="0.00" />
+                      )}
                     </td>
                     <td className="px-3 py-2 align-top">
                       <input type="text" value={item.description}

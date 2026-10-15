@@ -8,6 +8,7 @@ import { getApiErrorMessage } from "../../constants/apiErrors";
 const initialForm = {
   code: "",
   name: "",
+  category: "",
   type: "",
   rate: "0",
   requiresBase: true,
@@ -15,6 +16,37 @@ const initialForm = {
   sign: "D",
   accountId: "",
   active: true,
+};
+
+// NEW (2026-10-15, user request): replaces the fixed 5-value TAX_TYPES
+// enum built the day before (2026-10-14, never committed) -- that
+// locked the catalog to a closed set of hardcoded tax names, exactly
+// what the user asked to avoid so the system stays ready for future
+// Colombian tax reforms (impuestos saludables, al carbono, a
+// plasticos, etc.) without a code change + redeploy every time.
+//
+// Split into two independent fields instead:
+//  - category: this fixed, SMALL list (3 values, matches the
+//    backend's TaxCategory enum exactly) -- genuinely stable, since
+//    it describes which fiscal report a tax feeds, not its specific
+//    legal name. IVA Generado vs Descontable is told apart by `sign`
+//    (C/D), not a 4th category value -- see the backend's
+//    TaxCategory.java javadoc for the full reasoning.
+//  - type: free text (see TYPE_SUGGESTIONS below) -- the actual tax
+//    name ("RETEFUENTE", "IMPOCONSUMO", "IMP_CARBONO", anything a
+//    future reform invents). Never validated against a fixed list,
+//    so a brand-new tax is just a new row here, no deploy needed.
+const TAX_CATEGORIES = ["RETENCION", "IVA", "OTRO"];
+
+// Clickable suggestions shown under the "Tipo" field once a category
+// is chosen -- pure UX convenience (click to fill, never forced, same
+// spirit as the PUC name-suggestion hint in ChartOfAccountPage.jsx).
+// Not an exhaustive or enforced list: the user can always type
+// something else entirely (a brand-new tax reform's name).
+const TYPE_SUGGESTIONS = {
+  RETENCION: ["RETEFUENTE", "RETEICA", "RETEIVA"],
+  IVA: ["IVA_GENERADO", "IVA_DESCONTABLE"],
+  OTRO: ["IMPOCONSUMO", "IMP_SALUDABLE", "IMP_CARBONO", "OTRO"],
 };
 
 function TaxPage({ language = "es" }) {
@@ -50,7 +82,16 @@ function TaxPage({ language = "es" }) {
       search: "Buscar por código, nombre o tipo...",
       code: "Código",
       name: "Nombre",
+      category: "Categoría",
+      selectCategory: "Seleccione una categoría...",
+      categories: {
+        RETENCION: "Retención",
+        IVA: "IVA",
+        OTRO: "Otro Impuesto",
+      },
       type: "Tipo",
+      typePlaceholder: "Ej: RETEFUENTE, IMPOCONSUMO, IMP_CARBONO...",
+      typeSuggestionsHint: "Sugerencias:",
       rate: "Tarifa",
       requiresBase: "Requiere Base",
       noRequiresBase: "Sin Base",
@@ -91,7 +132,16 @@ function TaxPage({ language = "es" }) {
       search: "Search by code, name or type...",
       code: "Code",
       name: "Name",
+      category: "Category",
+      selectCategory: "Select a category...",
+      categories: {
+        RETENCION: "Withholding",
+        IVA: "VAT",
+        OTRO: "Other Tax",
+      },
       type: "Type",
+      typePlaceholder: "E.g.: RETEFUENTE, IMPOCONSUMO, IMP_CARBONO...",
+      typeSuggestionsHint: "Suggestions:",
       rate: "Rate",
       requiresBase: "Requires Base",
       noRequiresBase: "No Base",
@@ -153,7 +203,13 @@ function TaxPage({ language = "es" }) {
   const loadAccounts = async () => {
     setLoadingAccounts(true);
     try {
-      const response = await api.get("/v1/chart-of-accounts");
+      // FIX (2026-10-15, user report): without a page size this
+      // fell back to Spring's default pagination (20 rows), so the
+      // dropdown silently stopped partway through the chart of
+      // accounts -- same large-page-size pattern already used by
+      // every other screen that needs the whole catalog (see
+      // ChartOfAccountPage/JournalEntryPage's loadCatalogs()).
+      const response = await api.get("/v1/chart-of-accounts", { params: { size: 1000, sort: "code" } });
       if (response.data && response.data.success) {
         const payloadData = response.data.data;
         // Normalizes both flat arrays and standard Spring PageImpl structures
@@ -184,6 +240,8 @@ function TaxPage({ language = "es" }) {
         r.code?.toLowerCase().includes(term) ||
         r.name?.toLowerCase().includes(term) ||
         r.type?.toLowerCase().includes(term) ||
+        r.category?.toLowerCase().includes(term) ||
+        t.categories[r.category]?.toLowerCase().includes(term) ||
         r.accountCode?.toLowerCase().includes(term) ||
         r.accountName?.toLowerCase().includes(term)
     );
@@ -219,6 +277,7 @@ function TaxPage({ language = "es" }) {
     setForm({
       code:         item.code || "",
       name:         item.name || "",
+      category:     item.category || "",
       type:         item.type || "",
       // FIX: rate/minimumBase are kept as strings in form state (see
       // handleChange below) so the user can type decimals like "0.966"
@@ -248,7 +307,12 @@ function TaxPage({ language = "es" }) {
 
     if (name === "code") val = value.toUpperCase().slice(0, 10);
     if (name === "name") val = value.slice(0, 100);
-    if (name === "type") val = value.toUpperCase().slice(0, 20);
+    // "type" is free text again (2026-10-15, see TYPE_SUGGESTIONS above
+    // for why) -- uppercased like "code", since every example so far
+    // ("RETEFUENTE", "IMPOCONSUMO") is a code-like all-caps token, and
+    // this also matches what the backend migration's UPPER(type)
+    // pattern-matching expects when backfilling `category`.
+    if (name === "type") val = value.toUpperCase().slice(0, 30);
 
     // FIX: previously these coerced to Number() and clamped with Math.max
     // on every keystroke. That meant typing a trailing decimal point
@@ -267,6 +331,7 @@ function TaxPage({ language = "es" }) {
     const errs = {};
     if (!form.code?.trim()) errs.code = t.required;
     if (!form.name?.trim()) errs.name = t.required;
+    if (!form.category?.trim()) errs.category = t.required;
     if (!form.type?.trim()) errs.type = t.required;
 
     // FIX: added explicit isNaN checks. Once rate/minimumBase stopped being
@@ -296,6 +361,7 @@ function TaxPage({ language = "es" }) {
     const payload = {
       code:         form.code.trim(),
       name:         form.name.trim(),
+      category:     form.category,
       type:         form.type.trim(),
       rate:         Number(form.rate) || 0,
       requiresBase: Boolean(form.requiresBase),
@@ -405,7 +471,7 @@ function TaxPage({ language = "es" }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                {[t.code, t.name, t.type, t.rate, t.minimumBase, t.sign, t.account, t.active, t.requiresBase, t.actions].map((h) => (
+                {[t.code, t.name, t.category, t.type, t.rate, t.minimumBase, t.sign, t.account, t.active, t.requiresBase, t.actions].map((h) => (
                   <th key={h} className="px-5 py-4">{h}</th>
                 ))}
               </tr>
@@ -413,7 +479,7 @@ function TaxPage({ language = "es" }) {
             <tbody className="divide-y divide-gray-50">
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-16 text-center text-slate-400">
+                  <td colSpan={11} className="py-16 text-center text-slate-400">
                     {t.noResults}
                   </td>
                 </tr>
@@ -422,8 +488,9 @@ function TaxPage({ language = "es" }) {
                   <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
                     <td className="px-5 py-4 font-bold text-slate-700">{item.code}</td>
                     <td className="px-5 py-4 text-slate-600">{item.name}</td>
+                    <td className="px-5 py-4 text-slate-500">{t.categories[item.category] || item.category}</td>
                     <td className="px-5 py-4 text-slate-500">{item.type}</td>
-                    <td className="px-5 py-4 font-mono text-blue-600">{item.rate}</td>
+                    <td className="px-5 py-4 font-mono text-blue-600">{item.rate}%</td>
                     <td className="px-5 py-4 font-mono text-slate-500">{item.minimumBase}</td>
                     <td className="px-5 py-4">
                       <Badge
@@ -518,31 +585,64 @@ function TaxPage({ language = "es" }) {
                 />
               </Field>
 
-              {/* TODO(tax-types): "type" is currently free text. Tax types
-                  (IVA, RETEFUENTE, ICA, etc.) can be created at any time by
-                  external authorities (DIAN, municipalities) without any
-                  coordination with our release cycle — modeling this as a
-                  hardcoded enum (like TaxRegime) would mean a backend +
-                  frontend deploy every time a new tax type shows up.
-                  Plan: replace this <input> with a <select> backed by a
-                  real catalog/table (e.g. GET /v1/tax-types), the same
-                  pattern already used for `accountId` below and for
-                  cities/cost centers elsewhere in the app. That also
-                  opens the door to a small admin CRUD screen (like
-                  CostCenterPage) so a new tax type can be added without
-                  touching code. Left as free text for now to keep moving,
-                  but this is a real data-integrity risk — a typo here
-                  (e.g. "RETEFUENTE" vs "RETENCION_FUENTE") could silently
-                  break downstream tax calculations. */}
+              {/* NEW (2026-10-15, user request): category is the fixed,
+                  small, stable list (3 values) -- this is what the
+                  planned fiscal reports (Informe de IVA / Retenciones)
+                  actually key on. Chosen first since it drives which
+                  suggestions the Tipo field below offers. */}
+              <Field label={t.category} error={errors.category}>
+                <select
+                  name="category"
+                  value={form.category}
+                  onChange={handleChange}
+                  className={inputCls(errors.category)}
+                >
+                  <option value="">{t.selectCategory}</option>
+                  {TAX_CATEGORIES.map((value) => (
+                    <option key={value} value={value}>
+                      {t.categories[value]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              {/* Tipo is free text again (2026-10-15, superseding the
+                  fixed TAX_TYPES <select> built the day before, never
+                  committed) -- see TYPE_SUGGESTIONS above for why: a
+                  future tax reform's name is never blocked behind a
+                  code change here. The suggestions below are filtered
+                  by the category chosen above and are purely a
+                  clickable convenience, same pattern as the PUC
+                  name-suggestion hint in ChartOfAccountPage.jsx --
+                  clicking one fills the field, it's never forced. */}
               <Field label={t.type} error={errors.type}>
                 <input
                   name="type"
                   value={form.type}
                   onChange={handleChange}
-                  maxLength={20}
-                  placeholder="Ej: IVA, RETEFUENTE, ICA"
+                  maxLength={30}
+                  placeholder={t.typePlaceholder}
                   className={inputCls(errors.type)}
                 />
+                {form.category && TYPE_SUGGESTIONS[form.category] && (
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                    <span className="text-[10px] text-slate-400">{t.typeSuggestionsHint}</span>
+                    {TYPE_SUGGESTIONS[form.category].map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onClick={() => setForm((prev) => ({ ...prev, type: suggestion }))}
+                        className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                          form.type === suggestion
+                            ? "border-emerald-400 bg-emerald-50 text-emerald-700"
+                            : "border-slate-200 text-slate-500 hover:border-emerald-300 hover:text-emerald-600"
+                        }`}
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </Field>
 
               <Field label={t.sign} error={errors.sign}>
@@ -558,16 +658,21 @@ function TaxPage({ language = "es" }) {
               </Field>
 
               <Field label={t.rate} error={errors.rate}>
-                <input
-                  type="number"
-                  name="rate"
-                  value={form.rate}
-                  onChange={handleChange}
-                  step="0.0001"
-                  min="0"
-                  placeholder="Ej: 19 o 0.966"
-                  className={`${inputCls(errors.rate)} font-mono`}
-                />
+                <div className="relative">
+                  <input
+                    type="number"
+                    name="rate"
+                    value={form.rate}
+                    onChange={handleChange}
+                    step="0.0001"
+                    min="0"
+                    placeholder="Ej: 19 o 0.966"
+                    className={`${inputCls(errors.rate)} font-mono pr-6`}
+                  />
+                  <span className="pointer-events-none absolute right-1 bottom-3 text-sm text-slate-400">
+                    %
+                  </span>
+                </div>
               </Field>
 
               <Field label={t.minimumBase} error={errors.minimumBase}>
