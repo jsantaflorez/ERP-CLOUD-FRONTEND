@@ -332,7 +332,7 @@ function UserManagementPage({ language = "es", currentUser }) {
       {/* ── Drawer: Crear / Editar usuario ── */}
       {open && (
         <div className="fixed inset-0 z-50 flex items-start justify-end">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={closePanel} />
+          <div className="absolute inset-0 bg-slate-900/20" onClick={closePanel} />
           <div className="relative h-full w-full max-w-md bg-white shadow-2xl overflow-y-auto flex flex-col">
             <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-8 py-5 flex items-center justify-between">
               <h2 className="text-xl font-black text-slate-800">
@@ -404,7 +404,7 @@ function UserManagementPage({ language = "es", currentUser }) {
       {/* ── Panel: Cambio de contraseña ── */}
       {pwdPanel && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={closePwdPanel} />
+          <div className="absolute inset-0 bg-slate-900/20" onClick={closePwdPanel} />
           <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-8">
             <h2 className="text-lg font-black text-slate-800 mb-1">{t.changePassword}</h2>
             <p className="text-xs text-slate-400 mb-6">@{pwdPanel.username}</p>

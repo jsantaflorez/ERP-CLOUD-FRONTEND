@@ -118,7 +118,7 @@ function CostCenterQuickCreateModal({ language = "es", rows, onCreated, onClose 
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-slate-900/20" onClick={onClose} />
       <div className="relative w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
         <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between">
           <h2 className="text-lg font-black text-slate-800">{t.title}</h2>

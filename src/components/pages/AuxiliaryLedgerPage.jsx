@@ -68,6 +68,7 @@ function AuxiliaryLedgerPage({ language = "es" }) {
       generatedAt: "Generado",
       errorConn: "Error de conexión con el servidor.",
       grandTotals: "Totales Generales",
+      annulled: "Anulado",
       exportExcel: "Exportar Excel",
       exportPdf: "Exportar PDF",
       pdfReportTitle: "Libro Auxiliar",
@@ -103,6 +104,7 @@ function AuxiliaryLedgerPage({ language = "es" }) {
       generatedAt: "Generated",
       errorConn: "Server connection error.",
       grandTotals: "Grand Totals",
+      annulled: "Annulled",
       exportExcel: "Export to Excel",
       exportPdf: "Export to PDF",
       pdfReportTitle: "Auxiliary Ledger",
@@ -256,7 +258,7 @@ function AuxiliaryLedgerPage({ language = "es" }) {
       columnHeader,
       ...(group.transactions || []).map((tx) => [
         tx.transactionDate,
-        tx.documentNumber,
+        tx.annulled ? `${tx.documentNumber} (${t.annulled.toUpperCase()})` : tx.documentNumber,
         tx.detail,
         tx.thirdPartyName || "",
         tx.costCenterCode || "",
@@ -355,7 +357,7 @@ function AuxiliaryLedgerPage({ language = "es" }) {
 
       const body = (group.transactions || []).map((tx) => [
         tx.transactionDate || "",
-        tx.documentNumber || "",
+        tx.annulled ? `${tx.documentNumber || ""} (${t.annulled.toUpperCase()})` : tx.documentNumber || "",
         tx.detail || "",
         tx.thirdPartyName || "",
         tx.costCenterCode || "",
@@ -534,9 +536,21 @@ function AuxiliaryLedgerPage({ language = "es" }) {
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {(group.transactions || []).map((tx, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/60">
+                      <tr
+                        key={idx}
+                        className={`hover:bg-slate-50/60 ${tx.annulled ? "bg-red-50/40" : ""}`}
+                      >
                         <td className="px-4 py-2.5 text-slate-600">{tx.transactionDate}</td>
-                        <td className="px-4 py-2.5 text-slate-600">{tx.documentNumber}</td>
+                        <td className="px-4 py-2.5 text-slate-600">
+                          <div className="flex items-center gap-2">
+                            <span>{tx.documentNumber}</span>
+                            {tx.annulled && (
+                              <span className="rounded-full bg-red-100 px-2 py-0.5 text-[9px] font-bold uppercase text-red-700">
+                                {t.annulled}
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-4 py-2.5 text-slate-600">{tx.detail}</td>
                         <td className="px-4 py-2.5 text-slate-500">{tx.thirdPartyName || "—"}</td>
                         <td className="px-4 py-2.5 text-slate-500">{tx.costCenterCode || "—"}</td>

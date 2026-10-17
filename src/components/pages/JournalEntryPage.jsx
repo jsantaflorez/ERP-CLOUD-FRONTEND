@@ -1538,7 +1538,7 @@ function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-slate-900/20" onClick={onClose} />
       <div className="relative w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
         <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-8 py-5 flex items-center justify-between">
           <div>
@@ -1602,7 +1602,7 @@ function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose }) {
 function JeAnnulModal({ t, entry, reason, setReason, error, annulling, onConfirm, onCancel }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onCancel} />
+      <div className="absolute inset-0 bg-slate-900/20" onClick={onCancel} />
       <div className="relative w-full max-w-lg rounded-2xl bg-white shadow-2xl">
         <div className="px-8 py-6 space-y-4">
           <div>

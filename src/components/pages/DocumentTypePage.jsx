@@ -470,7 +470,7 @@ function DocumentTypePage({ language = "es" }) {
       {/* ── Lateral Entry Drawer Panel ── */}
       {open && (
         <div className="fixed inset-0 z-50 flex items-start justify-end">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={closePanel} />
+          <div className="absolute inset-0 bg-slate-900/20" onClick={closePanel} />
           <div className="relative h-full w-full max-w-xl bg-white shadow-2xl overflow-y-auto flex flex-col">
 
             <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-8 py-5 flex items-center justify-between">
@@ -554,7 +554,7 @@ function DocumentTypePage({ language = "es" }) {
           client-side. */}
       {adjustingItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={closeAdjustPanel} />
+          <div className="absolute inset-0 bg-slate-900/20" onClick={closeAdjustPanel} />
           <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl flex flex-col">
             <div className="border-b border-slate-100 px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-black text-slate-800">{t.adjustConsecutiveTitle}</h2>

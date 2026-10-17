@@ -756,7 +756,7 @@ const loadCatalogs = async () => {
       {/* Contextual Side Panel Form Container */}
       {open && (
         <div className="fixed inset-0 z-50 flex items-start justify-end">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={closePanel} />
+          <div className="absolute inset-0 bg-slate-900/20" onClick={closePanel} />
           <div className="relative h-full w-full max-w-xl bg-white shadow-2xl flex flex-col">
 
             {/* Modal Heading Context Group */}
@@ -988,7 +988,7 @@ const loadCatalogs = async () => {
       {/* Read-only "View" Side Panel — shows the same 3 tabs as Editar, but no inputs */}
       {viewItem && (
         <div className="fixed inset-0 z-50 flex items-start justify-end">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={closeViewPanel} />
+          <div className="absolute inset-0 bg-slate-900/20" onClick={closeViewPanel} />
           <div className="relative h-full w-full max-w-xl bg-white shadow-2xl flex flex-col">
 
             <div className="bg-white border-b border-slate-100 px-8 py-4 flex items-center justify-between">

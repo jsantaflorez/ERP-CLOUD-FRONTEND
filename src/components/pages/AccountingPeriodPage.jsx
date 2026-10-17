@@ -743,7 +743,7 @@ function AccountingPeriodPage({ language = "es" }) {
       {/* ── Cerrar Mes ── */}
       {closeMonthOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={closeCloseMonthPanel} />
+          <div className="absolute inset-0 bg-slate-900/20" onClick={closeCloseMonthPanel} />
           <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl flex flex-col">
             <div className="border-b border-slate-100 px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-black text-slate-800">{t.closeMonthTitle}</h2>
@@ -794,7 +794,7 @@ function AccountingPeriodPage({ language = "es" }) {
       {/* ── Cerrar Año Fiscal ── */}
       {closeYearOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={closeCloseYearPanel} />
+          <div className="absolute inset-0 bg-slate-900/20" onClick={closeCloseYearPanel} />
           <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-y-auto">
             <div className="border-b border-slate-100 px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-black text-slate-800">{t.closeYearTitle}</h2>
@@ -855,7 +855,7 @@ function AccountingPeriodPage({ language = "es" }) {
       {/* ── Reabrir (mes o año) ── */}
       {reopenTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={closeReopenPanel} />
+          <div className="absolute inset-0 bg-slate-900/20" onClick={closeReopenPanel} />
           <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl flex flex-col">
             <div className="border-b border-slate-100 px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-black text-slate-800">
@@ -903,7 +903,7 @@ function AccountingPeriodPage({ language = "es" }) {
           close endpoint for that one fixed year/month. */}
       {closeRowTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={closeCloseRowPanel} />
+          <div className="absolute inset-0 bg-slate-900/20" onClick={closeCloseRowPanel} />
           <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl flex flex-col">
             <div className="border-b border-slate-100 px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-black text-slate-800">{t.closeMonthTitle}</h2>
@@ -943,7 +943,7 @@ function AccountingPeriodPage({ language = "es" }) {
       {/* ── Cuentas de Cierre por Defecto (compañía) ── */}
       {closingDefaultsOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={closeClosingDefaultsPanel} />
+          <div className="absolute inset-0 bg-slate-900/20" onClick={closeClosingDefaultsPanel} />
           <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl flex flex-col">
             <div className="border-b border-slate-100 px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-black text-slate-800">{t.closingDefaultsTitle}</h2>

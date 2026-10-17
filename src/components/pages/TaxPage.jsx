@@ -99,6 +99,7 @@ function TaxPage({ language = "es" }) {
       sign: "Signo",
       debit: "Débito",
       credit: "Crédito",
+      signSuggestedHint: "Sugerido según la Naturaleza de la cuenta elegida — cámbielo si es necesario.",
       account: "Cuenta Contable",
       active: "Activo",
       inactive: "Inactivo",
@@ -149,6 +150,7 @@ function TaxPage({ language = "es" }) {
       sign: "Sign",
       debit: "Debit",
       credit: "Credit",
+      signSuggestedHint: "Suggested based on the selected account's Nature — change it if needed.",
       account: "Account",
       active: "Active",
       inactive: "Inactive",
@@ -324,7 +326,25 @@ function TaxPage({ language = "es" }) {
     // (rate/minimumBase intentionally NOT special-cased here anymore —
     // native <input type="number"> already restricts to numeric input.)
 
-    setForm((prev) => ({ ...prev, [name]: val }));
+    setForm((prev) => {
+      const next = { ...prev, [name]: val };
+
+      // NEW (2026-10-16, user request): suggest Signo from the chosen
+      // account's own Naturaleza -- both use the identical "D"/"C"
+      // convention (AccountNature and Tax.sign), so the match is
+      // direct, no translation table needed. Still fully editable
+      // afterward (see signSuggestedHint) -- a tax can legitimately
+      // need the opposite sign of its account in an edge case, same
+      // reasoning as ChartOfAccountPage's contra-account exception.
+      if (name === "accountId" && val) {
+        const selectedAccount = accounts.find((acc) => String(acc.id) === String(val));
+        if (selectedAccount?.nature) {
+          next.sign = selectedAccount.nature;
+        }
+      }
+
+      return next;
+    });
   };
 
   const validate = () => {
@@ -548,7 +568,7 @@ function TaxPage({ language = "es" }) {
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-start justify-end">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={closePanel} />
+          <div className="absolute inset-0 bg-slate-900/20" onClick={closePanel} />
           <div className="relative h-full w-full max-w-xl bg-white shadow-2xl overflow-y-auto flex flex-col">
             <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-8 py-5 flex items-center justify-between">
               <h2 className="text-xl font-black text-slate-800">
@@ -655,6 +675,9 @@ function TaxPage({ language = "es" }) {
                   <option value="D">D - {t.debit}</option>
                   <option value="C">C - {t.credit}</option>
                 </select>
+                {form.accountId && (
+                  <span className="text-[10px] text-slate-400">{t.signSuggestedHint}</span>
+                )}
               </Field>
 
               <Field label={t.rate} error={errors.rate}>
