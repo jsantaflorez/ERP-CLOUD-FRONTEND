@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
 import api from "../../services/api";
@@ -37,6 +37,11 @@ function JournalBookPage({ language = "es" }) {
   const [endDate, setEndDate] = useState(today);
   const [documentTypeId, setDocumentTypeId] = useState("");
   const [documentTypes, setDocumentTypes] = useState([]);
+  // NEW (2026-10-17, user request): "imprimir todos, los no anulados y
+  // los anulados" -- filters the already-fetched register by voucher
+  // status without a new request, since every entry already carries
+  // its own `annulled` flag (see displayedEntries below).
+  const [statusFilter, setStatusFilter] = useState("ALL");
 
   const [entries, setEntries] = useState(null); // null = not generated yet
   const [loading, setLoading] = useState(false);
@@ -54,11 +59,16 @@ function JournalBookPage({ language = "es" }) {
       endDate: "Fecha Hasta",
       documentType: "Tipo de Documento",
       allDocumentTypes: "Todos",
+      status: "Estado",
+      statusAll: "Todos",
+      statusActive: "No Anulados",
+      statusAnnulled: "Anulados",
       generate: "Generar",
       generating: "Generando...",
       dateRequired: "Selecciona la fecha desde y la fecha hasta para generar el reporte.",
       dateRangeInvalid: "La fecha desde no puede ser posterior a la fecha hasta.",
       noResults: "No hay comprobantes contabilizados en ese rango de fechas.",
+      noResultsFiltered: "No hay comprobantes que cumplan el filtro de estado seleccionado en ese rango de fechas.",
       account: "Cuenta",
       thirdParty: "Tercero",
       costCenter: "Centro de Costo",
@@ -82,11 +92,16 @@ function JournalBookPage({ language = "es" }) {
       endDate: "End Date",
       documentType: "Document Type",
       allDocumentTypes: "All",
+      status: "Status",
+      statusAll: "All",
+      statusActive: "Not Annulled",
+      statusAnnulled: "Annulled",
       generate: "Generate",
       generating: "Generating...",
       dateRequired: "Select a start date and an end date to generate the report.",
       dateRangeInvalid: "The start date cannot be after the end date.",
       noResults: "No vouchers were posted in that date range.",
+      noResultsFiltered: "No vouchers match the selected status filter in that date range.",
       account: "Account",
       thirdParty: "Third Party",
       costCenter: "Cost Center",
@@ -137,6 +152,12 @@ function JournalBookPage({ language = "es" }) {
     return { totalDebit, totalCredit };
   };
 
+  const statusFilterLabel = () => {
+    if (statusFilter === "ACTIVE") return t.statusActive;
+    if (statusFilter === "ANNULLED") return t.statusAnnulled;
+    return t.statusAll;
+  };
+
   const reportPeriodLabel = () => `${startDate} — ${endDate}`;
   const exportFileStem = () => `${t.exportTitle.replace(/\s+/g, "_")}_${startDate}_${endDate}`;
 
@@ -180,12 +201,24 @@ function JournalBookPage({ language = "es" }) {
     }
   };
 
-  const hasData = Array.isArray(entries) && entries.length > 0;
+  // The raw fetch stays unfiltered (one request per date range/document
+  // type, same as before); the status filter is applied here so flipping
+  // it between Todos/No Anulados/Anulados is instant and never re-queries
+  // the backend.
+  const displayedEntries = useMemo(() => {
+    if (!Array.isArray(entries)) return entries;
+    if (statusFilter === "ACTIVE") return entries.filter((entry) => !entry.annulled);
+    if (statusFilter === "ANNULLED") return entries.filter((entry) => entry.annulled);
+    return entries;
+  }, [entries, statusFilter]);
+
+  const hasRawData = Array.isArray(entries) && entries.length > 0;
+  const hasData = Array.isArray(displayedEntries) && displayedEntries.length > 0;
 
   const grandTotals = () => {
     let totalDebit = 0;
     let totalCredit = 0;
-    (entries || []).forEach((entry) => {
+    (displayedEntries || []).forEach((entry) => {
       const { totalDebit: d, totalCredit: c } = entryTotals(entry);
       totalDebit += d;
       totalCredit += c;
@@ -200,7 +233,7 @@ function JournalBookPage({ language = "es" }) {
     const headerInfo = {
       companyName: activeTenantId,
       reportTitle: t.exportTitle,
-      period: reportPeriodLabel(),
+      period: `${reportPeriodLabel()}   ·   ${statusFilterLabel()}`,
       generatedAtLabel: t.generatedAt,
       generatedAt: nowLocalIso(),
     };
@@ -209,11 +242,11 @@ function JournalBookPage({ language = "es" }) {
 
     const rows = [
       ...buildExcelHeaderRows(headerInfo),
-      [t.entriesCount, entries.length],
+      [t.entriesCount, displayedEntries.length],
       [],
     ];
 
-    entries.forEach((entry) => {
+    displayedEntries.forEach((entry) => {
       const { totalDebit, totalCredit } = entryTotals(entry);
       rows.push([
         `${entry.documentNumber}   ·   ${entry.entryDate}   ·   ${documentTypeLabel(entry)}${
@@ -253,7 +286,7 @@ function JournalBookPage({ language = "es" }) {
     const headerInfo = {
       companyName: activeTenantId,
       reportTitle: t.exportTitle,
-      period: `${reportPeriodLabel()}   ·   ${t.entriesCount}: ${entries.length}`,
+      period: `${reportPeriodLabel()}   ·   ${statusFilterLabel()}   ·   ${t.entriesCount}: ${displayedEntries.length}`,
       generatedAtLabel: t.generatedAt,
       generatedAt: nowLocalIso(),
     };
@@ -262,7 +295,7 @@ function JournalBookPage({ language = "es" }) {
     const bottomMargin = 15;
     const pageHeight = doc.internal.pageSize.getHeight();
 
-    entries.forEach((entry) => {
+    displayedEntries.forEach((entry) => {
       const { totalDebit, totalCredit } = entryTotals(entry);
 
       // A voucher header line never splits across a table boundary --
@@ -399,6 +432,21 @@ function JournalBookPage({ language = "es" }) {
           </select>
         </div>
 
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+            {t.status}
+          </label>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+          >
+            <option value="ALL">{t.statusAll}</option>
+            <option value="ACTIVE">{t.statusActive}</option>
+            <option value="ANNULLED">{t.statusAnnulled}</option>
+          </select>
+        </div>
+
         <Button type="submit" variant="primary" loading={loading}>
           {loading ? t.generating : t.generate}
         </Button>
@@ -417,7 +465,8 @@ function JournalBookPage({ language = "es" }) {
               {activeTenantId && <strong className="text-slate-500">{activeTenantId}</strong>}
               {activeTenantId && " — "}
               {reportPeriodLabel()}
-              {hasData && `   ·   ${t.entriesCount}: ${entries.length}`}
+              {`   ·   ${statusFilterLabel()}`}
+              {hasData && `   ·   ${t.entriesCount}: ${displayedEntries.length}`}
             </p>
 
             {hasData && (
@@ -434,13 +483,13 @@ function JournalBookPage({ language = "es" }) {
 
           {!hasData && (
             <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-slate-400 shadow-sm">
-              {t.noResults}
+              {hasRawData ? t.noResultsFiltered : t.noResults}
             </div>
           )}
 
           {hasData && (
             <div className="space-y-4">
-              {entries.map((entry) => {
+              {displayedEntries.map((entry) => {
                 const { totalDebit, totalCredit } = entryTotals(entry);
                 return (
                   <div
