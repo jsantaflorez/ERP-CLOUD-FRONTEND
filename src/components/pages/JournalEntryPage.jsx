@@ -119,7 +119,7 @@ const fieldOrderForRow = (item, acc, tax) => {
   return order;
 };
 
-function JournalEntryPage({ language = "es", onDirtyChange }) {
+function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenEntryIdHandled }) {
   const [view, setView] = useState("list"); // "list" | "form"
 
   // List/search state
@@ -724,6 +724,67 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
     setErrors({});
     setEditingId(null);
   };
+
+  // NEW (2026-10-20): entry point for the cross-navigation coming from
+  // the "Informe de Movimientos Incompletos" report's Editar button.
+  // Dashboard hands this page a bare journalEntryId (openEntryId) --
+  // unlike openEditEntry() above, there's no list row to read
+  // entry.documentTypeId from first, so the CLOSING_ENTRY_IMMUTABLE guard
+  // has to be checked AFTER the fetch instead of before it. Shares the
+  // same form-shaping logic as openEditEntry(); kept as its own function
+  // rather than folded together since the two differ on exactly that
+  // point (pre- vs post-fetch guard) and on which pieces of the id they
+  // start from.
+  const openEditEntryById = async (id) => {
+    setLoadingEntry(true);
+    setView("form");
+    setErrors({});
+    try {
+      const response = await api.get(`/v1/journal-entries/${id}`);
+      const data = response.data?.data;
+      const docType = documentTypeById(data.documentTypeId);
+      if (docType?.code === CLOSING_DOC_TYPE_CODE) {
+        showToast(t.cannotEditClosingEntry, "error");
+        setView("list");
+        return;
+      }
+      const loadedForm = {
+        entryDate: data.entryDate,
+        documentTypeId: data.documentTypeId != null ? String(data.documentTypeId) : "",
+        description: data.description || "",
+        items: (data.items || []).map((item) => ({
+          accountId: item.accountId != null ? String(item.accountId) : "",
+          thirdPartyId: item.thirdPartyId != null ? String(item.thirdPartyId) : "",
+          costCenterId: item.costCenterId != null ? String(item.costCenterId) : "",
+          debit: item.debit ? String(item.debit) : "",
+          credit: item.credit ? String(item.credit) : "",
+          description: item.description || "",
+          taxBase: item.taxBase != null ? String(item.taxBase) : "",
+        })),
+      };
+      setForm(loadedForm);
+      pristineFormRef.current = JSON.stringify(loadedForm);
+      setEditingId(id);
+    } catch (error) {
+      showToast(getApiErrorMessage(error, language, t.errorConn), "error");
+      setView("list");
+    } finally {
+      setLoadingEntry(false);
+    }
+  };
+
+  // Consumes openEntryId as soon as Dashboard sets it (coming from the
+  // incomplete-movements report), then immediately reports it handled so
+  // a later plain visit to this screen doesn't reopen the same entry.
+  // documentTypes doesn't need to be in deps -- it's loaded once on
+  // mount and openEditEntryById reads it fresh via documentTypeById each
+  // time it runs, same as openEditEntry does.
+  useEffect(() => {
+    if (!openEntryId) return;
+    openEditEntryById(openEntryId);
+    onOpenEntryIdHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openEntryId]);
 
   // NEW (2026-10-01): "unsaved changes" safety net (see pendientes.md) --
   // a general-purpose backstop alongside the account/cost-center "+"

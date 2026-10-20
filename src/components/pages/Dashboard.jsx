@@ -22,6 +22,7 @@ import TrialBalanceDetailedPage from "./TrialBalanceDetailedPage";
 import IncomeStatementPage from "./IncomeStatementPage";
 import AccountingPeriodPage from "./AccountingPeriodPage";
 import TaxDetailPage from "./TaxDetailPage";
+import IncompleteMovementsPage from "./IncompleteMovementsPage";
 
 // UX IMPROVEMENT (2026-10-17, user request): with 9 reports in one flat
 // list, the "Reportes" submenu had gotten long enough that finding one
@@ -56,6 +57,7 @@ const REPORT_GROUPS = [
     views: [
       { view: "thirdPartyBalance", labelKey: "navThirdPartyBalance" },
       { view: "costCenterBalance", labelKey: "navCostCenterBalance" },
+      { view: "incompleteMovements", labelKey: "navIncompleteMovements" },
     ],
   },
   {
@@ -95,6 +97,20 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
   // was not extended to the simpler CRUD screens, which don't share
   // JournalEntryPage's "lose a half-typed multi-line form" risk profile).
   const [journalEntryDirty, setJournalEntryDirty] = useState(false);
+
+  // NEW (2026-10-20): cross-navigation from the Informe de Movimientos
+  // Incompletos report into Asientos Contables -- the report's "Editar"
+  // button needs to land directly on one specific comprobante, already
+  // open for edit, rather than just switching to a blank journalEntry
+  // view. pendingEditEntryId carries the id across that view switch;
+  // JournalEntryPage consumes it (fetches, opens the entry for edit) and
+  // calls back to clear it so a later plain visit to Asientos Contables
+  // doesn't reopen the same entry.
+  const [pendingEditEntryId, setPendingEditEntryId] = useState(null);
+  const handleEditEntryFromReport = (entryId) => {
+    setPendingEditEntryId(entryId);
+    setActiveView("journalEntry");
+  };
 
   const changeView = (view) => {
     if (journalEntryDirty && activeView === "journalEntry" && view !== "journalEntry") {
@@ -329,7 +345,12 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
         )}
 
         {activeView === "journalEntry" && (
-          <JournalEntryPage language={language} onDirtyChange={setJournalEntryDirty} />
+          <JournalEntryPage
+            language={language}
+            onDirtyChange={setJournalEntryDirty}
+            openEntryId={pendingEditEntryId}
+            onOpenEntryIdHandled={() => setPendingEditEntryId(null)}
+          />
         )}
 
         {activeView === "documentType" && (
@@ -386,6 +407,10 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
 
         {activeView === "taxDetail" && (
           <TaxDetailPage language={language} />
+        )}
+
+        {activeView === "incompleteMovements" && (
+          <IncompleteMovementsPage language={language} onEditEntry={handleEditEntryFromReport} />
         )}
 
         {activeView === "accountingPeriod" && (
