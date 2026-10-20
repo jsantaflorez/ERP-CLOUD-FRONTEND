@@ -23,13 +23,48 @@ import IncomeStatementPage from "./IncomeStatementPage";
 import AccountingPeriodPage from "./AccountingPeriodPage";
 import TaxDetailPage from "./TaxDetailPage";
 
-// Views that live under the "Reportes" submenu -- grouped here so the
-// submenu auto-expands whenever one of them is the active view (e.g. on
-// first load of a bookmarked report, or after navigating away and back),
-// instead of only expanding on an explicit click. Add new report views
-// (Balance de Comprobación, Balance General, ...) to this list as they're
-// built, and the submenu picks them up automatically.
-const REPORT_VIEWS = ["auxiliaryLedger", "trialBalance", "balanceSheet", "trialBalanceDetailed", "incomeStatement", "costCenterBalance", "thirdPartyBalance", "journalBook", "taxDetail"];
+// UX IMPROVEMENT (2026-10-17, user request): with 9 reports in one flat
+// list, the "Reportes" submenu had gotten long enough that finding one
+// meant scanning past the rest. Grouped into 4 collapsible sub-sections
+// (same auto-expand-when-active idea as the outer submenu, just one level
+// deeper) instead of a single flat list. Add a new report view to the
+// group it belongs in -- REPORT_VIEWS (used to auto-expand the outer
+// "Reportes" submenu) is derived from this, so it never needs editing by
+// hand.
+const REPORT_GROUPS = [
+  {
+    key: "financial",
+    labelKey: "navReportsFinancial",
+    views: [
+      { view: "balanceSheet", labelKey: "navBalanceSheet" },
+      { view: "incomeStatement", labelKey: "navIncomeStatement" },
+    ],
+  },
+  {
+    key: "legalBooks",
+    labelKey: "navReportsLegalBooks",
+    views: [
+      { view: "journalBook", labelKey: "navJournalBook" },
+      { view: "auxiliaryLedger", labelKey: "navAuxiliaryLedger" },
+      { view: "trialBalance", labelKey: "navTrialBalance" },
+      { view: "trialBalanceDetailed", labelKey: "navTrialBalanceDetailed" },
+    ],
+  },
+  {
+    key: "management",
+    labelKey: "navReportsManagement",
+    views: [
+      { view: "thirdPartyBalance", labelKey: "navThirdPartyBalance" },
+      { view: "costCenterBalance", labelKey: "navCostCenterBalance" },
+    ],
+  },
+  {
+    key: "fiscal",
+    labelKey: "navReportsFiscal",
+    views: [{ view: "taxDetail", labelKey: "navTaxDetail" }],
+  },
+];
+const REPORT_VIEWS = REPORT_GROUPS.flatMap((group) => group.views.map((v) => v.view));
 
 function Dashboard({ user, onLogout, language, onLanguageChange }) {
   const [activeView, setActiveView] = useState("dashboard");
@@ -41,6 +76,13 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
   const [reportsMenuOpen, setReportsMenuOpen] = useState(false);
   const isReportView = REPORT_VIEWS.includes(activeView);
   const reportsMenuExpanded = reportsMenuOpen || isReportView;
+  // One level deeper (2026-10-17): each of the 4 report sub-groups
+  // (Estados Financieros/Libros Legales/Gestión y Terceros/Fiscales)
+  // toggles independently, same open-OR-active rule as reportsMenuOpen/
+  // isReportView above but keyed by group instead of a single boolean.
+  const [openReportGroupKeys, setOpenReportGroupKeys] = useState({});
+  const toggleReportGroup = (key) =>
+    setOpenReportGroupKeys((prev) => ({ ...prev, [key]: !prev[key] }));
   const t = translations[language] || translations.es;
 
   // NEW (2026-10-01): "unsaved changes" safety net (see pendientes.md).
@@ -191,78 +233,43 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
 
                   {reportsMenuExpanded && (
                     <div className="mt-1 flex flex-col gap-1 pl-3">
-                      <button
-                        onClick={() => changeView("auxiliaryLedger")}
-                        className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
-                          activeView === "auxiliaryLedger" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
-                        }`}
-                      >
-                        {t.navAuxiliaryLedger}
-                      </button>
-                      <button
-                        onClick={() => changeView("trialBalance")}
-                        className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
-                          activeView === "trialBalance" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
-                        }`}
-                      >
-                        {t.navTrialBalance}
-                      </button>
-                      <button
-                        onClick={() => changeView("balanceSheet")}
-                        className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
-                          activeView === "balanceSheet" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
-                        }`}
-                      >
-                        {t.navBalanceSheet}
-                      </button>
-                      <button
-                        onClick={() => changeView("trialBalanceDetailed")}
-                        className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
-                          activeView === "trialBalanceDetailed" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
-                        }`}
-                      >
-                        {t.navTrialBalanceDetailed}
-                      </button>
-                      <button
-                        onClick={() => changeView("incomeStatement")}
-                        className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
-                          activeView === "incomeStatement" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
-                        }`}
-                      >
-                        {t.navIncomeStatement}
-                      </button>
-                      <button
-                        onClick={() => changeView("costCenterBalance")}
-                        className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
-                          activeView === "costCenterBalance" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
-                        }`}
-                      >
-                        {t.navCostCenterBalance}
-                      </button>
-                      <button
-                        onClick={() => changeView("thirdPartyBalance")}
-                        className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
-                          activeView === "thirdPartyBalance" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
-                        }`}
-                      >
-                        {t.navThirdPartyBalance}
-                      </button>
-                      <button
-                        onClick={() => changeView("journalBook")}
-                        className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
-                          activeView === "journalBook" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
-                        }`}
-                      >
-                        {t.navJournalBook}
-                      </button>
-                      <button
-                        onClick={() => changeView("taxDetail")}
-                        className={`rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
-                          activeView === "taxDetail" ? "bg-blue-600" : "bg-slate-800/60 hover:bg-slate-700"
-                        }`}
-                      >
-                        {t.navTaxDetail}
-                      </button>
+                      {REPORT_GROUPS.map((group) => {
+                        const groupHasActiveView = group.views.some((v) => v.view === activeView);
+                        const groupExpanded = openReportGroupKeys[group.key] || groupHasActiveView;
+                        return (
+                          <div key={group.key}>
+                            <button
+                              onClick={() => toggleReportGroup(group.key)}
+                              className={`flex w-full items-center justify-between rounded-xl px-4 py-2.5 text-left text-sm transition-colors ${
+                                groupHasActiveView ? "bg-blue-600/80" : "bg-slate-800/60 hover:bg-slate-700"
+                              }`}
+                            >
+                              <span>{t[group.labelKey]}</span>
+                              <span
+                                className={`text-[10px] transition-transform ${groupExpanded ? "rotate-180" : ""}`}
+                              >
+                                ▾
+                              </span>
+                            </button>
+
+                            {groupExpanded && (
+                              <div className="mt-1 flex flex-col gap-1 pl-3">
+                                {group.views.map((item) => (
+                                  <button
+                                    key={item.view}
+                                    onClick={() => changeView(item.view)}
+                                    className={`rounded-xl px-4 py-2 text-left text-xs transition-colors ${
+                                      activeView === item.view ? "bg-blue-600" : "bg-slate-800/40 hover:bg-slate-700"
+                                    }`}
+                                  >
+                                    {t[item.labelKey]}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
