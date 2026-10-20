@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import api from "../../services/api";
 import Button from "../ui/Button";
 import { getApiErrorMessage } from "../../constants/apiErrors";
@@ -38,6 +38,19 @@ function CostCenterQuickCreateModal({ language = "es", rows, onCreated, onClose 
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
+
+  // FIX (2026-10-20, user request): the parent dropdown used to list every
+  // cost center, including ones that already allow movement -- picking one
+  // of those always failed on save, since CostCenterService.mapRequestToEntity()
+  // rejects a parent with allowsMovement=true ("Cannot add sub-center: The
+  // parent center is marked to allow movements."). CostCenterPage.jsx's own
+  // full form has the same underlying issue but shows a non-blocking warning
+  // instead (see t.parentAllowsMovementWarning there) -- acceptable on that
+  // screen since the user is already deep in cost-center administration. In
+  // THIS modal, opened mid-comprobante to unblock one line fast, a warning
+  // the user can miss and then a failed save is a worse outcome than simply
+  // never offering an invalid choice -- so here it's filtered out instead.
+  const parentCandidates = useMemo(() => rows.filter((r) => !r.allowsMovement), [rows]);
 
   const t = {
     es: {
@@ -158,7 +171,7 @@ function CostCenterQuickCreateModal({ language = "es", rows, onCreated, onClose 
           <CcField label={t.parent}>
             <select name="parentId" value={form.parentId} onChange={handleChange} className={ccInputCls()}>
               <option value="">{t.noParent}</option>
-              {rows.map((r) => (
+              {parentCandidates.map((r) => (
                 <option key={r.id} value={r.id}>{r.code} — {r.name}</option>
               ))}
             </select>

@@ -10,6 +10,7 @@ import autoTable from "jspdf-autotable";
 import { addPdfReportHeader, addPdfRunningHeader, buildExcelHeaderRows, nowLocalIso, todayLocalIso } from "../../utils/reportExport";
 import AccountQuickCreateModal from "../common/AccountQuickCreateModal";
 import CostCenterQuickCreateModal from "../common/CostCenterQuickCreateModal";
+import ThirdPartyQuickCreateModal from "../common/ThirdPartyQuickCreateModal";
 
 // A brand-new line starts with both amounts empty -- the user picks either
 // a debit or a credit, never both (mirrors JournalEntryService's own rule).
@@ -76,6 +77,46 @@ const effectiveAmounts = (item, tax) => {
   if (!tax) return { debit: toNumber(item.debit), credit: toNumber(item.credit) };
   const amount = computeTaxAmount(tax, item.taxBase);
   return tax.sign === "D" ? { debit: amount, credit: 0 } : { debit: 0, credit: amount };
+};
+
+// NEW (2026-10-20, user request): a line the user never actually touched
+// -- most commonly the extra blank one the Enter-advance feature
+// auto-creates past the last field of the last row -- used to be
+// indistinguishable from a real, half-filled line: validate() demanded
+// an Account on it just like any other, with no way to finish the
+// comprobante except filling it in or finding the (easy-to-miss, mouse-
+// only) "x" button. Now any line matching this check is silently
+// skipped by validation and left out of the save payload (see
+// validate() and handleSave() below) -- the user can just ignore it.
+const isBlankItem = (item) =>
+  !item.accountId &&
+  !item.thirdPartyId &&
+  !item.costCenterId &&
+  !toNumber(item.debit) &&
+  !toNumber(item.credit) &&
+  !toNumber(item.taxBase) &&
+  !item.description?.trim();
+
+// NEW (2026-10-19, user request): the ordered list of fields a line
+// actually shows right now -- used to drive Enter-to-advance across the
+// grid (see advanceFocusAfter in JeFormView). Mirrors exactly what is
+// rendered/enabled for this row: thirdParty/costCenter only when the
+// account requires them, taxBase instead of debit/credit when the
+// account is tax-linked, and only whichever of debit/credit is not
+// currently disabled by the other one being filled (same mutual-
+// exclusion rule as handleItemChange).
+const fieldOrderForRow = (item, acc, tax) => {
+  const order = ["account"];
+  if (acc?.requiresThirdParty) order.push("thirdParty");
+  if (acc?.requiresCostCenter) order.push("costCenter");
+  if (tax) {
+    order.push("taxBase");
+  } else {
+    if (!(toNumber(item.credit) > 0)) order.push("debit");
+    if (!(toNumber(item.debit) > 0)) order.push("credit");
+  }
+  order.push("description");
+  return order;
 };
 
 function JournalEntryPage({ language = "es", onDirtyChange }) {
@@ -154,15 +195,19 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
       generalDescription: "Descripción General",
       items: "Líneas del Asiento", addLine: "+ Agregar Asiento",
       removeLine: "Quitar",
+      keyboardShortcutsHint: "TAB / ENTER avanza al siguiente campo · ↑ / ↓ navegan las sugerencias de Cuenta y Tercero · ENTER en la última línea crea una nueva (si queda vacía, se ignora sola al guardar) · ALT + DELETE elimina la línea actual · CTRL + ENTER guarda el comprobante · F9 autocuadra la partida doble",
       account: "Cuenta", selectAccount: "Buscar por código o nombre...", noAccountMatches: "Sin resultados",
+      noThirdPartyMatches: "Sin resultados",
       newAccountQuick: "Crear nueva cuenta",
       thirdParty: "Tercero", selectThirdParty: "Seleccione un tercero",
+      newThirdPartyQuick: "Crear nuevo tercero",
       costCenter: "Centro de Costo", selectCostCenter: "Seleccione un centro de costo",
       newCostCenterQuick: "Crear nuevo centro de costo",
       debit: "Débito", credit: "Crédito", lineDescription: "Descripción (opcional)",
       totalDebitLabel: "Total Débitos:", totalCreditLabel: "Total Créditos:",
       difference: "Diferencia:", balanced: "Balanceado", unbalanced: "Descuadrado",
       save: "Guardar Asiento", cancel: "Cancelar", saving: "Guardando...",
+      saveShortcutHint: "Ctrl+Enter: Guardar · F9: Auto-cuadrar",
       unsavedChangesWarning: "Hay cambios sin guardar en este comprobante. ¿Desea salir de todos modos? Se perderán los datos digitados.",
       loadingCatalogs: "Cargando catálogos...",
       errorConn: "Error de conexión con el servidor.",
@@ -177,6 +222,7 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
       taxComputedHint: "Calculado automáticamente a partir de la base y la tarifa del impuesto",
       needAtLeastOneAccount: "Seleccione una cuenta en cada línea",
       unbalancedError: "El asiento no está balanceado. Los débitos deben ser iguales a los créditos.",
+      itemsAllBlankError: "Agregue al menos una línea con una cuenta antes de guardar.",
       detailTitle: "Detalle del Asiento",
       close: "Cerrar",
       printPdf: "Imprimir PDF",
@@ -226,15 +272,19 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
       generalDescription: "General Description",
       items: "Entry Lines", addLine: "+ Add Entry",
       removeLine: "Remove",
+      keyboardShortcutsHint: "TAB / ENTER moves to the next field · ↑ / ↓ navigate Account and Third Party suggestions · ENTER on the last line creates a new one (left blank, it's ignored on save) · ALT + DELETE removes the current line · CTRL + ENTER saves the entry · F9 auto-balances the double entry",
       account: "Account", selectAccount: "Search by code or name...", noAccountMatches: "No matches",
+      noThirdPartyMatches: "No matches",
       newAccountQuick: "Create new account",
       thirdParty: "Third Party", selectThirdParty: "Select a third party",
+      newThirdPartyQuick: "Create new third party",
       costCenter: "Cost Center", selectCostCenter: "Select a cost center",
       newCostCenterQuick: "Create new cost center",
       debit: "Debit", credit: "Credit", lineDescription: "Description (optional)",
       totalDebitLabel: "Total Debits:", totalCreditLabel: "Total Credits:",
       difference: "Difference:", balanced: "Balanced", unbalanced: "Unbalanced",
       save: "Save Entry", cancel: "Cancel", saving: "Saving...",
+      saveShortcutHint: "Ctrl+Enter: Save · F9: Auto-balance",
       unsavedChangesWarning: "This entry has unsaved changes. Leave anyway? The data you typed will be lost.",
       loadingCatalogs: "Loading catalogs...",
       errorConn: "Server connection error.",
@@ -249,6 +299,7 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
       taxComputedHint: "Automatically calculated from the tax's base and rate",
       needAtLeastOneAccount: "Select an account on every line",
       unbalancedError: "The entry is unbalanced. Debits must equal credits.",
+      itemsAllBlankError: "Add at least one line with an account before saving.",
       detailTitle: "Entry Detail",
       close: "Close",
       printPdf: "Print PDF",
@@ -766,6 +817,17 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
     handleItemChange(index, "costCenterId", String(newCostCenter.id));
   };
 
+  // NEW (2026-10-20, user request): same pattern as the two handlers
+  // above -- lets a journal entry line create the Tercero it needs
+  // without leaving the comprobante. activeThirdParties (used by
+  // ThirdPartyComboBox) is derived from `thirdParties` via useMemo, so
+  // appending here is enough to make the new third party immediately
+  // pickable.
+  const handleThirdPartyCreated = (index, newThirdParty) => {
+    setThirdParties((prev) => [...prev, newThirdParty].sort((a, b) => a.documentNumber.localeCompare(b.documentNumber)));
+    handleItemChange(index, "thirdPartyId", String(newThirdParty.id));
+  };
+
   const addLine = () => {
     setForm((prev) => ({ ...prev, items: [...prev.items, emptyItem()] }));
   };
@@ -796,6 +858,9 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
     if (!form.documentTypeId) errs.documentTypeId = t.required;
 
     const itemErrors = form.items.map((item) => {
+      // See isBlankItem's own comment above -- an untouched line is never
+      // validated, it's just left out of the save payload in handleSave().
+      if (isBlankItem(item)) return {};
       const lineErrs = {};
       if (!item.accountId) {
         lineErrs.accountId = t.required;
@@ -830,7 +895,16 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
     });
     if (itemErrors.some((e) => Object.keys(e).length > 0)) errs.items = itemErrors;
 
-    if (!totals.isBalanced) errs.balance = t.unbalancedError;
+    // NEW (2026-10-20): totals (and therefore isBalanced) already ignore
+    // blank lines on their own -- a blank line contributes 0/0, which
+    // can't unbalance anything -- but an entry with EVERY line blank
+    // would otherwise sail through as "balanced" (0 == 0) with nothing
+    // to actually save. Guard that case explicitly.
+    if (form.items.every(isBlankItem)) {
+      errs.balance = t.itemsAllBlankError;
+    } else if (!totals.isBalanced) {
+      errs.balance = t.unbalancedError;
+    }
 
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -844,7 +918,10 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
       entryDate: form.entryDate,
       documentTypeId: Number(form.documentTypeId),
       description: form.description.trim() || null,
-      items: form.items.map((item) => {
+      // NEW (2026-10-20): a blank line (see isBlankItem) never reaches the
+      // backend -- it was never validated above, so sending it would mean
+      // posting accountId: NaN.
+      items: form.items.filter((item) => !isBlankItem(item)).map((item) => {
         const tax = taxByAccountId[item.accountId];
         const amounts = effectiveAmounts(item, tax);
         return {
@@ -1020,6 +1097,7 @@ function JournalEntryPage({ language = "es", onDirtyChange }) {
           onRemoveLine={removeLine}
           onAccountCreated={handleAccountCreated}
           onCostCenterCreated={handleCostCenterCreated}
+          onThirdPartyCreated={handleThirdPartyCreated}
           onSubmit={handleSave}
           onCancel={requestLeaveForm}
         />
@@ -1201,7 +1279,7 @@ function JeFormView({
   taxByAccountId,
   accounts, costCenters, language,
   totals, onHeaderChange, onItemChange, onAddLine, onRemoveLine, onSubmit, onCancel,
-  onAccountCreated, onCostCenterCreated,
+  onAccountCreated, onCostCenterCreated, onThirdPartyCreated,
 }) {
   const selectedDocType = documentTypes.find((d) => String(d.id) === String(form.documentTypeId));
   // NEW (2026-10-01): tracks which item row's "+" button opened a
@@ -1211,6 +1289,144 @@ function JeFormView({
   // onCostCenterCreated), not which line is mid-creation.
   const [accountModalIndex, setAccountModalIndex] = useState(null);
   const [costCenterModalIndex, setCostCenterModalIndex] = useState(null);
+  const [thirdPartyModalIndex, setThirdPartyModalIndex] = useState(null);
+
+  // NEW (2026-10-19, user request): keyboard-first grid entry -- Tab
+  // already moves between native/disabled-aware fields correctly once
+  // the "+"/"x" buttons are taken out of tab order (see tabIndex={-1}
+  // below); Enter needs its own handling since a bare Enter inside a
+  // <form> submits it by default, and the whole point here is that it
+  // should instead move to the next field in the SAME row, or -- on
+  // the last field of the last row -- create a fresh row and jump
+  // straight into its Cuenta.
+  const fieldRefs = useRef({});
+  const registerFieldRef = (index, key) => (el) => {
+    const mapKey = `${index}:${key}`;
+    if (el) fieldRefs.current[mapKey] = el;
+    else delete fieldRefs.current[mapKey];
+  };
+  // Set right before onAddLine() when the field to focus next doesn't
+  // exist yet -- picked up by the effect below once the new row (and
+  // its refs) actually mount.
+  const pendingFocusRef = useRef(null);
+  // Same idea, for F9 auto-balance when it has to create the line it's
+  // about to fill (see handleAutoBalance).
+  const pendingAutoBalanceRef = useRef(null);
+  const formRef = useRef(null);
+
+  useEffect(() => {
+    if (pendingAutoBalanceRef.current) {
+      const { index, side, amount } = pendingAutoBalanceRef.current;
+      pendingAutoBalanceRef.current = null;
+      onItemChange(index, side, amount);
+      fieldRefs.current[`${index}:account`]?.focus();
+      return;
+    }
+    if (pendingFocusRef.current) {
+      const { index, key } = pendingFocusRef.current;
+      pendingFocusRef.current = null;
+      fieldRefs.current[`${index}:${key}`]?.focus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.items.length]);
+
+  // The one place that decides "what's next" for Enter/auto-advance --
+  // looked up from the SAME fieldOrderForRow() the row rendering below
+  // uses, so this can never drift from what's actually on screen.
+  // `overrideAccount` lets the account field's own onSelected pass the
+  // account it JUST picked, since form.items[index].accountId hasn't
+  // gone through React's state update yet at that point.
+  const advanceFocusAfter = (index, fieldKey, overrideAccount) => {
+    const item = form.items[index];
+    if (!item) return;
+    const acc = overrideAccount !== undefined ? overrideAccount : accountById(item.accountId);
+    const tax = acc ? taxByAccountId[acc.id] : undefined;
+    const order = fieldOrderForRow(item, acc, tax);
+    const pos = order.indexOf(fieldKey);
+    const nextKey = pos >= 0 ? order[pos + 1] : undefined;
+    if (nextKey) {
+      fieldRefs.current[`${index}:${nextKey}`]?.focus();
+      return;
+    }
+    if (index === form.items.length - 1) {
+      pendingFocusRef.current = { index: form.items.length, key: "account" };
+      onAddLine();
+    } else {
+      fieldRefs.current[`${index + 1}:account`]?.focus();
+    }
+  };
+
+  const handleFieldKeyDown = (e, index, fieldKey) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    advanceFocusAfter(index, fieldKey);
+  };
+
+  // NEW (2026-10-20, user request): a line created by mistake (most often
+  // the extra blank one the Enter-advance feature leaves past the last
+  // row) used to be removable only by finding the small, unlabeled "x"
+  // button with the mouse -- easy to miss entirely, and the opposite of
+  // "100% keyboard". ALT+DELETE now removes whichever line the cursor is
+  // currently in, from any field in that row (attached on the <tr> itself
+  // so it fires regardless of which cell has focus, without touching any
+  // individual field's own key handling). A fully blank line no longer
+  // even needs this -- see isBlankItem -- but a partially-filled line the
+  // user wants to discard outright still does.
+  const handleRowKeyDown = (e, index) => {
+    if (!e.altKey || e.key !== "Delete") return;
+    e.preventDefault();
+    if (form.items.length > 1) onRemoveLine(index);
+  };
+
+  const handleAccountSelected = (index, account) => {
+    advanceFocusAfter(index, "account", account || null);
+  };
+
+  const handleThirdPartySelected = (index) => {
+    advanceFocusAfter(index, "thirdParty");
+  };
+
+  // F9 (2026-10-19, user request): fills whatever is missing to zero
+  // out Total Débitos - Total Créditos -- on the last blank, untaxed
+  // line that has room for it (scanning from the bottom, since that's
+  // where the "balancing" line conventionally goes), or a brand-new
+  // one if every existing line is already spoken for.
+  const handleAutoBalance = () => {
+    const diff = totals.difference;
+    if (diff === 0) return;
+    const amountNeeded = String(Math.abs(diff));
+    const side = diff > 0 ? "credit" : "debit";
+    const otherSide = side === "debit" ? "credit" : "debit";
+
+    for (let i = form.items.length - 1; i >= 0; i--) {
+      const item = form.items[i];
+      if (taxByAccountId[item.accountId]) continue; // computed, not editable
+      if (toNumber(item[side]) === 0 && toNumber(item[otherSide]) === 0) {
+        onItemChange(i, side, amountNeeded);
+        fieldRefs.current[`${i}:${side}`]?.focus();
+        return;
+      }
+    }
+
+    pendingAutoBalanceRef.current = { index: form.items.length, side, amount: amountNeeded };
+    onAddLine();
+  };
+
+  // Ctrl+Enter anywhere in the form submits it (the same handleSave
+  // the Guardar button already triggers, via the form's own
+  // requestSubmit so this never duplicates that logic) -- F9 auto-
+  // balances. Both are deliberately scoped to this form's own keydown,
+  // not a page-wide listener, so they only ever fire while a
+  // comprobante is actually open.
+  const handleFormKeyDown = (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      formRef.current?.requestSubmit();
+    } else if (e.key === "F9") {
+      e.preventDefault();
+      handleAutoBalance();
+    }
+  };
 
   if (loadingEntry) {
     return (
@@ -1222,7 +1438,7 @@ function JeFormView({
 
   return (
     <>
-    <form onSubmit={onSubmit} className="space-y-6">
+    <form ref={formRef} onSubmit={onSubmit} onKeyDown={handleFormKeyDown} className="space-y-6">
       {isEditing && (
         <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">{t.editingTitle}</h3>
       )}
@@ -1270,6 +1486,16 @@ function JeFormView({
           <Button type="button" variant="secondary" size="sm" onClick={onAddLine}>{t.addLine}</Button>
         </div>
 
+        {/* NEW (2026-10-20, user request): the Tab/Enter/arrow-key/Ctrl+Enter/
+            F9 shortcuts were only hinted at in two small, hidden-on-mobile
+            spans next to "+ Agregar Asiento" and the Guardar button -- easy
+            to miss entirely. This single banner lists every shortcut in one
+            place, always visible, right where the grid a user would use
+            them on starts. */}
+        <p className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
+          ⌨️ {t.keyboardShortcutsHint}
+        </p>
+
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -1290,19 +1516,21 @@ function JeFormView({
                 const tax = taxByAccountId[item.accountId];
                 const lineErr = errors.items?.[index] || {};
                 return (
-                  <tr key={index}>
+                  <tr key={index} onKeyDown={(e) => handleRowKeyDown(e, index)}>
                     <td className="px-3 py-2 align-top">
                       <div className="flex gap-1">
                         <AccountComboBox
                           accounts={postableAccounts}
                           value={item.accountId}
                           onChange={(id) => onItemChange(index, "accountId", id)}
+                          onSelected={(account) => handleAccountSelected(index, account)}
+                          registerRef={registerFieldRef(index, "account")}
                           error={lineErr.accountId}
                           placeholder={t.selectAccount}
                           noResultsLabel={t.noAccountMatches}
                         />
                         <button type="button" onClick={() => setAccountModalIndex(index)}
-                          title={t.newAccountQuick}
+                          title={t.newAccountQuick} tabIndex={-1}
                           className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 text-slate-400 hover:text-blue-600 hover:border-blue-300 text-lg leading-none">
                           +
                         </button>
@@ -1313,14 +1541,23 @@ function JeFormView({
                     <td className="px-3 py-2 align-top">
                       {acc?.requiresThirdParty ? (
                         <>
-                          <select value={item.thirdPartyId}
-                            onChange={(e) => onItemChange(index, "thirdPartyId", e.target.value)}
-                            className={jeInputCls(lineErr.thirdPartyId)}>
-                            <option value="">{t.selectThirdParty}</option>
-                            {activeThirdParties.map((tp) => (
-                              <option key={tp.id} value={tp.id}>{tp.documentNumber} - {tp.legalDisplayName}</option>
-                            ))}
-                          </select>
+                          <div className="flex gap-1">
+                            <ThirdPartyComboBox
+                              thirdParties={activeThirdParties}
+                              value={item.thirdPartyId}
+                              onChange={(id) => onItemChange(index, "thirdPartyId", id)}
+                              onSelected={() => handleThirdPartySelected(index)}
+                              registerRef={registerFieldRef(index, "thirdParty")}
+                              error={lineErr.thirdPartyId}
+                              placeholder={t.selectThirdParty}
+                              noResultsLabel={t.noThirdPartyMatches}
+                            />
+                            <button type="button" onClick={() => setThirdPartyModalIndex(index)}
+                              title={t.newThirdPartyQuick} tabIndex={-1}
+                              className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 text-slate-400 hover:text-blue-600 hover:border-blue-300 text-lg leading-none">
+                              +
+                            </button>
+                          </div>
                           {lineErr.thirdPartyId && <p className="text-[10px] text-red-500 mt-1">{lineErr.thirdPartyId}</p>}
                         </>
                       ) : (
@@ -1332,7 +1569,9 @@ function JeFormView({
                         <>
                           <div className="flex gap-1">
                             <select value={item.costCenterId}
+                              ref={registerFieldRef(index, "costCenter")}
                               onChange={(e) => onItemChange(index, "costCenterId", e.target.value)}
+                              onKeyDown={(e) => handleFieldKeyDown(e, index, "costCenter")}
                               className={jeInputCls(lineErr.costCenterId)}>
                               <option value="">{t.selectCostCenter}</option>
                               {activeCostCenters.map((c) => (
@@ -1340,7 +1579,7 @@ function JeFormView({
                               ))}
                             </select>
                             <button type="button" onClick={() => setCostCenterModalIndex(index)}
-                              title={t.newCostCenterQuick}
+                              title={t.newCostCenterQuick} tabIndex={-1}
                               className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 text-slate-400 hover:text-blue-600 hover:border-blue-300 text-lg leading-none">
                               +
                             </button>
@@ -1355,7 +1594,9 @@ function JeFormView({
                       {tax ? (
                         <>
                           <input type="number" min="0" step="0.01" value={item.taxBase}
+                            ref={registerFieldRef(index, "taxBase")}
                             onChange={(e) => onItemChange(index, "taxBase", e.target.value)}
+                            onKeyDown={(e) => handleFieldKeyDown(e, index, "taxBase")}
                             className={jeInputCls(lineErr.taxBase)} placeholder="0.00" />
                           <p className="text-[10px] text-slate-400 mt-1">{tax.code} · {tax.rate}%</p>
                           {lineErr.taxBase && <p className="text-[10px] text-red-500 mt-1">{lineErr.taxBase}</p>}
@@ -1372,7 +1613,9 @@ function JeFormView({
                           className={`${jeInputCls()} bg-slate-50 text-slate-500 cursor-not-allowed`} />
                       ) : (
                         <input type="number" min="0" step="0.01" value={item.debit}
+                          ref={registerFieldRef(index, "debit")}
                           onChange={(e) => onItemChange(index, "debit", e.target.value)}
+                          onKeyDown={(e) => handleFieldKeyDown(e, index, "debit")}
                           disabled={toNumber(item.credit) > 0}
                           className={jeInputCls()} placeholder="0.00" />
                       )}
@@ -1385,19 +1628,25 @@ function JeFormView({
                           className={`${jeInputCls()} bg-slate-50 text-slate-500 cursor-not-allowed`} />
                       ) : (
                         <input type="number" min="0" step="0.01" value={item.credit}
+                          ref={registerFieldRef(index, "credit")}
                           onChange={(e) => onItemChange(index, "credit", e.target.value)}
+                          onKeyDown={(e) => handleFieldKeyDown(e, index, "credit")}
                           disabled={toNumber(item.debit) > 0}
                           className={jeInputCls()} placeholder="0.00" />
                       )}
                     </td>
                     <td className="px-3 py-2 align-top">
                       <input type="text" value={item.description}
+                        ref={registerFieldRef(index, "description")}
                         onChange={(e) => onItemChange(index, "description", e.target.value)}
+                        onKeyDown={(e) => handleFieldKeyDown(e, index, "description")}
                         className={jeInputCls()} maxLength={255} />
                     </td>
                     <td className="px-3 py-2 align-top">
                       <button type="button" onClick={() => onRemoveLine(index)}
-                        className="text-slate-300 hover:text-red-500 text-lg leading-none"
+                        title={`${t.removeLine} (Alt+Delete)`}
+                        className="text-slate-400 hover:text-red-500 text-lg leading-none"
+                        tabIndex={-1}
                         disabled={form.items.length <= 1}>
                         ×
                       </button>
@@ -1420,11 +1669,12 @@ function JeFormView({
         {errors.balance && <p className="text-xs text-red-500 text-right">{errors.balance}</p>}
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex items-center gap-3">
         <Button type="submit" variant="primary" size="lg" loading={saving}>
           {saving ? t.saving : t.save}
         </Button>
         <Button type="button" variant="secondary" size="lg" onClick={onCancel}>{t.cancel}</Button>
+        <span className="text-[11px] text-slate-400">{t.saveShortcutHint}</span>
       </div>
     </form>
 
@@ -1449,6 +1699,17 @@ function JeFormView({
           setCostCenterModalIndex(null);
         }}
         onClose={() => setCostCenterModalIndex(null)}
+      />
+    )}
+
+    {thirdPartyModalIndex !== null && (
+      <ThirdPartyQuickCreateModal
+        language={language}
+        onCreated={(newThirdParty) => {
+          onThirdPartyCreated(thirdPartyModalIndex, newThirdParty);
+          setThirdPartyModalIndex(null);
+        }}
+        onClose={() => setThirdPartyModalIndex(null)}
       />
     )}
     </>
@@ -1661,7 +1922,7 @@ const jeInputCls = (err) =>
 // with query, name starts with query, code contains query, name
 // contains query) and tied-broken by code, so "51" surfaces
 // code-starting matches like "5105" first.
-function AccountComboBox({ accounts, value, onChange, error, placeholder, noResultsLabel }) {
+function AccountComboBox({ accounts, value, onChange, onSelected, registerRef, error, placeholder, noResultsLabel }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
@@ -1707,10 +1968,25 @@ function AccountComboBox({ accounts, value, onChange, error, placeholder, noResu
     onChange(account ? String(account.id) : "");
     setQuery("");
     setOpen(false);
+    // NEW (2026-10-19, user request): fires on every commit, by Enter
+    // OR mouse click -- lets the row drive focus to whatever this
+    // account requires next (Tercero, Centro de Costo, Base, or
+    // straight to Débito), continuing the keyboard-only flow without
+    // an extra Tab.
+    onSelected?.(account);
   };
 
   const handleFocus = () => {
-    setQuery("");
+    // NEW (2026-10-19, user request): used to always blank the field on
+    // focus, even when it already held a value -- re-tabbing/re-
+    // entering a filled line (routine in fast keyboard entry) showed an
+    // empty box and, worse, risked Enter re-picking whatever came
+    // first in the FULL unfiltered list instead of keeping what was
+    // already chosen. Seeding the query with the selected account's
+    // own code instead means the exact-match rank (see `filtered`
+    // above) keeps it first, so an untouched Tab/Enter-through
+    // re-selects the SAME account instead of a random one.
+    setQuery(selected ? selected.code : "");
     setHighlight(0);
     setOpen(true);
   };
@@ -1749,7 +2025,7 @@ function AccountComboBox({ accounts, value, onChange, error, placeholder, noResu
   return (
     <div className="relative flex-1 min-w-0">
       <input
-        ref={inputRef}
+        ref={(el) => { inputRef.current = el; registerRef?.(el); }}
         type="text"
         value={displayValue}
         placeholder={placeholder}
@@ -1772,6 +2048,123 @@ function AccountComboBox({ accounts, value, onChange, error, placeholder, noResu
                 className={`cursor-pointer px-3 py-2 text-sm ${idx === highlight ? "bg-blue-50 text-blue-700" : "hover:bg-slate-50"}`}
               >
                 {a.code} - {a.name}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// NEW (2026-10-19, user request): same predictive-search combobox as
+// AccountComboBox above (search by code/document number OR name, ranked
+// results, arrow keys + Enter, preserves an already-picked value on
+// refocus) applied to Tercero -- the native <select> it replaces had the
+// exact same "only matches from the start of the visible text" problem
+// AccountComboBox was built to fix on 2026-10-13.
+function ThirdPartyComboBox({ thirdParties, value, onChange, onSelected, registerRef, error, placeholder, noResultsLabel }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const inputRef = useRef(null);
+  const blurTimerRef = useRef(null);
+
+  useEffect(() => () => clearTimeout(blurTimerRef.current), []);
+
+  const selected = thirdParties.find((tp) => String(tp.id) === String(value));
+  const selectedLabel = selected ? `${selected.documentNumber} - ${selected.legalDisplayName}` : "";
+
+  const displayValue = open ? query : selectedLabel;
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return thirdParties;
+    const scored = [];
+    for (const tp of thirdParties) {
+      const doc = tp.documentNumber.toLowerCase();
+      const name = tp.legalDisplayName.toLowerCase();
+      let rank;
+      if (doc === q) rank = 0;
+      else if (doc.startsWith(q)) rank = 1;
+      else if (name.startsWith(q)) rank = 2;
+      else if (doc.includes(q)) rank = 3;
+      else if (name.includes(q)) rank = 4;
+      else continue;
+      scored.push({ thirdParty: tp, rank });
+    }
+    scored.sort((x, y) => x.rank - y.rank || x.thirdParty.documentNumber.localeCompare(y.thirdParty.documentNumber));
+    return scored.map((s) => s.thirdParty);
+  }, [thirdParties, query]);
+
+  const commitSelection = (thirdParty) => {
+    onChange(thirdParty ? String(thirdParty.id) : "");
+    setQuery("");
+    setOpen(false);
+    onSelected?.(thirdParty);
+  };
+
+  const handleFocus = () => {
+    // Same fix as AccountComboBox's own handleFocus -- keep the current
+    // selection visible (and exact-match-ranked first) instead of
+    // blanking the field and risking an untouched Enter picking whatever
+    // third party happens to come first in the full list.
+    setQuery(selected ? selected.documentNumber : "");
+    setHighlight(0);
+    setOpen(true);
+  };
+
+  const handleBlur = () => {
+    blurTimerRef.current = setTimeout(() => {
+      setOpen(false);
+      setQuery("");
+    }, 150);
+  };
+
+  const handleKeyDown = (e) => {
+    if (!open) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlight((h) => Math.min(h + 1, filtered.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlight((h) => Math.max(h - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (filtered[highlight]) commitSelection(filtered[highlight]);
+    } else if (e.key === "Escape") {
+      setOpen(false);
+      setQuery("");
+      inputRef.current?.blur();
+    }
+  };
+
+  return (
+    <div className="relative flex-1 min-w-0">
+      <input
+        ref={(el) => { inputRef.current = el; registerRef?.(el); }}
+        type="text"
+        value={displayValue}
+        placeholder={placeholder}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        onChange={(e) => { setQuery(e.target.value); setHighlight(0); setOpen(true); }}
+        onKeyDown={handleKeyDown}
+        className={jeInputCls(error)}
+        autoComplete="off"
+      />
+      {open && (
+        <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-slate-400">{noResultsLabel}</div>
+          ) : (
+            filtered.map((tp, idx) => (
+              <div
+                key={tp.id}
+                onMouseDown={(e) => { e.preventDefault(); commitSelection(tp); }}
+                className={`cursor-pointer px-3 py-2 text-sm ${idx === highlight ? "bg-blue-50 text-blue-700" : "hover:bg-slate-50"}`}
+              >
+                {tp.documentNumber} - {tp.legalDisplayName}
               </div>
             ))
           )}
