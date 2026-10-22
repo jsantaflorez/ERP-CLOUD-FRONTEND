@@ -173,6 +173,17 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   const [annulError, setAnnulError] = useState("");
   const [annulling, setAnnulling] = useState(false);
 
+  // NEW (2026-10-22, user request): "Duplicar Comprobante" -- same
+  // lightweight separate-modal pattern as annulment above, since it only
+  // ever needs one field (the new entry's date). The backend
+  // (JournalEntryService.duplicate()) rejects a date in a closed period
+  // the same way create()/update() already do, so that control doesn't
+  // need to be reimplemented here -- a rejection just shows as a toast
+  // and leaves the modal open so the user can pick a different date.
+  const [duplicateTarget, setDuplicateTarget] = useState(null); // entry being duplicated, or null
+  const [duplicateDate, setDuplicateDate] = useState("");
+  const [duplicating, setDuplicating] = useState(false);
+
   const { session } = useAuth();
   const activeTenantId = session.companyName || session.companyId;
 
@@ -239,7 +250,13 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       printedAtLabel: "Impreso",
       noThirdParty: "— Sin tercero —", noCostCenter: "— Sin centro de costo —",
       documentTypeHint: "Próximo número",
-      edit: "Editar", annul: "Anular",
+      edit: "Editar", annul: "Anular", duplicate: "Duplicar",
+      duplicateTitle: "Duplicar Comprobante",
+      duplicateBody: "Se creará un nuevo comprobante con las mismas líneas (cuenta, tercero, centro de costo, valores), bajo un número nuevo. Elija la fecha del nuevo comprobante.",
+      duplicateDateLabel: "Fecha del Nuevo Comprobante",
+      duplicateConfirm: "Duplicar",
+      duplicateCancel: "Cancelar",
+      successDuplicate: "¡Comprobante duplicado!",
       editingTitle: "Editar Asiento",
       cannotEditClosingEntry: "Un comprobante de cierre de año no se puede editar.",
       periodClosedBanner: "🔒 Comprobante en periodo cerrado — Solo lectura",
@@ -318,7 +335,13 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       printedAtLabel: "Printed",
       noThirdParty: "— No third party —", noCostCenter: "— No cost center —",
       documentTypeHint: "Next number",
-      edit: "Edit", annul: "Annul",
+      edit: "Edit", annul: "Annul", duplicate: "Duplicate",
+      duplicateTitle: "Duplicate Entry",
+      duplicateBody: "A new entry will be created with the same lines (account, third party, cost center, amounts), under a new number. Choose the new entry's date.",
+      duplicateDateLabel: "New Entry's Date",
+      duplicateConfirm: "Duplicate",
+      duplicateCancel: "Cancel",
+      successDuplicate: "Journal entry duplicated!",
       editingTitle: "Edit Entry",
       cannotEditClosingEntry: "A year-end closing entry cannot be edited.",
       periodClosedBanner: "🔒 Entry in a closed period — Read only",
@@ -1102,6 +1125,46 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   };
 
   // ============================================================
+  // Duplication
+  // ============================================================
+
+  const openDuplicateModal = (entry) => {
+    setDuplicateTarget(entry);
+    setDuplicateDate(todayLocalIso());
+  };
+
+  const closeDuplicateModal = () => {
+    setDuplicateTarget(null);
+    setDuplicateDate("");
+  };
+
+  const confirmDuplicate = async () => {
+    if (!duplicateDate) return; // defensive only -- the date input always has a value once the modal opens
+    setDuplicating(true);
+    try {
+      const response = await api.post(`/v1/journal-entries/${duplicateTarget.id}/duplicate`, {
+        entryDate: duplicateDate,
+      });
+      if (response.data?.success) {
+        showToast(t.successDuplicate);
+        closeDuplicateModal();
+        loadEntries(currentPage);
+      } else {
+        showToast(getApiErrorMessage({ response }, language, t.errorConn), "error");
+      }
+    } catch (error) {
+      // NEW (2026-10-22, user request): this is exactly where the backend's
+      // closed-period guard (accountingPeriodService.validateDateIsOpen(),
+      // reached via JournalEntryService.duplicate() -> create()) surfaces
+      // if the user picks a date in a closed month/year -- shown as a
+      // toast, modal left open, so they can just pick another date.
+      showToast(getApiErrorMessage(error, language, t.errorConn), "error");
+    } finally {
+      setDuplicating(false);
+    }
+  };
+
+  // ============================================================
   // Render
   // ============================================================
 
@@ -1155,6 +1218,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
           onViewEntry={setViewingEntry}
           onEditEntry={openEditEntry}
           onAnnulEntry={openAnnulModal}
+          onDuplicateEntry={openDuplicateModal}
           exporting={exporting}
           onExportExcel={handleExportExcel}
           onExportPdf={handleExportPdf}
@@ -1213,6 +1277,18 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
           onCancel={closeAnnulModal}
         />
       )}
+
+      {duplicateTarget && (
+        <JeDuplicateModal
+          t={t}
+          entry={duplicateTarget}
+          date={duplicateDate}
+          setDate={setDuplicateDate}
+          duplicating={duplicating}
+          onConfirm={confirmDuplicate}
+          onCancel={closeDuplicateModal}
+        />
+      )}
     </div>
   );
 }
@@ -1225,7 +1301,7 @@ function JeListView({
   t, entries, loading,
   searchTerm, setSearchTerm, startDate, setStartDate, endDate, setEndDate, onSearch,
   documentTypeId, setDocumentTypeId, documentTypes, documentTypeLabel,
-  currentPage, totalPages, onPageChange, onViewEntry, onEditEntry, onAnnulEntry,
+  currentPage, totalPages, onPageChange, onViewEntry, onEditEntry, onAnnulEntry, onDuplicateEntry,
   exporting, onExportExcel, onExportPdf,
 }) {
   return (
@@ -1327,7 +1403,13 @@ function JeListView({
                           {!entry.annulled && (
                             <>
                               {!isClosingEntry && (
-                                <Button variant="ghost" size="sm" onClick={() => onEditEntry(entry)}>{t.edit}</Button>
+                                <>
+                                  <Button variant="ghost" size="sm" onClick={() => onEditEntry(entry)}>{t.edit}</Button>
+                                  {/* NEW (2026-10-22, user request): hidden for a closing
+                                      entry for the same reason Editar is -- it's a
+                                      system-generated entry, not a template to reuse. */}
+                                  <Button variant="ghost" size="sm" onClick={() => onDuplicateEntry(entry)}>{t.duplicate}</Button>
+                                </>
                               )}
                               <Button variant="ghost" size="sm" onClick={() => onAnnulEntry(entry)}
                                 className="text-red-500 hover:text-red-700">{t.annul}</Button>
@@ -2011,6 +2093,48 @@ function JeAnnulModal({ t, entry, reason, setReason, error, annulling, onConfirm
             </Button>
             <Button variant="secondary" onClick={onCancel} disabled={annulling}>
               {t.annulCancel}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// NEW (2026-10-22, user request): "Duplicar Comprobante" -- same one-field
+// modal shape as JeAnnulModal above, just asking for the new entry's date
+// instead of an annulment reason. The backend enforces that the date
+// can't fall in a closed period (see JournalEntryService.duplicate());
+// this modal doesn't duplicate that check client-side, it just surfaces
+// whatever the backend says via the toast in confirmDuplicate() and stays
+// open so the user can pick another date.
+function JeDuplicateModal({ t, entry, date, setDate, duplicating, onConfirm, onCancel }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/20" onClick={onCancel} />
+      <div className="relative w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+        <div className="px-8 py-6 space-y-4">
+          <div>
+            <h2 className="text-xl font-black text-slate-800">{t.duplicateTitle} — {entry.documentNumber}</h2>
+            <p className="mt-2 text-sm text-slate-500">{t.duplicateBody}</p>
+          </div>
+
+          <JeField label={t.duplicateDateLabel}>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className={jeInputCls()}
+              autoFocus
+            />
+          </JeField>
+
+          <div className="flex gap-3 pt-2">
+            <Button variant="primary" loading={duplicating} onClick={onConfirm}>
+              {t.duplicateConfirm}
+            </Button>
+            <Button variant="secondary" onClick={onCancel} disabled={duplicating}>
+              {t.duplicateCancel}
             </Button>
           </div>
         </div>
