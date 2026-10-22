@@ -133,6 +133,15 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   const [documentTypeId, setDocumentTypeId] = useState("");
   const [viewingEntry, setViewingEntry] = useState(null);
   const [exporting, setExporting] = useState(false);
+  // NEW (2026-10-22, user-reported UX issue): the backend already refused
+  // to save an edit whose entryDate falls in a closed period, but only
+  // AFTER the user had typed a full edit -- Guardar failed and everything
+  // typed was lost. periodClosed mirrors the flag the backend now sends
+  // back on GET /v1/journal-entries/{id} (see JournalEntryService.findById)
+  // so the form can open read-only from the start instead. Reset to false
+  // whenever a form is (re)opened for anything other than a closed-period
+  // entry -- see openNewEntry/openEditEntry/openEditEntryById/backToList.
+  const [periodClosed, setPeriodClosed] = useState(false);
 
   // Catalogs for the line-item pickers
   const [accounts, setAccounts] = useState([]);
@@ -233,6 +242,8 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       edit: "Editar", annul: "Anular",
       editingTitle: "Editar Asiento",
       cannotEditClosingEntry: "Un comprobante de cierre de año no se puede editar.",
+      periodClosedBanner: "🔒 Comprobante en periodo cerrado — Solo lectura",
+      periodClosedCannotSave: "Este comprobante pertenece a un periodo cerrado y no se puede guardar.",
       documentTypeLocked: "El tipo de documento no se puede modificar una vez creado el asiento.",
       loadingEntry: "Cargando asiento...",
       successUpdate: "¡Asiento contable actualizado!",
@@ -310,6 +321,8 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       edit: "Edit", annul: "Annul",
       editingTitle: "Edit Entry",
       cannotEditClosingEntry: "A year-end closing entry cannot be edited.",
+      periodClosedBanner: "🔒 Entry in a closed period — Read only",
+      periodClosedCannotSave: "This entry belongs to a closed period and can't be saved.",
       documentTypeLocked: "The document type can't be changed once the entry is created.",
       loadingEntry: "Loading entry...",
       successUpdate: "Journal entry updated!",
@@ -650,6 +663,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
     pristineFormRef.current = JSON.stringify(blank);
     setErrors({});
     setEditingId(null);
+    setPeriodClosed(false);
     setView("form");
   };
 
@@ -710,6 +724,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       setForm(loadedForm);
       pristineFormRef.current = JSON.stringify(loadedForm);
       setEditingId(entry.id);
+      setPeriodClosed(Boolean(data.periodClosed));
     } catch (error) {
       showToast(getApiErrorMessage(error, language, t.errorConn), "error");
       setView("list");
@@ -723,6 +738,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
     setForm(emptyForm());
     setErrors({});
     setEditingId(null);
+    setPeriodClosed(false);
   };
 
   // NEW (2026-10-20): entry point for the cross-navigation coming from
@@ -765,6 +781,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       setForm(loadedForm);
       pristineFormRef.current = JSON.stringify(loadedForm);
       setEditingId(id);
+      setPeriodClosed(Boolean(data.periodClosed));
     } catch (error) {
       showToast(getApiErrorMessage(error, language, t.errorConn), "error");
       setView("list");
@@ -973,6 +990,15 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
 
   const handleSave = async (e) => {
     e.preventDefault();
+    // Defense in depth: the Guardar button is disabled and the whole form
+    // is wrapped in a disabled <fieldset> while periodClosed, so this
+    // shouldn't be reachable in the UI -- but handleSave is also wired to
+    // Ctrl+Enter, so it gets its own explicit bailout rather than relying
+    // solely on the disabled button.
+    if (periodClosed) {
+      showToast(t.periodClosedCannotSave, "error");
+      return;
+    }
     if (!validate()) return;
 
     const payload = {
@@ -1142,6 +1168,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
           loadingCatalogs={loadingCatalogs}
           loadingEntry={loadingEntry}
           isEditing={editingId != null}
+          periodClosed={periodClosed}
           documentTypes={activeDocumentTypes}
           postableAccounts={postableAccounts}
           activeThirdParties={activeThirdParties}
@@ -1335,7 +1362,7 @@ function JeListView({
 // ============================================================
 
 function JeFormView({
-  t, form, errors, saving, loadingCatalogs, loadingEntry, isEditing,
+  t, form, errors, saving, loadingCatalogs, loadingEntry, isEditing, periodClosed,
   documentTypes, postableAccounts, activeThirdParties, activeCostCenters, accountById,
   taxByAccountId,
   accounts, costCenters, language,
@@ -1434,6 +1461,7 @@ function JeFormView({
   // even needs this -- see isBlankItem -- but a partially-filled line the
   // user wants to discard outright still does.
   const handleRowKeyDown = (e, index) => {
+    if (periodClosed) return;
     if (!e.altKey || e.key !== "Delete") return;
     e.preventDefault();
     if (form.items.length > 1) onRemoveLine(index);
@@ -1480,6 +1508,11 @@ function JeFormView({
   // not a page-wide listener, so they only ever fire while a
   // comprobante is actually open.
   const handleFormKeyDown = (e) => {
+    // Everything in the fieldset below is already disabled while
+    // periodClosed, so these two shortcuts can't reach a field to act on
+    // anyway -- bailing out here first just skips the no-op work and
+    // avoids Ctrl+Enter triggering a doomed submit attempt.
+    if (periodClosed) return;
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault();
       formRef.current?.requestSubmit();
@@ -1504,6 +1537,33 @@ function JeFormView({
         <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">{t.editingTitle}</h3>
       )}
 
+      {/* NEW (2026-10-22, user-reported UX issue): previously this entry
+          opened fully editable and the "closed period" rejection only
+          surfaced on Guardar, after the user had typed a whole edit --
+          which was then lost. periodClosed now arrives already computed
+          from the backend (JournalEntryService.findById) when the entry
+          is opened, so the screen can warn up front and lock itself down
+          instead of letting the user type into a dead end. */}
+      {periodClosed && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">
+          {t.periodClosedBanner}
+        </div>
+      )}
+
+      {/* Wraps every editable field and action in the two sections below
+          (header fields + line-items grid) in one native <fieldset> --
+          disabled cascades automatically to every input/select/button
+          inside it, including the ones rendered by AccountComboBox/
+          ThirdPartyComboBox and the "+"/quick-create/"Agregar Asiento"/"x"
+          remove-line buttons, without having to thread a disabled prop
+          through each one individually. Guardar/Cancelar sit in their own
+          block further down, deliberately OUTSIDE this fieldset, since
+          Cancelar must stay clickable so the user can still leave a
+          read-only entry; Guardar gets its own explicit disabled instead. */}
+      <fieldset
+        disabled={periodClosed}
+        className={`m-0 min-w-0 border-0 p-0 ${periodClosed ? "space-y-6 opacity-60" : "space-y-6"}`}
+      >
       <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
         <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
           <JeField label={t.entryDate} error={errors.entryDate}>
@@ -1729,9 +1789,10 @@ function JeFormView({
         </div>
         {errors.balance && <p className="text-xs text-red-500 text-right">{errors.balance}</p>}
       </div>
+      </fieldset>
 
       <div className="flex items-center gap-3">
-        <Button type="submit" variant="primary" size="lg" loading={saving}>
+        <Button type="submit" variant="primary" size="lg" loading={saving} disabled={periodClosed}>
           {saving ? t.saving : t.save}
         </Button>
         <Button type="button" variant="secondary" size="lg" onClick={onCancel}>{t.cancel}</Button>
