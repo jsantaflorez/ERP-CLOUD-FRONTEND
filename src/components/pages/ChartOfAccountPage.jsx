@@ -222,6 +222,11 @@ function ChartOfAccountsPage({ language = "es" }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading]       = useState(false);
   const [toast, setToast]           = useState(null);
+  // NEW (2026-10-23, user request): tracks which row+flag's inline toggle
+  // (see handleToggleRequiresFlag below) currently has a PUT in flight, as
+  // `${id}:${field}`, so that one badge shows a disabled/loading state
+  // without blocking every other badge on the page.
+  const [togglingKey, setTogglingKey] = useState(null);
 
   // NEW (2026-09-25): "+"/"-" tree toggle per account group, requested
   // while the user was reviewing the Cost Center report fix (2026-09-22
@@ -344,6 +349,9 @@ function ChartOfAccountsPage({ language = "es" }) {
       loading: "Cargando...",
       loadingMetadata: "Cargando opciones...",
       codeLockedHint: "El código no se puede modificar una vez creada la cuenta.",
+      codeAlreadyExists: "Ya existe una cuenta con este código.",
+      toggleRequiresHint: "Clic para activar/desactivar sin abrir el panel de edición.",
+      postingToggleBlockedHint: "No se puede cambiar: esta cuenta tiene subcuentas asociadas.",
       expectedCodeLengthHint: "Se espera un código de",
       expectedCodeLengthHintDigits: "dígitos.",
       postingBlockedByChildren: "No puede ser cuenta de movimiento porque tiene subcuentas asociadas.",
@@ -407,6 +415,9 @@ function ChartOfAccountsPage({ language = "es" }) {
       loading: "Loading...",
       loadingMetadata: "Loading options...",
       codeLockedHint: "The code can't be changed once the account is created.",
+      codeAlreadyExists: "An account with this code already exists.",
+      toggleRequiresHint: "Click to toggle without opening the edit panel.",
+      postingToggleBlockedHint: "Can't change: this account has sub-accounts.",
       expectedCodeLengthHint: "Expected code length:",
       expectedCodeLengthHintDigits: "digits.",
       postingBlockedByChildren: "Can't be a posting account because it has sub-accounts.",
@@ -755,6 +766,15 @@ function ChartOfAccountsPage({ language = "es" }) {
     if (name === "code") val = value.toUpperCase().slice(0, 20);
     if (name === "name") val = value.slice(0, 150);
 
+    // NEW (2026-10-23, user request): clears a stale "ya existe" (or any
+    // other) code error the moment the user edits the field again --
+    // without this, an error set by handleCodeBlur below (or by a failed
+    // submit) would sit there unchanged until the next blur/submit, even
+    // after the user had already typed a different code.
+    if (name === "code") {
+      setErrors((prev) => (prev.code ? { ...prev, code: undefined } : prev));
+    }
+
     setForm((prev) => {
       let next = { ...prev, [name]: val };
 
@@ -804,6 +824,24 @@ function ChartOfAccountsPage({ language = "es" }) {
 
       return next;
     });
+  };
+
+  // NEW (2026-10-23, user request): previously a duplicate code was only
+  // caught by the backend after the whole form was filled in and
+  // submitted (DuplicateResourceException on POST), wasting all the typing
+  // in between. Checked on blur against `rows` -- already the full chart
+  // of accounts loaded for this page's own parent-selector/code-structure
+  // validation above, so this needs no extra request. Create mode only:
+  // the code field is locked/read-only once editingIdRef.current is set,
+  // so there's nothing to check while editing.
+  const handleCodeBlur = () => {
+    if (editingIdRef.current) return;
+    const trimmed = form.code.trim();
+    if (!trimmed) return; // the required-field error already covers this on submit
+    const isDuplicate = rows.some((r) => r.code === trimmed);
+    if (isDuplicate) {
+      setErrors((prev) => ({ ...prev, code: t.codeAlreadyExists }));
+    }
   };
 
   const validate = () => {
@@ -948,6 +986,60 @@ function ChartOfAccountsPage({ language = "es" }) {
       }
     } catch (error) {
       showToast(getApiErrorMessage(error, language, t.errorConn), "error");
+    }
+  };
+
+  // NEW (2026-10-23, user request): "edición in situ" for the three
+  // boolean flags editable straight from the table -- requiresThirdParty,
+  // requiresCostCenter, and (per the user's follow-up) postingAccount --
+  // with no need to open the full edit panel at all. Reuses the exact
+  // same PUT endpoint and the same payload shape handleSave() above
+  // posts, just built from the row (`item`, already loaded in `rows`)
+  // instead of `form` -- so this is a completely ordinary update as far
+  // as the backend is concerned, with every one of
+  // ChartOfAccountService.update()'s existing rules still applying:
+  // HAS_CHILDREN_CANNOT_POST / POSTING_ACCOUNT_HAS_MOVEMENTS for
+  // postingAccount (the children case is also blocked client-side below,
+  // same as the edit panel's own disabled Toggle), and the new
+  // REQUIRES_THIRD_PARTY_HAS_MOVEMENTS / REQUIRES_COST_CENTER_HAS_MOVEMENTS
+  // guards (added per this same follow-up) for the other two -- turning
+  // either requirement OFF once the account has real movements is now
+  // rejected server-side, surfacing as a toast exactly like the
+  // pre-existing posting-account guard does.
+  const buildUpdatePayloadFromRow = (item) => {
+    const parentMatch = rows.find((r) => r.code === item.parentCode);
+    return {
+      code:               item.code,
+      name:               item.name,
+      nature:             item.nature,
+      accountClass:       item.accountClass,
+      accountCategory:    item.accountCategory,
+      financialStatement: item.financialStatement,
+      postingAccount:     hasChildren(item.code, rows) ? false : Boolean(item.postingAccount),
+      requiresThirdParty: Boolean(item.requiresThirdParty),
+      requiresCostCenter: Boolean(item.requiresCostCenter),
+      active:             Boolean(item.active),
+      parentId:           parentMatch?.id ?? null,
+    };
+  };
+
+  const handleToggleRequiresFlag = async (item, field) => {
+    const key = `${item.id}:${field}`;
+    setTogglingKey(key);
+    const payload = { ...buildUpdatePayloadFromRow(item), [field]: !item[field] };
+
+    try {
+      const response = await api.put(`/v1/chart-of-accounts/${item.id}`, payload);
+      if (response.data && response.data.success) {
+        showToast(t.successUpdate);
+        loadAccounts();
+      } else {
+        showToast(response.data?.message || t.errorConn, "error");
+      }
+    } catch (error) {
+      showToast(getApiErrorMessage(error, language, t.errorConn), "error");
+    } finally {
+      setTogglingKey(null);
     }
   };
 
@@ -1098,20 +1190,43 @@ function ChartOfAccountsPage({ language = "es" }) {
                     </td>
 
                     <td className="px-5 py-4">
+                      {/* NEW (2026-10-23, user request): same inline toggle
+                          as Tercero/Centro de Costo below, but only when
+                          this account has no sub-accounts -- mirrors the
+                          edit panel's own disabled Toggle for the exact
+                          same reason (itemHasChildren above). Turning it
+                          OFF while it already has movements is still
+                          rejected by the backend's existing
+                          POSTING_ACCOUNT_HAS_MOVEMENTS guard, same as
+                          before this change. */}
                       <Badge
                         active={item.postingAccount}
                         labelOn={t.postingAccount}
                         labelOff={t.noPostingAccount}
                         colorOn="blue"
+                        onClick={
+                          hasChildren(item.code, rows)
+                            ? undefined
+                            : () => handleToggleRequiresFlag(item, "postingAccount")
+                        }
+                        disabled={togglingKey === `${item.id}:postingAccount`}
+                        title={hasChildren(item.code, rows) ? t.postingToggleBlockedHint : t.toggleRequiresHint}
                       />
                     </td>
 
                     <td className="px-5 py-4">
+                      {/* NEW (2026-10-23, user request): clicking the badge
+                          toggles it directly -- no need to open the edit
+                          panel just to fix a missing Tercero/Centro de
+                          Costo requirement. */}
                       <Badge
                         active={item.requiresThirdParty}
                         labelOn={t.requiresThirdParty}
                         labelOff={t.noRequiresThirdParty}
                         colorOn="blue"
+                        onClick={() => handleToggleRequiresFlag(item, "requiresThirdParty")}
+                        disabled={togglingKey === `${item.id}:requiresThirdParty`}
+                        title={t.toggleRequiresHint}
                       />
                     </td>
 
@@ -1121,6 +1236,9 @@ function ChartOfAccountsPage({ language = "es" }) {
                         labelOn={t.requiresCostCenter}
                         labelOff={t.noRequiresCostCenter}
                         colorOn="blue"
+                        onClick={() => handleToggleRequiresFlag(item, "requiresCostCenter")}
+                        disabled={togglingKey === `${item.id}:requiresCostCenter`}
+                        title={t.toggleRequiresHint}
                       />
                     </td>
 
@@ -1179,6 +1297,7 @@ function ChartOfAccountsPage({ language = "es" }) {
                   name="code"
                   value={form.code}
                   onChange={handleChange}
+                  onBlur={handleCodeBlur}
                   maxLength={20}
                   placeholder="Ej: 110505"
                   readOnly={!!editingIdRef.current}
@@ -1517,18 +1636,32 @@ function Toggle({ name, checked, onChange, label, color = "blue", disabled = fal
   );
 }
 
-function Badge({ active, labelOn, labelOff, colorOn }) {
+// NEW (2026-10-23, user request): optional onClick turns this into an
+// inline toggle button instead of a plain static label -- used by the
+// requiresThirdParty/requiresCostCenter columns above so the user can fix
+// a missing flag directly from the table (see handleToggleRequiresFlag).
+// Every other Badge usage on this page omits onClick and renders exactly
+// as before, as a plain non-interactive <span>.
+function Badge({ active, labelOn, labelOff, colorOn, onClick, disabled, title }) {
   const colors = {
     green: "bg-green-100 text-green-700",
     blue: "bg-blue-100 text-blue-700",
   };
 
+  const className = `rounded-full px-3 py-1 text-[10px] font-bold uppercase transition ${
+    active ? colors[colorOn] : "bg-gray-100 text-gray-500"
+  } ${onClick ? (disabled ? "opacity-50 cursor-wait" : "cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-blue-300") : ""}`;
+
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} disabled={disabled} title={title} className={className}>
+        {active ? labelOn : labelOff}
+      </button>
+    );
+  }
+
   return (
-    <span
-      className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase ${
-        active ? colors[colorOn] : "bg-gray-100 text-gray-500"
-      }`}
-    >
+    <span className={className} title={title}>
       {active ? labelOn : labelOff}
     </span>
   );
