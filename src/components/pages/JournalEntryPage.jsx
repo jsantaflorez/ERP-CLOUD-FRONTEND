@@ -182,6 +182,12 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   // and leaves the modal open so the user can pick a different date.
   const [duplicateTarget, setDuplicateTarget] = useState(null); // entry being duplicated, or null
   const [duplicateDate, setDuplicateDate] = useState("");
+  // NEW (2026-10-24, user request): pre-filled from the source entry's own
+  // description when the modal opens, editable, and applied to BOTH the
+  // new entry's header AND every one of its lines on confirm (see
+  // confirmDuplicate below) -- instead of silently carrying the source's
+  // description forward unseen.
+  const [duplicateDescription, setDuplicateDescription] = useState("");
   const [duplicating, setDuplicating] = useState(false);
 
   const { session } = useAuth();
@@ -257,6 +263,8 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       duplicateTitle: "Duplicar Comprobante",
       duplicateBody: "Se creará un nuevo comprobante con las mismas líneas (cuenta, tercero, centro de costo, valores), bajo un número nuevo. Elija la fecha del nuevo comprobante.",
       duplicateDateLabel: "Fecha del Nuevo Comprobante",
+      duplicateDescriptionLabel: "Descripción",
+      duplicateDescriptionHint: "Se usará como descripción general del nuevo comprobante y también quedará en la descripción de cada línea.",
       duplicateConfirm: "Duplicar",
       duplicateCancel: "Cancelar",
       successDuplicate: "¡Comprobante duplicado!",
@@ -345,6 +353,8 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       duplicateTitle: "Duplicate Entry",
       duplicateBody: "A new entry will be created with the same lines (account, third party, cost center, amounts), under a new number. Choose the new entry's date.",
       duplicateDateLabel: "New Entry's Date",
+      duplicateDescriptionLabel: "Description",
+      duplicateDescriptionHint: "Used as the new entry's header description, and also set on every line's own description.",
       duplicateConfirm: "Duplicate",
       duplicateCancel: "Cancel",
       successDuplicate: "Journal entry duplicated!",
@@ -1137,11 +1147,13 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   const openDuplicateModal = (entry) => {
     setDuplicateTarget(entry);
     setDuplicateDate(todayLocalIso());
+    setDuplicateDescription(entry.description || "");
   };
 
   const closeDuplicateModal = () => {
     setDuplicateTarget(null);
     setDuplicateDate("");
+    setDuplicateDescription("");
   };
 
   const confirmDuplicate = async () => {
@@ -1150,6 +1162,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
     try {
       const response = await api.post(`/v1/journal-entries/${duplicateTarget.id}/duplicate`, {
         entryDate: duplicateDate,
+        description: duplicateDescription,
       });
       if (response.data?.success) {
         showToast(t.successDuplicate);
@@ -1290,6 +1303,8 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
           entry={duplicateTarget}
           date={duplicateDate}
           setDate={setDuplicateDate}
+          description={duplicateDescription}
+          setDescription={setDuplicateDescription}
           duplicating={duplicating}
           onConfirm={confirmDuplicate}
           onCancel={closeDuplicateModal}
@@ -2169,7 +2184,7 @@ function JeAnnulModal({ t, entry, reason, setReason, error, annulling, onConfirm
 // this modal doesn't duplicate that check client-side, it just surfaces
 // whatever the backend says via the toast in confirmDuplicate() and stays
 // open so the user can pick another date.
-function JeDuplicateModal({ t, entry, date, setDate, duplicating, onConfirm, onCancel }) {
+function JeDuplicateModal({ t, entry, date, setDate, description, setDescription, duplicating, onConfirm, onCancel }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/20" onClick={onCancel} />
@@ -2188,6 +2203,24 @@ function JeDuplicateModal({ t, entry, date, setDate, duplicating, onConfirm, onC
               className={jeInputCls()}
               autoFocus
             />
+          </JeField>
+
+          {/* NEW (2026-10-24, user request): shows the source entry's own
+              description, pre-filled and editable, so the user can accept
+              it as-is or change it before duplicating -- instead of it
+              being silently carried forward unseen. Whatever text ends up
+              here becomes BOTH the new entry's header description AND
+              every one of its lines' own description (see duplicateHint
+              below and JournalEntryService.duplicate() on the backend). */}
+          <JeField label={t.duplicateDescriptionLabel}>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className={jeInputCls()}
+              maxLength={255}
+            />
+            <p className="mt-1 text-xs text-slate-400">{t.duplicateDescriptionHint}</p>
           </JeField>
 
           <div className="flex gap-3 pt-2">
