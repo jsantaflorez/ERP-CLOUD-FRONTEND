@@ -234,6 +234,19 @@ function TaxPage({ language = "es" }) {
     loadAccounts();
   }, []);
 
+  // NEW (2026-10-23, user request): only posting accounts are offered for
+  // "Cuenta Vinculada" -- a parent/summary account can never actually
+  // receive journal entries (TaxService.create()/update() already
+  // rejects one with "is not a posting account"), so letting it be
+  // picked here was a doomed-submit trap. Also excludes inactive
+  // accounts for the same reason (TaxService also rejects those) --
+  // mirrors the exact postableAccounts filter JournalEntryPage already
+  // uses for its own account picker, same underlying backend rules.
+  const postableAccounts = useMemo(
+    () => accounts.filter((a) => a.active && a.postingAccount),
+    [accounts]
+  );
+
   const filteredRows = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
     if (!term) return rows;
@@ -723,7 +736,7 @@ function TaxPage({ language = "es" }) {
                     <option value="">
                       {loadingAccounts ? t.loadingAccounts : t.selectAccount}
                     </option>
-                    {accounts.map((acc) => (
+                    {postableAccounts.map((acc) => (
                       <option key={acc.id} value={acc.id}>
                         {acc.code} - {acc.name}
                       </option>
