@@ -921,7 +921,18 @@ function ChartOfAccountsPage({ language = "es" }) {
       }
 
       if (response.data && response.data.success) {
-        showToast(currentId ? t.successUpdate : t.successCreate);
+        // NEW (2026-10-23, user request): the plain "¡Cuenta creada!"
+        // toast didn't say WHICH account, so a user creating several
+        // accounts in a row (via "Seguir creando cuentas" -- the panel
+        // resets to blank immediately after each save) had no clear,
+        // lasting confirmation of what had actually just been saved
+        // beyond a generic 3-second banner. Appending the saved account's
+        // own code/name (straight from the backend's response, not the
+        // form -- authoritative for a brand-new account's generated
+        // state) makes each success unmistakable.
+        const savedAccount = response.data.data;
+        const accountLabel = savedAccount ? ` ${savedAccount.code} — ${savedAccount.name}` : "";
+        showToast(`${currentId ? t.successUpdate : t.successCreate}${accountLabel}`);
         // NEW (2026-09-12): "Seguir creando cuentas" only applies to create
         // (currentId == null) -- editing an existing account always closes
         // the panel as before, since there's no "next sibling" concept there.
