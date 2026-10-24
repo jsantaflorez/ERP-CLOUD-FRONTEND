@@ -17,6 +17,7 @@ import TrialBalancePage from "./TrialBalancePage";
 import CostCenterBalancePage from "./CostCenterBalancePage";
 import ThirdPartyBalancePage from "./ThirdPartyBalancePage";
 import JournalBookPage from "./JournalBookPage";
+import VoucherTypeSummaryPage from "./VoucherTypeSummaryPage";
 import BalanceSheetPage from "./BalanceSheetPage";
 import TrialBalanceDetailedPage from "./TrialBalanceDetailedPage";
 import IncomeStatementPage from "./IncomeStatementPage";
@@ -47,6 +48,7 @@ const REPORT_GROUPS = [
     views: [
       { view: "journalBook", labelKey: "navJournalBook" },
       { view: "auxiliaryLedger", labelKey: "navAuxiliaryLedger" },
+      { view: "voucherTypeSummary", labelKey: "navVoucherTypeSummary" },
       { view: "trialBalance", labelKey: "navTrialBalance" },
       { view: "trialBalanceDetailed", labelKey: "navTrialBalanceDetailed" },
     ],
@@ -403,6 +405,10 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
 
         {activeView === "journalBook" && (
           <JournalBookPage language={language} />
+        )}
+
+        {activeView === "voucherTypeSummary" && (
+          <VoucherTypeSummaryPage language={language} />
         )}
 
         {activeView === "taxDetail" && (
