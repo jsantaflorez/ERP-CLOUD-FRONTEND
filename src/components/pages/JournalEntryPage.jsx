@@ -189,7 +189,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
 
   const t = {
     es: {
-      title: "Asientos Contables",
+      title: "Documentos Contables",
       subtitle: "Captura y Consulta de Movimientos Contables",
       newEntry: "+ Nuevo Comprobante",
       newShortcutHint: "(tecla Insert)",
@@ -213,8 +213,11 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       entryDate: "Fecha del Asiento", documentType: "Tipo de Documento",
       selectDocumentType: "Seleccione un tipo de documento",
       generalDescription: "Descripción General",
-      items: "Líneas del Asiento", addLine: "+ Agregar Asiento",
+      items: "Líneas del Documento", addLine: "+ Agregar Asiento",
       removeLine: "Quitar",
+      repeatPreviousThirdParty: "Repetir tercero anterior",
+      repeatPreviousCostCenter: "Repetir centro de costo anterior",
+      repeatPreviousDescription: "Repetir descripción anterior",
       keyboardShortcutsHint: "TAB / ENTER avanza al siguiente campo · ↑ / ↓ navegan las sugerencias de Cuenta y Tercero · ENTER en la última línea crea una nueva (si queda vacía, se ignora sola al guardar) · ALT + DELETE elimina la línea actual · CTRL + ENTER guarda el comprobante · F9 autocuadra la partida doble",
       account: "Cuenta", selectAccount: "Buscar por código o nombre...", noAccountMatches: "Sin resultados",
       noThirdPartyMatches: "Sin resultados",
@@ -300,6 +303,9 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       generalDescription: "General Description",
       items: "Entry Lines", addLine: "+ Add Entry",
       removeLine: "Remove",
+      repeatPreviousThirdParty: "Repeat previous third party",
+      repeatPreviousCostCenter: "Repeat previous cost center",
+      repeatPreviousDescription: "Repeat previous description",
       keyboardShortcutsHint: "TAB / ENTER moves to the next field · ↑ / ↓ navigate Account and Third Party suggestions · ENTER on the last line creates a new one (left blank, it's ignored on save) · ALT + DELETE removes the current line · CTRL + ENTER saves the entry · F9 auto-balances the double entry",
       account: "Account", selectAccount: "Search by code or name...", noAccountMatches: "No matches",
       noThirdPartyMatches: "No matches",
@@ -1718,6 +1724,28 @@ function JeFormView({
                 const acc = accountById(item.accountId);
                 const tax = taxByAccountId[item.accountId];
                 const lineErr = errors.items?.[index] || {};
+                // NEW (2026-10-23, user request): "Repetir anterior" banners --
+                // when several consecutive lines in the SAME comprobante share
+                // the same tercero/CC (e.g. a payroll or expense voucher with
+                // 5 of 7 lines for the same third party), offer a one-click way
+                // to copy the field from the line right above, instead of
+                // retyping it. Deliberately just the immediately previous row
+                // ("anterior"), not a scan of every earlier row -- simple,
+                // predictable, and matches exactly what the user asked for.
+                // (An earlier version of this also offered to autofill from
+                // a DIFFERENT comprobante's history for the same account --
+                // dropped per the user's explicit feedback: a same-document
+                // repeat is the real, common case; cross-document history
+                // never came up in 40 years of real accounting work and
+                // only added confusion.)
+                const prevItem = index > 0 ? form.items[index - 1] : null;
+                const prevThirdParty = prevItem?.thirdPartyId
+                  ? activeThirdParties.find((tp) => String(tp.id) === String(prevItem.thirdPartyId))
+                  : null;
+                const prevCostCenter = prevItem?.costCenterId
+                  ? activeCostCenters.find((c) => String(c.id) === String(prevItem.costCenterId))
+                  : null;
+                const prevDescription = prevItem?.description?.trim() ? prevItem.description : null;
                 return (
                   <tr key={index} onKeyDown={(e) => handleRowKeyDown(e, index)}>
                     <td className="px-3 py-2 align-top">
@@ -1762,6 +1790,17 @@ function JeFormView({
                             </button>
                           </div>
                           {lineErr.thirdPartyId && <p className="text-[10px] text-red-500 mt-1">{lineErr.thirdPartyId}</p>}
+                          {!item.thirdPartyId && prevThirdParty && (
+                            <button type="button" tabIndex={-1}
+                              onClick={() => {
+                                onItemChange(index, "thirdPartyId", String(prevThirdParty.id));
+                                fieldRefs.current[`${index}:thirdParty`]?.focus();
+                              }}
+                              title={prevThirdParty.legalDisplayName}
+                              className="mt-1 inline-block rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-left text-[11px] font-semibold text-blue-600 hover:bg-blue-100">
+                              ↺ {t.repeatPreviousThirdParty}
+                            </button>
+                          )}
                         </>
                       ) : (
                         <span className="text-[11px] text-slate-300">{t.noThirdParty}</span>
@@ -1788,6 +1827,17 @@ function JeFormView({
                             </button>
                           </div>
                           {lineErr.costCenterId && <p className="text-[10px] text-red-500 mt-1">{lineErr.costCenterId}</p>}
+                          {!item.costCenterId && prevCostCenter && (
+                            <button type="button" tabIndex={-1}
+                              onClick={() => {
+                                onItemChange(index, "costCenterId", String(prevCostCenter.id));
+                                fieldRefs.current[`${index}:costCenter`]?.focus();
+                              }}
+                              title={`${prevCostCenter.code} - ${prevCostCenter.name}`}
+                              className="mt-1 inline-block rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-left text-[11px] font-semibold text-blue-600 hover:bg-blue-100">
+                              ↺ {t.repeatPreviousCostCenter}
+                            </button>
+                          )}
                         </>
                       ) : (
                         <span className="text-[11px] text-slate-300">{t.noCostCenter}</span>
@@ -1844,6 +1894,17 @@ function JeFormView({
                         onChange={(e) => onItemChange(index, "description", e.target.value)}
                         onKeyDown={(e) => handleFieldKeyDown(e, index, "description")}
                         className={jeInputCls()} maxLength={255} />
+                      {!item.description?.trim() && prevDescription && (
+                        <button type="button" tabIndex={-1}
+                          onClick={() => {
+                            onItemChange(index, "description", prevDescription);
+                            fieldRefs.current[`${index}:description`]?.focus();
+                          }}
+                          title={prevDescription}
+                          className="mt-1 inline-block rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-left text-[11px] font-semibold text-blue-600 hover:bg-blue-100">
+                          ↺ {t.repeatPreviousDescription}
+                        </button>
+                      )}
                     </td>
                     <td className="px-3 py-2 align-top">
                       <button type="button" onClick={() => onRemoveLine(index)}

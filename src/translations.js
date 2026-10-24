@@ -33,7 +33,7 @@ const translations = {
     navIncompleteMovements: "Movimientos Incompletos",
     navJournalBook: "Libro Diario",
     navTaxDetail: "Informe de Impuestos y Retenciones",
-    navJournalEntry: "Asientos Contables",
+    navJournalEntry: "Documentos Contables",
     navAccountingPeriod: "Períodos Contables",
     navUsers: "Usuarios",
     unsavedChangesWarning: "Hay cambios sin guardar en el comprobante. ¿Desea salir de todos modos? Se perderán los datos digitados.",
