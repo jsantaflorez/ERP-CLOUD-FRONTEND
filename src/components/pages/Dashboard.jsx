@@ -24,6 +24,7 @@ import IncomeStatementPage from "./IncomeStatementPage";
 import AccountingPeriodPage from "./AccountingPeriodPage";
 import TaxDetailPage from "./TaxDetailPage";
 import IncompleteMovementsPage from "./IncompleteMovementsPage";
+import ValueSearchPage from "./ValueSearchPage";
 
 // UX IMPROVEMENT (2026-10-17, user request): with 9 reports in one flat
 // list, the "Reportes" submenu had gotten long enough that finding one
@@ -60,6 +61,7 @@ const REPORT_GROUPS = [
       { view: "thirdPartyBalance", labelKey: "navThirdPartyBalance" },
       { view: "costCenterBalance", labelKey: "navCostCenterBalance" },
       { view: "incompleteMovements", labelKey: "navIncompleteMovements" },
+      { view: "valueSearch", labelKey: "navValueSearch" },
     ],
   },
   {
@@ -417,6 +419,10 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
 
         {activeView === "incompleteMovements" && (
           <IncompleteMovementsPage language={language} onEditEntry={handleEditEntryFromReport} />
+        )}
+
+        {activeView === "valueSearch" && (
+          <ValueSearchPage language={language} onEditEntry={handleEditEntryFromReport} />
         )}
 
         {activeView === "accountingPeriod" && (
