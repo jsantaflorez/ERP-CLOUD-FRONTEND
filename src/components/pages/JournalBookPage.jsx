@@ -126,6 +126,17 @@ function JournalBookPage({ language = "es" }) {
       maximumFractionDigits: 2,
     });
 
+  // NEW (2026-10-24, user request): same "DOCUMENTO - Nombre" combination
+  // just added to the Libro Auxiliar's own Tercero column (see
+  // AuxiliaryLedgerPage.jsx's thirdPartyLabel) -- shows the third party's
+  // document number alongside their name here too, on-screen and in both
+  // exports.
+  const thirdPartyLabel = (docNumber, name) => {
+    if (!docNumber && !name) return "—";
+    if (docNumber && name) return `${docNumber} - ${name}`;
+    return docNumber || name;
+  };
+
   // Document types come back as a flat array (not a Spring Page<>),
   // same shape JournalEntryPage.loadCatalogs() already handles for this
   // endpoint -- only needed here to label each entry ("CODE - Name"),
@@ -258,7 +269,7 @@ function JournalBookPage({ language = "es" }) {
       (entry.items || []).forEach((item) => {
         rows.push([
           `${item.accountCode} - ${item.accountName}`,
-          item.thirdPartyName || "",
+          thirdPartyLabel(item.thirdPartyIdNumber, item.thirdPartyName),
           item.costCenterName || "",
           item.debit || 0,
           item.credit || 0,
@@ -335,7 +346,7 @@ function JournalBookPage({ language = "es" }) {
 
       const body = (entry.items || []).map((item) => [
         `${item.accountCode} - ${item.accountName}`,
-        item.thirdPartyName || "—",
+        thirdPartyLabel(item.thirdPartyIdNumber, item.thirdPartyName),
         item.costCenterName || "—",
         money(item.debit),
         money(item.credit),
@@ -530,7 +541,7 @@ function JournalBookPage({ language = "es" }) {
                             <td className="px-3 py-2 text-slate-700">
                               {item.accountCode} - {item.accountName}
                             </td>
-                            <td className="px-3 py-2 text-xs text-slate-500">{item.thirdPartyName || "—"}</td>
+                            <td className="px-3 py-2 text-xs text-slate-500">{thirdPartyLabel(item.thirdPartyIdNumber, item.thirdPartyName)}</td>
                             <td className="px-3 py-2 text-xs text-slate-500">{item.costCenterName || "—"}</td>
                             <td className="px-3 py-2 text-right text-slate-700">{money(item.debit)}</td>
                             <td className="px-3 py-2 text-right text-slate-700">{money(item.credit)}</td>

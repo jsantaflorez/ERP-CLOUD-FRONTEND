@@ -56,6 +56,17 @@ const money = (n) =>
     maximumFractionDigits: 2,
   });
 
+// NEW (2026-10-24): the voucher's Ver/Imprimir view shows each line's own
+// detalle, but there's no room for the full text next to account/tercero/CC
+// in a landscape table -- truncate to a short preview (ellipsis marks it as
+// cut off) rather than wrapping/widening the other columns.
+const truncateDetail = (text, maxLen = 30) => {
+  if (!text) return "—";
+  const trimmed = text.trim();
+  if (!trimmed) return "—";
+  return trimmed.length > maxLen ? `${trimmed.slice(0, maxLen)}…` : trimmed;
+};
+
 // NEW (2026-10-14): mirrors JournalEntryService.handleTax()'s formula
 // exactly (base x rate / 100, zeroed below the Tax's minimumBase) so the
 // on-screen preview matches what the server will actually post -- this is
@@ -2044,12 +2055,13 @@ function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose }) {
 
     const body = (entry.items || []).map((item) => [
       `${item.accountCode} - ${item.accountName}`,
+      truncateDetail(item.description),
       item.thirdPartyName || "—",
       item.costCenterName || "—",
       money(item.debit),
       money(item.credit),
     ]);
-    body.push([t.totalsRow, "", "", money(totalDebit), money(totalCredit)]);
+    body.push([t.totalsRow, "", "", "", money(totalDebit), money(totalCredit)]);
 
     // Same "continuation pages get a running header too" pattern used by
     // every other PDF export in this app -- a voucher is usually short,
@@ -2058,13 +2070,14 @@ function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose }) {
 
     autoTable(doc, {
       startY: cursorY,
-      head: [[t.account, t.thirdParty, t.costCenter, t.debit, t.credit]],
+      head: [[t.account, t.description, t.thirdParty, t.costCenter, t.debit, t.credit]],
       body,
       styles: { fontSize: 9 },
       headStyles: { fillColor: [30, 41, 59] },
       columnStyles: {
-        3: { halign: "right" },
+        1: { cellWidth: 45 },
         4: { halign: "right" },
+        5: { halign: "right" },
       },
       margin: { top: 20, bottom: 15 },
       didDrawPage: (data) => {
@@ -2075,6 +2088,42 @@ function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose }) {
     });
 
     doc.save(`${t.voucherTitle.replace(/\s+/g, "_")}_${entry.documentNumber}.pdf`);
+  };
+
+  // NEW (2026-10-24, user request): Excel export of this same voucher,
+  // same column order as the PDF/on-screen table above (Cuenta,
+  // Descripcion, Tercero, Centro de Costo, Debito, Credito) -- but unlike
+  // the PDF (fixed page width) and the on-screen table (narrow column +
+  // title tooltip), this keeps each line's FULL description text: Excel
+  // cells have no print-layout space constraint, so there's no reason to
+  // truncate via truncateDetail() here.
+  const handleExportExcel = () => {
+    const headerInfo = {
+      companyName,
+      reportTitle: `${t.voucherTitle} — ${entry.documentNumber}`,
+      period: [entry.entryDate, documentTypeLabel(entry)].filter(Boolean).join("   ·   "),
+      generatedAtLabel: t.printedAtLabel,
+      generatedAt: nowLocalIso(),
+    };
+
+    const rows = [
+      ...buildExcelHeaderRows(headerInfo),
+      [t.account, t.description, t.thirdParty, t.costCenter, t.debit, t.credit],
+      ...(entry.items || []).map((item) => [
+        `${item.accountCode} - ${item.accountName}`,
+        item.description || "—",
+        item.thirdPartyName || "—",
+        item.costCenterName || "—",
+        item.debit || 0,
+        item.credit || 0,
+      ]),
+      [t.totalsRow, "", "", "", totalDebit, totalCredit],
+    ];
+
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, t.voucherTitle.slice(0, 31));
+    XLSX.writeFile(workbook, `${t.voucherTitle.replace(/\s+/g, "_")}_${entry.documentNumber}.xlsx`);
   };
 
   return (
@@ -2100,6 +2149,7 @@ function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose }) {
             <thead>
               <tr className="border-b text-left text-[10px] font-bold uppercase tracking-wider text-slate-400">
                 <th className="px-3 py-2">{t.account}</th>
+                <th className="px-3 py-2">{t.description}</th>
                 <th className="px-3 py-2">{t.thirdParty}</th>
                 <th className="px-3 py-2">{t.costCenter}</th>
                 <th className="px-3 py-2 text-right">{t.debit}</th>
@@ -2110,6 +2160,7 @@ function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose }) {
               {(entry.items || []).map((item) => (
                 <tr key={item.id}>
                   <td className="px-3 py-2 text-slate-700">{item.accountCode} - {item.accountName}</td>
+                  <td className="px-3 py-2 text-slate-500 text-xs" title={item.description || ""}>{truncateDetail(item.description)}</td>
                   <td className="px-3 py-2 text-slate-500 text-xs">{item.thirdPartyName || "—"}</td>
                   <td className="px-3 py-2 text-slate-500 text-xs">{item.costCenterName || "—"}</td>
                   <td className="px-3 py-2 text-right text-slate-700">{money(item.debit)}</td>
@@ -2119,7 +2170,7 @@ function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose }) {
             </tbody>
             <tfoot>
               <tr className="border-t font-bold text-slate-700">
-                <td className="px-3 py-2" colSpan={3}>Total</td>
+                <td className="px-3 py-2" colSpan={4}>Total</td>
                 <td className="px-3 py-2 text-right">{money(totalDebit)}</td>
                 <td className="px-3 py-2 text-right">{money(totalCredit)}</td>
               </tr>
@@ -2129,6 +2180,7 @@ function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose }) {
 
         <div className="px-8 pb-6 flex gap-3">
           <Button variant="primary" onClick={handlePrintPdf}>{t.printPdf}</Button>
+          <Button variant="secondary" onClick={handleExportExcel}>{t.exportExcel}</Button>
           <Button variant="secondary" onClick={onClose}>{t.close}</Button>
         </div>
       </div>

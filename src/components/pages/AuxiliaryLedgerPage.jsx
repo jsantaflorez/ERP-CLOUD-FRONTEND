@@ -122,6 +122,19 @@ function AuxiliaryLedgerPage({ language = "es" }) {
     });
   };
 
+  // NEW (2026-10-24, user request): show the third party's own document
+  // number alongside their name in the "Tercero" column -- same
+  // "DOCUMENTO - Nombre" combination TaxDetailPage.jsx already uses for
+  // its own third-party column, applied here too (on-screen, Excel and
+  // PDF) so a user reconciling a ledger line against a physical
+  // invoice/recibo can match it by document number without opening the
+  // voucher itself.
+  const thirdPartyLabel = (docNumber, name) => {
+    if (!docNumber && !name) return "—";
+    if (docNumber && name) return `${docNumber} - ${name}`;
+    return docNumber || name;
+  };
+
   const loadAccounts = async () => {
     setLoadingAccounts(true);
     try {
@@ -260,7 +273,7 @@ function AuxiliaryLedgerPage({ language = "es" }) {
         tx.transactionDate,
         tx.annulled ? `${tx.documentNumber} (${t.annulled.toUpperCase()})` : tx.documentNumber,
         tx.detail,
-        tx.thirdPartyName || "",
+        thirdPartyLabel(tx.thirdPartyDocument, tx.thirdPartyName),
         tx.costCenterCode || "",
         rawAmount(tx.debit),
         rawAmount(tx.credit),
@@ -359,7 +372,7 @@ function AuxiliaryLedgerPage({ language = "es" }) {
         tx.transactionDate || "",
         tx.annulled ? `${tx.documentNumber || ""} (${t.annulled.toUpperCase()})` : tx.documentNumber || "",
         tx.detail || "",
-        tx.thirdPartyName || "",
+        thirdPartyLabel(tx.thirdPartyDocument, tx.thirdPartyName),
         tx.costCenterCode || "",
         formatAmount(tx.debit),
         formatAmount(tx.credit),
@@ -552,7 +565,7 @@ function AuxiliaryLedgerPage({ language = "es" }) {
                           </div>
                         </td>
                         <td className="px-4 py-2.5 text-slate-600">{tx.detail}</td>
-                        <td className="px-4 py-2.5 text-slate-500">{tx.thirdPartyName || "—"}</td>
+                        <td className="px-4 py-2.5 text-slate-500">{thirdPartyLabel(tx.thirdPartyDocument, tx.thirdPartyName)}</td>
                         <td className="px-4 py-2.5 text-slate-500">{tx.costCenterCode || "—"}</td>
                         <td className="px-4 py-2.5 text-right text-slate-700">
                           {formatAmount(tx.debit)}
