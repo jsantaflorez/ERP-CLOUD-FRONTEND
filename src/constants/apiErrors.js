@@ -70,6 +70,11 @@ export const API_ERROR_LABELS = {
     RESULT_ACCOUNTS_MISSING_THIRD_PARTY_OR_COST_CENTER: "No se puede cerrar el año automáticamente: hay cuentas de resultado que exigen Tercero o Centro de Costo con movimientos que no lo tienen. Corrige esos movimientos antes de cerrar.",
     PRIOR_YEAR_NOT_CLOSED: "No se puede cerrar este año: el año anterior debe cerrarse primero.",
     NEXT_YEAR_MUST_BE_OPEN_BEFORE_REOPEN: "No se puede reabrir este año porque el año siguiente todavía está cerrado. Reabre primero el año siguiente.",
+    // Multiempresa Fase 1/2 (UserSessionController.switchCompany) -- the
+    // authenticated user tried to switch into a company they have no
+    // UserRole for, or their account is temporarily locked.
+    NO_ACCESS_TO_COMPANY: "No tienes acceso a la empresa seleccionada.",
+    ACCOUNT_LOCKED: "Tu cuenta está temporalmente bloqueada.",
   },
   en: {
     DUPLICATE_VALUE: "A record with this value already exists. Check the code or identifier.",
@@ -127,6 +132,8 @@ export const API_ERROR_LABELS = {
     RESULT_ACCOUNTS_MISSING_THIRD_PARTY_OR_COST_CENTER: "Can't close the year automatically: some result accounts require a Third Party or Cost Center and have movements missing one. Fix those movements before closing.",
     PRIOR_YEAR_NOT_CLOSED: "Can't close this year: the prior year must be closed first.",
     NEXT_YEAR_MUST_BE_OPEN_BEFORE_REOPEN: "Can't reopen this year because the following year is still closed. Reopen the following year first.",
+    NO_ACCESS_TO_COMPANY: "You don't have access to the selected company.",
+    ACCOUNT_LOCKED: "Your account is temporarily locked.",
   },
 };
 

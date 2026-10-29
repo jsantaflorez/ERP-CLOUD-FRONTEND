@@ -7,17 +7,23 @@
 // whenever the session changes, and api.js (the Axios interceptor) calls
 // getActiveSession() on every request to read the latest values.
 //
-// AuthContext is only a "read + render" layer on top of this module — the
+// AuthContext is only a "read + render" layer on top of this module -- the
 // real value lives here.
 
-// TODO: once real login/JWT is wired up, hydrate this initial value from
-// localStorage or from a `/me` backend call instead of hardcoding it.
-
+// FIXED (2026-10-28, Multiempresa Fase 2): used to hardcode a demo
+// company ("4" / "Compania Demo S.A.") as the fallback here, which masked
+// the fact that companyId is now a real per-user, per-login value (see
+// Login.jsx's company dropdown). A logged-out/not-yet-logged-in session
+// should look empty, never like a valid fake session. companyId/token
+// still restore from localStorage so a page reload keeps you logged in;
+// companyName is not persisted to localStorage today (see AuthContext's
+// login()), so it starts null on reload until AppHeader's own company
+// list fetch resolves the label again.
 let activeSession = {
-  companyId: localStorage.getItem('companyId') || "4", // Use whatever is in storage, or "4" if it is empty.
-  companyName: "Compañía Demo S.A.",
-  username: "Administrador",
-  role: "ADMIN",
+  companyId: localStorage.getItem('companyId') || null,
+  companyName: null,
+  username: null,
+  role: null,
   token: localStorage.getItem('token') || null,
 };
 

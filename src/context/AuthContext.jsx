@@ -1,5 +1,6 @@
 // src/context/AuthContext.jsx
 import { createContext, useContext, useState, useCallback } from "react";
+import api from "../services/api";
 import {
   getActiveSession,
   setActiveSession,
@@ -39,10 +40,41 @@ export function AuthProvider({ children }) {
     localStorage.removeItem("companyId");
   }, []);
 
-  // The day a company switcher exists in AppHeader, it calls this.
-  const switchCompany = useCallback((newCompanyId, newCompanyName) => {
-    setActiveSession({ companyId: newCompanyId, companyName: newCompanyName });
+  // IMPLEMENTED (2026-10-28, Multiempresa Fase 2): used to be a cosmetic
+  // stub that only mutated local state -- the comment literally said "the
+  // day a company switcher exists in AppHeader, it calls this", and that
+  // day is now. Calls the real POST /api/v1/session/switch-company (the
+  // user is already authenticated here, via the CURRENT token, which is
+  // what lets the backend re-validate access and mint a new one scoped to
+  // newCompanyId -- see UserSessionController on the backend).
+  //
+  // newCompanyName is accepted from the caller (AppHeader already has it
+  // from its own GET /v1/session/companies fetch) rather than re-derived
+  // here, since the backend's AuthResponse shape doesn't include a company
+  // display name, only the id.
+  //
+  // Throws on failure (e.g. NO_ACCESS_TO_COMPANY, if access was revoked
+  // mid-session) -- AppHeader is responsible for catching this and showing
+  // the user something, rather than this context swallowing it silently.
+  const switchCompany = useCallback(async (newCompanyId, newCompanyName) => {
+    const response = await api.post("/v1/session/switch-company", {
+      companyId: newCompanyId,
+    });
+    const data = response.data?.data;
+
+    const nextSession = {
+      token: data?.token,
+      companyId: data?.companyId != null ? String(data.companyId) : String(newCompanyId),
+      companyName: newCompanyName ?? null,
+    };
+
+    setActiveSession(nextSession);
     setSession(getActiveSession());
+
+    if (nextSession.token) localStorage.setItem("token", nextSession.token);
+    if (nextSession.companyId) localStorage.setItem("companyId", nextSession.companyId);
+
+    return data;
   }, []);
 
   return (
