@@ -75,6 +75,12 @@ export const API_ERROR_LABELS = {
     // UserRole for, or their account is temporarily locked.
     NO_ACCESS_TO_COMPANY: "No tienes acceso a la empresa seleccionada.",
     ACCOUNT_LOCKED: "Tu cuenta está temporalmente bloqueada.",
+    // Multiempresa Fase 3 (UserManagementController/UserManagementService).
+    PASSWORD_TOO_SHORT: "La contraseña debe tener al menos 6 caracteres.",
+    ROLE_NOT_IN_COMPANY: "El rol seleccionado no pertenece a esta empresa.",
+    CANNOT_DEACTIVATE_OWN_ACCOUNT: "No puedes desactivar tu propia cuenta.",
+    CANNOT_REVOKE_OWN_ACCESS: "No puedes retirarte a ti mismo de esta empresa.",
+    NAME_REQUIRED_FOR_NEW_USER: "Nombre y apellido son obligatorios para una persona nueva.",
   },
   en: {
     DUPLICATE_VALUE: "A record with this value already exists. Check the code or identifier.",
@@ -134,6 +140,11 @@ export const API_ERROR_LABELS = {
     NEXT_YEAR_MUST_BE_OPEN_BEFORE_REOPEN: "Can't reopen this year because the following year is still closed. Reopen the following year first.",
     NO_ACCESS_TO_COMPANY: "You don't have access to the selected company.",
     ACCOUNT_LOCKED: "Your account is temporarily locked.",
+    PASSWORD_TOO_SHORT: "Password must be at least 6 characters.",
+    ROLE_NOT_IN_COMPANY: "The selected role doesn't belong to this company.",
+    CANNOT_DEACTIVATE_OWN_ACCOUNT: "You can't deactivate your own account.",
+    CANNOT_REVOKE_OWN_ACCESS: "You can't remove yourself from this company.",
+    NAME_REQUIRED_FOR_NEW_USER: "First and last name are required for a new person.",
   },
 };
 
