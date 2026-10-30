@@ -81,6 +81,13 @@ export const API_ERROR_LABELS = {
     CANNOT_DEACTIVATE_OWN_ACCOUNT: "No puedes desactivar tu propia cuenta.",
     CANNOT_REVOKE_OWN_ACCESS: "No puedes retirarte a ti mismo de esta empresa.",
     NAME_REQUIRED_FOR_NEW_USER: "Nombre y apellido son obligatorios para una persona nueva.",
+    // Fase 4 (Importar PUC Estandar).
+    NO_CHART_TEMPLATE_SELECTED: "Selecciona una plantilla de PUC (Comercial o Solidario) antes de importar.",
+    CHART_TEMPLATE_MISMATCH: "La empresa ya tiene configurada otra plantilla de PUC distinta a la seleccionada.",
+    CHART_OF_ACCOUNTS_NOT_EMPTY: "El Plan de Cuentas ya tiene cuentas registradas. La importacion solo esta disponible con el plan vacio.",
+    TEMPLATE_INTEGRITY_GAP: "La plantilla de PUC tiene un problema de integridad (codigos sin su grupo padre o con longitud invalida) y la importacion fue cancelada. Contacta a soporte para revisar los datos de la plantilla.",
+    TEMPLATE_UNMAPPED_GROUP: "Un grupo de la plantilla de PUC no tiene una categoria configurada y la importacion fue cancelada. Contacta a soporte para completar la configuracion.",
+    IMPORT_PUC_UNRESOLVED_PARENT: "Ocurrio un problema interno importando el PUC estandar. Intenta de nuevo o contacta soporte.",
   },
   en: {
     DUPLICATE_VALUE: "A record with this value already exists. Check the code or identifier.",
@@ -145,6 +152,13 @@ export const API_ERROR_LABELS = {
     CANNOT_DEACTIVATE_OWN_ACCOUNT: "You can't deactivate your own account.",
     CANNOT_REVOKE_OWN_ACCESS: "You can't remove yourself from this company.",
     NAME_REQUIRED_FOR_NEW_USER: "First and last name are required for a new person.",
+    // Phase 4 (Import Standard Chart of Accounts).
+    NO_CHART_TEMPLATE_SELECTED: "Select a chart-of-accounts template (Comercial or Solidario) before importing.",
+    CHART_TEMPLATE_MISMATCH: "This company already has a different chart-of-accounts template configured.",
+    CHART_OF_ACCOUNTS_NOT_EMPTY: "The Chart of Accounts already has accounts. Importing is only available when it's empty.",
+    TEMPLATE_INTEGRITY_GAP: "The chart-of-accounts template has an integrity problem (codes missing their parent group, or with an invalid length) and the import was cancelled. Contact support to review the template data.",
+    TEMPLATE_UNMAPPED_GROUP: "A group in the chart-of-accounts template has no category configured and the import was cancelled. Contact support to complete the configuration.",
+    IMPORT_PUC_UNRESOLVED_PARENT: "An internal problem occurred while importing the standard chart of accounts. Try again or contact support.",
   },
 };
 

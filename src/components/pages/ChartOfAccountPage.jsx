@@ -293,6 +293,13 @@ function ChartOfAccountsPage({ language = "es" }) {
   const [chartTemplate, setChartTemplate]         = useState(null);
   const [templateEntriesMap, setTemplateEntriesMap] = useState({});
 
+  // NEW (Fase 4, Importar PUC Estandar): lets an empty Plan de Cuentas be
+  // populated in one step instead of account by account. importChoice is
+  // only used when the company has no chartTemplate configured yet.
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importChoice, setImportChoice]       = useState("");
+  const [importing, setImporting]             = useState(false);
+
   // Reference pointer to guarantee consistent identity states during transactional operations
   const editingIdRef = useRef(null);
 
@@ -368,6 +375,24 @@ function ChartOfAccountsPage({ language = "es" }) {
       newShortcutHint: "(tecla Insert)",
       expandGroup: "Expandir grupo",
       collapseGroup: "Contraer grupo",
+      importPucTitle: "Importar PUC Estándar",
+      importPucHint: "El Plan de Cuentas está vacío. Puedes construirlo cuenta por cuenta, o importar el PUC estándar completo (grupos, cuentas y subcuentas) en un solo paso.",
+      importPucSelectTemplate: "Selecciona una plantilla:",
+      importPucComercial: "PUC Comercial",
+      importPucSolidario: "PUC Sector Solidario",
+      importPucButton: "Importar PUC Estándar",
+      importPucConfirmTitle: "¿Importar el PUC estándar?",
+      importPucConfirmBody: "Se crearán automáticamente todos los grupos, cuentas y subcuentas de esta plantilla. Esta acción solo está disponible mientras el Plan de Cuentas esté vacío.",
+      importPucCancel: "Cancelar",
+      importPucImporting: "Importando...",
+      importPucSuccess: "¡PUC importado!",
+      importPucAccountsSuffix: "cuentas creadas.",
+      importPucChooseTemplateTitle: "Elige la plantilla a importar",
+      importPucLockedPrefix: "Esta empresa ya tiene configurada la plantilla ",
+      importPucLockedSuffix: ". Puedes dejarla o elegir otra mientras el Plan de Cuentas esté vacío.",
+      importPucCurrentTemplateLabel: "Plantilla actual: ",
+      importPucNoTemplateYet: "Sin plantilla asignada todavía.",
+      importPucOpenButton: "Seleccionar Plantilla e Importar",
     },
     en: {
       title: "Chart of Accounts",
@@ -434,6 +459,24 @@ function ChartOfAccountsPage({ language = "es" }) {
       newShortcutHint: "(Insert key)",
       expandGroup: "Expand group",
       collapseGroup: "Collapse group",
+      importPucTitle: "Import Standard Chart of Accounts",
+      importPucHint: "The Chart of Accounts is empty. You can build it account by account, or import the full standard chart (groups, accounts and sub-accounts) in one step.",
+      importPucSelectTemplate: "Select a template:",
+      importPucComercial: "Commercial Chart of Accounts",
+      importPucSolidario: "Solidarity-sector Chart of Accounts",
+      importPucButton: "Import Standard Chart of Accounts",
+      importPucConfirmTitle: "Import the standard chart of accounts?",
+      importPucConfirmBody: "Every group, account and sub-account from this template will be created automatically. This action is only available while the Chart of Accounts is empty.",
+      importPucCancel: "Cancel",
+      importPucImporting: "Importing...",
+      importPucSuccess: "Chart of accounts imported!",
+      importPucAccountsSuffix: "accounts created.",
+      importPucChooseTemplateTitle: "Choose the template to import",
+      importPucLockedPrefix: "This company already has the ",
+      importPucLockedSuffix: " template configured. You can keep it or pick a different one while the Chart of Accounts is still empty.",
+      importPucCurrentTemplateLabel: "Current template: ",
+      importPucNoTemplateYet: "No template assigned yet.",
+      importPucOpenButton: "Select Template & Import",
     },
   }[language];
 
@@ -510,6 +553,31 @@ function ChartOfAccountsPage({ language = "es" }) {
       }
     } catch {
       // Non-critical -- see comment above.
+    }
+  };
+
+  // NEW (Fase 4): clones the standard reference PUC into real accounts for
+  // this company in one call -- only ever offered while rows.length === 0
+  // (see the render below), matching the backend guard.
+  const handleImportTemplate = async () => {
+    setImporting(true);
+    try {
+      const response = await api.post("/v1/chart-of-accounts/import-template", {
+        templateType: importChoice,
+      });
+      if (response.data && response.data.success) {
+        const result = response.data.data || {};
+        setShowImportModal(false);
+        if (result.templateType) setChartTemplate(result.templateType);
+        showToast(`${t.importPucSuccess} ${result.accountsCreated ?? ""} ${t.importPucAccountsSuffix}`.trim());
+        await loadAccounts();
+      } else {
+        showToast(response.data?.message || t.errorConn, "error");
+      }
+    } catch (error) {
+      showToast(getApiErrorMessage(error, language, t.errorConn), "error");
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -1076,6 +1144,80 @@ function ChartOfAccountsPage({ language = "es" }) {
         </div>
       )}
 
+      {showImportModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-slate-900/20"
+            onClick={() => {
+              if (importing) return;
+              setShowImportModal(false);
+              setImportChoice("");
+            }}
+          />
+          <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-bold text-slate-800">{t.importPucConfirmTitle}</h3>
+            <p className="mt-2 text-sm text-slate-600">{t.importPucConfirmBody}</p>
+
+            {/* FIX (2026-10-30, revised same day on explicit user direction):
+                the template choice is ALWAYS editable here, every time,
+                regardless of Company.chartTemplate -- that field is not a
+                lock, having a real account is. The backend enforces the
+                same rule (ChartAccountTemplateImportService.importTemplate):
+                it only ever rejects this call once the Plan de Cuentas has
+                at least one account, never because of a pre-set
+                chartTemplate. A company whose chartTemplate was already
+                set (e.g. directly in the database when its row was
+                created, before any accounts exist) must stay free to pick
+                either template, or a typo'd NIT at company creation would
+                permanently strand it on the wrong one with nothing to show
+                for it yet. If there's a current value, it's shown as a
+                plain, non-blocking note and used to prefill the selector
+                (see the banner's onClick) -- a convenience, not a lock. */}
+            {chartTemplate && (
+              <p className="mt-4 text-xs text-indigo-700">
+                {t.importPucLockedPrefix}
+                <strong>{chartTemplate === "COMERCIAL" ? t.importPucComercial : t.importPucSolidario}</strong>
+                {t.importPucLockedSuffix}
+              </p>
+            )}
+            <div className="mt-4 flex flex-col gap-2">
+              <span className="text-sm font-medium text-indigo-900">{t.importPucChooseTemplateTitle}</span>
+              <select
+                value={importChoice}
+                onChange={(e) => setImportChoice(e.target.value)}
+                autoFocus
+                className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400"
+              >
+                <option value="">{t.selectOption}</option>
+                <option value="COMERCIAL">{t.importPucComercial}</option>
+                <option value="SOLIDARIO">{t.importPucSolidario}</option>
+              </select>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <Button
+                variant="secondary"
+                disabled={importing}
+                onClick={() => {
+                  setShowImportModal(false);
+                  setImportChoice("");
+                }}
+              >
+                {t.importPucCancel}
+              </Button>
+              <Button
+                variant="primary"
+                loading={importing}
+                disabled={!importChoice}
+                onClick={handleImportTemplate}
+              >
+                {importing ? t.importPucImporting : t.importPucButton}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <AppHeader
         title={t.title}
         subtitle={t.subtitle}
@@ -1102,6 +1244,42 @@ function ChartOfAccountsPage({ language = "es" }) {
         placeholder={t.search}
         className="w-full md:max-w-md rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none shadow-sm focus:border-blue-500 transition-all"
       />
+
+      {!loading && rows.length === 0 && (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-6 flex flex-col gap-3">
+          <p className="text-sm font-semibold text-indigo-900">{t.importPucTitle}</p>
+          <p className="text-sm text-indigo-700">{t.importPucHint}</p>
+          {/* NEW (2026-10-30): dynamic label so the current (or still
+              unset) template is visible at a glance, not only once the
+              modal is open -- the user asked for this explicitly after
+              the previous round only surfaced it inside the modal. */}
+          <p className="text-xs font-semibold uppercase tracking-wide text-indigo-500">
+            {chartTemplate
+              ? `${t.importPucCurrentTemplateLabel}${chartTemplate === "COMERCIAL" ? t.importPucComercial : t.importPucSolidario}`
+              : t.importPucNoTemplateYet}
+          </p>
+          <div>
+            {/* FIX (2026-10-30): template choice moved into the modal
+                itself (see showImportModal below) so it's always explicit,
+                whether or not the company already has a chartTemplate.
+                Renamed (same day) from "Importar PUC Estandar" to make it
+                clear up front that clicking opens a choice between
+                Comercial/Solidario before anything runs -- the modal's own
+                confirm button keeps the original wording, since by then
+                the template is already picked and that click is the one
+                that actually executes the import. */}
+            <Button
+              variant="primary"
+              onClick={() => {
+                setImportChoice(chartTemplate || "");
+                setShowImportModal(true);
+              }}
+            >
+              {t.importPucOpenButton}
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-x-auto">
         {loading ? (
