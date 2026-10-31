@@ -88,6 +88,15 @@ export const API_ERROR_LABELS = {
     TEMPLATE_INTEGRITY_GAP: "La plantilla de PUC tiene un problema de integridad (codigos sin su grupo padre o con longitud invalida) y la importacion fue cancelada. Contacta a soporte para revisar los datos de la plantilla.",
     TEMPLATE_UNMAPPED_GROUP: "Un grupo de la plantilla de PUC no tiene una categoria configurada y la importacion fue cancelada. Contacta a soporte para completar la configuracion.",
     IMPORT_PUC_UNRESOLVED_PARENT: "Ocurrio un problema interno importando el PUC estandar. Intenta de nuevo o contacta soporte.",
+    // Importador de PUC legado SIEWIN (2026-10-31). SIEWIN_IMPORT_INTEGRITY_GAP
+    // normally never reaches this generic lookup -- ChartOfAccountPage.jsx
+    // reads its structured details (error.response.data.data) directly and
+    // renders the per-violation lists instead. This label is just the
+    // fallback for any other place that error code might surface.
+    SIEWIN_IMPORT_INTEGRITY_GAP: "El archivo SIEWIN tiene problemas de datos que impiden la importacion. Revisa el detalle mostrado en el formulario.",
+    SIEWIN_EMPTY_FILE: "El archivo no contiene filas para importar.",
+    SIEWIN_UNMAPPED_GROUP: "Un grupo del archivo SIEWIN no tiene una categoria configurada. Contacta a soporte para completar la configuracion.",
+    COMPANY_NOT_FOUND: "No se encontro la compania de la sesion actual.",
   },
   en: {
     DUPLICATE_VALUE: "A record with this value already exists. Check the code or identifier.",
@@ -159,6 +168,15 @@ export const API_ERROR_LABELS = {
     TEMPLATE_INTEGRITY_GAP: "The chart-of-accounts template has an integrity problem (codes missing their parent group, or with an invalid length) and the import was cancelled. Contact support to review the template data.",
     TEMPLATE_UNMAPPED_GROUP: "A group in the chart-of-accounts template has no category configured and the import was cancelled. Contact support to complete the configuration.",
     IMPORT_PUC_UNRESOLVED_PARENT: "An internal problem occurred while importing the standard chart of accounts. Try again or contact support.",
+    // SIEWIN legacy PUC importer (2026-10-31). SIEWIN_IMPORT_INTEGRITY_GAP
+    // normally never reaches this generic lookup -- ChartOfAccountPage.jsx
+    // reads its structured details (error.response.data.data) directly and
+    // renders the per-violation lists instead. This label is just the
+    // fallback for any other place that error code might surface.
+    SIEWIN_IMPORT_INTEGRITY_GAP: "The SIEWIN file has data problems that prevent importing. Review the detail shown in the form.",
+    SIEWIN_EMPTY_FILE: "The file has no rows to import.",
+    SIEWIN_UNMAPPED_GROUP: "A group in the SIEWIN file has no category configured. Contact support to complete the configuration.",
+    COMPANY_NOT_FOUND: "The current session's company could not be found.",
   },
 };
 

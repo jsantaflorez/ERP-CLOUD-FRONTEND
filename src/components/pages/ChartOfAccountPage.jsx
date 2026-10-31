@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import * as XLSX from "xlsx";
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
 import api from "../../services/api"; // Centralized Axios instance with multi-tenancy context
@@ -43,6 +44,27 @@ const getMetadataLabel = (list, value, language) => {
   if (!match) return value;
   return language === "es" ? match.displayNameEs : match.displayName;
 };
+
+// NEW (2026-10-31, user request): compact toggle pill for the Plan de
+// Cuentas quick-filter bar (Naturaleza / Tipo de Cuenta / Requerimientos).
+// Button.jsx's own variants are all sized for primary actions, too
+// visually heavy for a row of several small on/off filters.
+function FilterChip({ active, onClick, title, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+        active
+          ? "border-blue-500 bg-blue-500 text-white"
+          : "border-gray-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-600"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
 
 // Mirrors ChartOfAccountService.validateCodeStructure exactly (PUC —
 // Colombian Chart of Accounts structure rules), so the user sees a
@@ -220,6 +242,15 @@ function ChartOfAccountsPage({ language = "es" }) {
   const [open, setOpen]             = useState(false);
   const [editingId, setEditingId]   = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
+  // NEW (2026-10-31, user request): quick filters above the table.
+  // natureFilter: "ALL" | "D" | "C". accountTypeFilter: "ALL" |
+  // "POSTING" (imputables) | "GROUP" (contenedoras). The two
+  // requirement filters are independent on/off toggles, not mutually
+  // exclusive with each other or with the above.
+  const [natureFilter, setNatureFilter]           = useState("ALL");
+  const [accountTypeFilter, setAccountTypeFilter] = useState("ALL");
+  const [requireThirdPartyOnly, setRequireThirdPartyOnly] = useState(false);
+  const [requireCostCenterOnly, setRequireCostCenterOnly] = useState(false);
   const [loading, setLoading]       = useState(false);
   const [toast, setToast]           = useState(null);
   // NEW (2026-10-23, user request): tracks which row+flag's inline toggle
@@ -300,6 +331,25 @@ function ChartOfAccountsPage({ language = "es" }) {
   const [importChoice, setImportChoice]       = useState("");
   const [importing, setImporting]             = useState(false);
 
+  // NEW (2026-10-31, SIEWIN legacy importer): a completely separate,
+  // one-off migration path from the "Importar PUC Estandar" flow above --
+  // the frontend only parses the uploaded file (xlsx/csv) into the known
+  // t_puc_maestro26 columns; every transformation (code re-derivation,
+  // category/nature resolution, fail-fast validation) happens in
+  // SiewinPucImportService. siewinIssues holds the structured violation
+  // lists from a SIEWIN_IMPORT_INTEGRITY_GAP response (details), shown
+  // as-is instead of through the generic getApiErrorMessage() path, since
+  // those lists are the entire point of the fail-fast design.
+  const [showSiewinModal, setShowSiewinModal]   = useState(false);
+  const [siewinFileName, setSiewinFileName]     = useState("");
+  const [siewinRows, setSiewinRows]             = useState(null);
+  const [siewinImporting, setSiewinImporting]   = useState(false);
+  const [siewinIssues, setSiewinIssues]         = useState(null);
+  const [siewinSuccessResult, setSiewinSuccessResult] = useState(null);
+  const [siewinParseError, setSiewinParseError] = useState("");
+  const siewinFileInputRef = useRef(null);
+  const [siewinDragOver, setSiewinDragOver] = useState(false);
+
   // Reference pointer to guarantee consistent identity states during transactional operations
   const editingIdRef = useRef(null);
 
@@ -334,6 +384,16 @@ function ChartOfAccountsPage({ language = "es" }) {
       requiresCostCenter: "Requiere C. Costo",
       noRequiresThirdParty: "Sin Tercero",
       noRequiresCostCenter: "Sin C. Costo",
+      // NEW (2026-10-31, user request): quick filter bar above the
+      // table -- Naturaleza / Tipo de Cuenta / Requerimientos.
+      filterAll: "Todas",
+      filterAccountTypeLabel: "Tipo de Cuenta",
+      filterPostingOnly: "Imputables",
+      filterPostingOnlyTitle: "Solo cuentas de movimiento (Imputables)",
+      filterGroupOnly: "Contenedoras",
+      filterGroupOnlyTitle: "Solo cuentas de grupo (Contenedoras)",
+      filterRequirementsLabel: "Requerimientos",
+      filterClear: "Limpiar filtros",
       active: "Activo",
       inactive: "Inactivo",
       parent: "Cuenta Padre",
@@ -393,6 +453,33 @@ function ChartOfAccountsPage({ language = "es" }) {
       importPucCurrentTemplateLabel: "Plantilla actual: ",
       importPucNoTemplateYet: "Sin plantilla asignada todavía.",
       importPucOpenButton: "Seleccionar Plantilla e Importar",
+      // NEW (2026-10-31): migracion de PUC legado desde SIEWIN --
+      // flujo totalmente separado del selector Comercial/Solidario de
+      // arriba (ver propuesta-importador-puc-siewin-2026-10-31.md).
+      siewinOpenLink: "¿Vienes de otro sistema? Migrar PUC legado (SIEWIN)",
+      siewinModalTitle: "Migrar Plan de Cuentas desde SIEWIN",
+      siewinModalBody: "Selecciona el archivo exportado de SIEWIN (.xlsx o .csv). Se analiza aquí mismo antes de enviarlo; nada se importa todavía.",
+      siewinFileReadyPrefix: "Archivo leído: ",
+      siewinRowsSuffix: "filas",
+      siewinDropHint: "Arrastra tu archivo aquí o haz clic para seleccionarlo",
+      siewinChooseFileButton: "Elegir archivo",
+      siewinChangeFileButton: "Cambiar archivo",
+      siewinParseEmpty: "El archivo no tiene filas para importar.",
+      siewinParseError: "No se pudo leer el archivo. Verifica que sea un .xlsx o .csv válido exportado de SIEWIN.",
+      siewinIssuesTitle: "El archivo tiene problemas que impiden la importación:",
+      siewinIssueOutOfRange: "Niveles fuera de rango (más de 2 dígitos)",
+      siewinIssueLevelSkip: "Niveles con un hueco de jerarquía",
+      siewinIssueDuplicate: "Códigos duplicados tras reconstruir el código",
+      siewinIssueOrphan: "Códigos sin su grupo padre",
+      siewinIssuePostingHasChildren: "Cuentas de movimiento que resultaron ser padre de otra cuenta",
+      siewinIssueMissingName: "Filas sin nombre de cuenta",
+      siewinIssueUnmappedGroup: "Grupos sin categoría configurada (contacta a soporte)",
+      siewinIssueMore: "... y más (revisa el archivo completo)",
+      siewinImportButton: "Migrar Plan de Cuentas",
+      siewinSuccess: "¡PUC migrado desde SIEWIN!",
+      siewinTruncatedWarningSuffix: "Nombres que parecen truncados en el origen, revísalos:",
+      siewinCloseButton: "Cerrar",
+      siewinTruncatedListTitle: "Nombres que parecen truncados en el origen -- revísalos y complétalos a mano si hace falta:",
     },
     en: {
       title: "Chart of Accounts",
@@ -418,6 +505,16 @@ function ChartOfAccountsPage({ language = "es" }) {
       requiresCostCenter: "Requires Cost Center",
       noRequiresThirdParty: "No Third Party",
       noRequiresCostCenter: "No Cost Center",
+      // NEW (2026-10-31, user request): quick filter bar above the
+      // table -- Nature / Account Type / Requirements.
+      filterAll: "All",
+      filterAccountTypeLabel: "Account Type",
+      filterPostingOnly: "Posting",
+      filterPostingOnlyTitle: "Posting accounts only (movement accounts)",
+      filterGroupOnly: "Group",
+      filterGroupOnlyTitle: "Group accounts only (container accounts)",
+      filterRequirementsLabel: "Requirements",
+      filterClear: "Clear filters",
       active: "Active",
       inactive: "Inactive",
       parent: "Parent Account",
@@ -477,6 +574,32 @@ function ChartOfAccountsPage({ language = "es" }) {
       importPucCurrentTemplateLabel: "Current template: ",
       importPucNoTemplateYet: "No template assigned yet.",
       importPucOpenButton: "Select Template & Import",
+      // NEW (2026-10-31): legacy PUC migration from SIEWIN -- fully
+      // separate flow from the Comercial/Solidario selector above.
+      siewinOpenLink: "Coming from another system? Migrate legacy PUC (SIEWIN)",
+      siewinModalTitle: "Migrate Chart of Accounts from SIEWIN",
+      siewinModalBody: "Select the file exported from SIEWIN (.xlsx or .csv). It is analyzed right here before sending; nothing is imported yet.",
+      siewinFileReadyPrefix: "File read: ",
+      siewinRowsSuffix: "rows",
+      siewinDropHint: "Drag your file here or click to select it",
+      siewinChooseFileButton: "Choose file",
+      siewinChangeFileButton: "Change file",
+      siewinParseEmpty: "The file has no rows to import.",
+      siewinParseError: "Could not read the file. Check that it is a valid .xlsx or .csv exported from SIEWIN.",
+      siewinIssuesTitle: "The file has problems that prevent importing:",
+      siewinIssueOutOfRange: "Levels out of range (more than 2 digits)",
+      siewinIssueLevelSkip: "Levels with a hierarchy gap",
+      siewinIssueDuplicate: "Duplicate codes after rebuilding the code",
+      siewinIssueOrphan: "Codes missing their parent group",
+      siewinIssuePostingHasChildren: "Posting accounts that turned out to be another account's parent",
+      siewinIssueMissingName: "Rows with no account name",
+      siewinIssueUnmappedGroup: "Groups with no category configured (contact support)",
+      siewinIssueMore: "... and more (review the full file)",
+      siewinImportButton: "Migrate Chart of Accounts",
+      siewinSuccess: "Chart of accounts migrated from SIEWIN!",
+      siewinTruncatedWarningSuffix: "Names that look truncated at the source, review them:",
+      siewinCloseButton: "Close",
+      siewinTruncatedListTitle: "Names that look truncated at the source -- review and complete them by hand if needed:",
     },
   }[language];
 
@@ -581,6 +704,117 @@ function ChartOfAccountsPage({ language = "es" }) {
     }
   };
 
+  // NEW (2026-10-31): reads the uploaded SIEWIN export client-side and
+  // extracts only the raw t_puc_maestro26 columns this importer needs --
+  // no business logic here, see the state comment above. Accepts .xlsx
+  // (SheetJS parses it natively) and .csv (SheetJS also reads CSV text
+  // directly via XLSX.read with type "string").
+  const processSiewinFile = async (file) => {
+    if (!file) return;
+    setSiewinParseError("");
+    setSiewinIssues(null);
+    setSiewinFileName(file.name);
+    try {
+      const isCsv = /\.csv$/i.test(file.name);
+      let workbook;
+      if (isCsv) {
+        const text = await file.text();
+        workbook = XLSX.read(text, { type: "string" });
+      } else {
+        const buffer = await file.arrayBuffer();
+        workbook = XLSX.read(buffer, { type: "array" });
+      }
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(sheet, { defval: null });
+
+      const toInt = (v) => {
+        if (v === null || v === undefined || v === "") return 0;
+        const n = parseInt(v, 10);
+        return Number.isNaN(n) ? 0 : n;
+      };
+
+      const parsedRows = raw.map((r) => ({
+        nivel1: toInt(r.pucm_nivel1),
+        nivel2: toInt(r.pucm_nivel2),
+        nivel3: toInt(r.pucm_nivel3),
+        nivel4: toInt(r.pucm_nivel4),
+        nivel5: toInt(r.pucm_nivel5),
+        nivel6: toInt(r.pucm_nivel6),
+        nombre: r.pucm_nombre == null ? "" : String(r.pucm_nombre).trim(),
+        imputable: toInt(r.pucm_imputable),
+        bare: toInt(r.pucm_bare),
+        ceco: toInt(r.pucm_ceco),
+      }));
+
+      if (parsedRows.length === 0) {
+        setSiewinParseError(t.siewinParseEmpty);
+        setSiewinRows(null);
+        return;
+      }
+      setSiewinRows(parsedRows);
+    } catch {
+      setSiewinParseError(t.siewinParseError);
+      setSiewinRows(null);
+    }
+  };
+
+  // Thin wrapper for the hidden <input type="file">. Resets the input's
+  // own value afterwards so picking the exact same file a second time
+  // (e.g. after fixing it and re-exporting under the same name) still
+  // fires onChange.
+  const handleSiewinFileChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (file) processSiewinFile(file);
+  };
+
+  // Drag-and-drop onto the dropzone -- same processSiewinFile() as the
+  // click-to-pick path, just a different source for the File object.
+  const handleSiewinDrop = (e) => {
+    e.preventDefault();
+    setSiewinDragOver(false);
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) processSiewinFile(file);
+  };
+
+  // NEW (2026-10-31): posts the already-parsed rows to the backend. On a
+  // SIEWIN_IMPORT_INTEGRITY_GAP rejection, the structured violation lists
+  // ride in error.response.data.data (ApiResponse.data -- see
+  // GlobalExceptionHandler.handleInvalidOperation) and are shown directly
+  // in the modal, not through getApiErrorMessage()'s single-line
+  // translation, since the whole point of this error is the per-row detail.
+  const handleImportSiewin = async () => {
+    if (!siewinRows || siewinRows.length === 0) return;
+    setSiewinImporting(true);
+    setSiewinIssues(null);
+    try {
+      const response = await api.post("/v1/chart-of-accounts/import-siewin", { rows: siewinRows });
+      if (response.data && response.data.success) {
+        const result = response.data.data || {};
+        // Keep the modal open on success, showing the full result --
+        // including the truncated-name list, which used to only ever
+        // appear as a bare count in a toast that disappears in a few
+        // seconds (reported by the user: the names themselves were never
+        // actually visible anywhere).
+        setSiewinSuccessResult(result);
+        setSiewinRows(null);
+        showToast(`${t.siewinSuccess} ${result.accountsCreated ?? ""} ${t.importPucAccountsSuffix}`.trim());
+        await loadAccounts();
+      } else {
+        showToast(response.data?.message || t.errorConn, "error");
+      }
+    } catch (error) {
+      const details = error?.response?.data?.data;
+      if (error?.response?.data?.message === "SIEWIN_IMPORT_INTEGRITY_GAP" && details) {
+        setSiewinIssues(details);
+      } else {
+        showToast(getApiErrorMessage(error, language, t.errorConn), "error");
+      }
+    } finally {
+      setSiewinImporting(false);
+    }
+  };
+
   useEffect(() => {
     loadAccounts();
     loadMetadata();
@@ -617,19 +851,37 @@ function ChartOfAccountsPage({ language = "es" }) {
     return () => { cancelled = true; };
   }, [chartTemplate]);
 
+  // NEW (2026-10-31, user request): natureFilter/accountTypeFilter/
+  // requireThirdPartyOnly/requireCostCenterOnly are evaluated alongside
+  // the existing text search, not as a separate pass -- a row has to
+  // satisfy every active filter at once.
+  const hasActiveQuickFilter =
+    natureFilter !== "ALL" ||
+    accountTypeFilter !== "ALL" ||
+    requireThirdPartyOnly ||
+    requireCostCenterOnly;
+
   const filteredRows = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
-    if (!term) return rows;
 
-    return rows.filter(
-      (r) =>
-        r.code?.toLowerCase().includes(term) ||
-        r.name?.toLowerCase().includes(term) ||
-        r.accountCategory?.toLowerCase().includes(term) ||
-        r.accountCategoryDisplay?.toLowerCase().includes(term) ||
-        r.accountClass?.toLowerCase().includes(term)
-    );
-  }, [rows, searchTerm]);
+    return rows.filter((r) => {
+      if (term) {
+        const matchesSearch =
+          r.code?.toLowerCase().includes(term) ||
+          r.name?.toLowerCase().includes(term) ||
+          r.accountCategory?.toLowerCase().includes(term) ||
+          r.accountCategoryDisplay?.toLowerCase().includes(term) ||
+          r.accountClass?.toLowerCase().includes(term);
+        if (!matchesSearch) return false;
+      }
+      if (natureFilter !== "ALL" && r.nature !== natureFilter) return false;
+      if (accountTypeFilter === "POSTING" && !r.postingAccount) return false;
+      if (accountTypeFilter === "GROUP" && r.postingAccount) return false;
+      if (requireThirdPartyOnly && !r.requiresThirdParty) return false;
+      if (requireCostCenterOnly && !r.requiresCostCenter) return false;
+      return true;
+    });
+  }, [rows, searchTerm, natureFilter, accountTypeFilter, requireThirdPartyOnly, requireCostCenterOnly]);
 
   // Lookup by code, used to walk up the parentCode chain when deciding
   // whether a row is hidden by a collapsed ancestor (see visibleRows).
@@ -653,9 +905,9 @@ function ChartOfAccountsPage({ language = "es" }) {
   // that contains a search match would hide the very thing being looked
   // for. Collapse only applies when browsing the full tree.
   const visibleRows = useMemo(() => {
-    if (searchTerm.trim()) return filteredRows;
+    if (searchTerm.trim() || hasActiveQuickFilter) return filteredRows;
     return filteredRows.filter((r) => !isCodeHiddenByCollapse(r));
-  }, [filteredRows, searchTerm, collapsedCodes, rowsByCode]);
+  }, [filteredRows, searchTerm, hasActiveQuickFilter, collapsedCodes, rowsByCode]);
 
   // FIX: previously depended on `[rows]` only, while filtering using
   // `editingIdRef.current` — a ref mutation doesn't trigger a re-render or
@@ -1218,6 +1470,208 @@ function ChartOfAccountsPage({ language = "es" }) {
         </div>
       )}
 
+      {/* NEW (2026-10-31): SIEWIN legacy-PUC migration modal -- fully
+          separate from the COMERCIAL/SOLIDARIO modal above. See
+          handleSiewinFileChange/handleImportSiewin and
+          propuesta-importador-puc-siewin-2026-10-31.md. */}
+      {showSiewinModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-slate-900/20"
+            onClick={() => {
+              if (siewinImporting) return;
+              setShowSiewinModal(false);
+            }}
+          />
+          <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl max-h-[85vh] overflow-y-auto">
+            <h3 className="text-lg font-bold text-slate-800">{t.siewinModalTitle}</h3>
+            <p className="mt-2 text-sm text-slate-600">{t.siewinModalBody}</p>
+
+            {!siewinSuccessResult && (
+              <div className="mt-4">
+                <input
+                  ref={siewinFileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleSiewinFileChange}
+                  className="hidden"
+                />
+                {/* NEW: styled, clickable + drag-and-drop dropzone instead
+                    of the bare native <input type="file"> -- that control
+                    renders as unlabeled browser chrome ("Seleccionar
+                    archivo / Ningún archivo seleccionado") with no visual
+                    affordance that it belongs to this modal. The input
+                    itself stays mounted (hidden) and is only ever opened
+                    programmatically via siewinFileInputRef. */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => siewinFileInputRef.current?.click()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      siewinFileInputRef.current?.click();
+                    }
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setSiewinDragOver(true);
+                  }}
+                  onDragLeave={() => setSiewinDragOver(false)}
+                  onDrop={handleSiewinDrop}
+                  className={`flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed px-4 py-6 text-center transition-colors ${
+                    siewinDragOver
+                      ? "border-indigo-400 bg-indigo-100"
+                      : siewinFileName && !siewinParseError
+                      ? "border-emerald-300 bg-emerald-50"
+                      : "border-indigo-200 bg-indigo-50/60 hover:border-indigo-400 hover:bg-indigo-50"
+                  }`}
+                >
+                  <svg
+                    className={`h-7 w-7 ${siewinFileName && !siewinParseError ? "text-emerald-500" : "text-indigo-400"}`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 7.5 12 3m0 0L7.5 7.5M12 3v13.5"
+                    />
+                  </svg>
+
+                  {siewinFileName && !siewinParseError ? (
+                    <>
+                      <p className="text-sm font-medium text-emerald-800">{siewinFileName}</p>
+                      <p className="text-xs text-emerald-700">
+                        {siewinRows ? `${siewinRows.length} ${t.siewinRowsSuffix}` : ""}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          siewinFileInputRef.current?.click();
+                        }}
+                      >
+                        {t.siewinChangeFileButton}
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm text-slate-500">{t.siewinDropHint}</p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          siewinFileInputRef.current?.click();
+                        }}
+                      >
+                        {t.siewinChooseFileButton}
+                      </Button>
+                    </>
+                  )}
+                </div>
+                {siewinParseError && (
+                  <p className="mt-2 text-xs text-red-600">{siewinParseError}</p>
+                )}
+              </div>
+            )}
+
+            {!siewinSuccessResult && siewinIssues && (
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800 space-y-2">
+                <p className="font-semibold">{t.siewinIssuesTitle}</p>
+                {[
+                  ["outOfRangeLevels", t.siewinIssueOutOfRange],
+                  ["levelSkipGaps", t.siewinIssueLevelSkip],
+                  ["duplicateCodes", t.siewinIssueDuplicate],
+                  ["orphanCodes", t.siewinIssueOrphan],
+                  ["postingAccountHasChildren", t.siewinIssuePostingHasChildren],
+                  ["missingNames", t.siewinIssueMissingName],
+                  ["unmappedGroups", t.siewinIssueUnmappedGroup],
+                ].map(([key, label]) =>
+                  Array.isArray(siewinIssues[key]) && siewinIssues[key].length > 0 ? (
+                    <div key={key}>
+                      <p className="font-medium">{label} ({siewinIssues[key].length}):</p>
+                      <ul className="ml-4 list-disc">
+                        {siewinIssues[key].slice(0, 20).map((item, idx) => (
+                          <li key={idx}>{item}</li>
+                        ))}
+                        {siewinIssues[key].length > 20 && <li>{t.siewinIssueMore}</li>}
+                      </ul>
+                    </div>
+                  ) : null
+                )}
+              </div>
+            )}
+
+            {/* NEW: the result's truncatedNameWarnings used to only ever
+                surface as a bare count inside the success toast -- the
+                actual account codes/names were never shown anywhere. This
+                panel lists them directly, same visual language as the
+                validation-issues panel above, and stays on screen (the
+                modal no longer auto-closes on success) until the user
+                dismisses it with "Cerrar". */}
+            {siewinSuccessResult && (
+              <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800 space-y-2">
+                <p className="font-semibold">
+                  {t.siewinSuccess} {siewinSuccessResult.accountsCreated ?? ""} {t.importPucAccountsSuffix}
+                </p>
+                {Array.isArray(siewinSuccessResult.truncatedNameWarnings) &&
+                  siewinSuccessResult.truncatedNameWarnings.length > 0 && (
+                    <div>
+                      <p className="font-medium">
+                        {t.siewinTruncatedListTitle} ({siewinSuccessResult.truncatedNameWarnings.length}):
+                      </p>
+                      <ul className="ml-4 list-disc">
+                        {siewinSuccessResult.truncatedNameWarnings.map((item, idx) => (
+                          <li key={idx}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end gap-3">
+              {siewinSuccessResult ? (
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    setShowSiewinModal(false);
+                    setSiewinSuccessResult(null);
+                    setSiewinFileName("");
+                    setSiewinRows(null);
+                  }}
+                >
+                  {t.siewinCloseButton}
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    variant="secondary"
+                    disabled={siewinImporting}
+                    onClick={() => setShowSiewinModal(false)}
+                  >
+                    {t.importPucCancel}
+                  </Button>
+                  <Button
+                    variant="primary"
+                    loading={siewinImporting}
+                    disabled={!siewinRows || siewinRows.length === 0}
+                    onClick={handleImportSiewin}
+                  >
+                    {siewinImporting ? t.importPucImporting : t.siewinImportButton}
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <AppHeader
         title={t.title}
         subtitle={t.subtitle}
@@ -1245,6 +1699,83 @@ function ChartOfAccountsPage({ language = "es" }) {
         className="w-full md:max-w-md rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none shadow-sm focus:border-blue-500 transition-all"
       />
 
+      {/* NEW (2026-10-31, user request): quick filters -- Naturaleza,
+          Tipo de Cuenta, Requerimientos. Combine with each other and
+          with the text search above (see filteredRows); any filter
+          being active also bypasses group-collapse, same reasoning as
+          the text search already had (a collapsed group could hide the
+          very rows a filter is meant to surface). */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">{t.nature}</span>
+          <div className="flex gap-1">
+            <FilterChip active={natureFilter === "ALL"} onClick={() => setNatureFilter("ALL")}>
+              {t.filterAll}
+            </FilterChip>
+            <FilterChip active={natureFilter === "D"} onClick={() => setNatureFilter("D")}>
+              {t.debit}
+            </FilterChip>
+            <FilterChip active={natureFilter === "C"} onClick={() => setNatureFilter("C")}>
+              {t.credit}
+            </FilterChip>
+          </div>
+        </div>
+
+        <div className="hidden h-5 w-px bg-gray-200 sm:block" />
+
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">{t.filterAccountTypeLabel}</span>
+          <div className="flex gap-1">
+            <FilterChip active={accountTypeFilter === "ALL"} onClick={() => setAccountTypeFilter("ALL")}>
+              {t.filterAll}
+            </FilterChip>
+            <FilterChip
+              active={accountTypeFilter === "POSTING"}
+              onClick={() => setAccountTypeFilter("POSTING")}
+              title={t.filterPostingOnlyTitle}
+            >
+              {t.filterPostingOnly}
+            </FilterChip>
+            <FilterChip
+              active={accountTypeFilter === "GROUP"}
+              onClick={() => setAccountTypeFilter("GROUP")}
+              title={t.filterGroupOnlyTitle}
+            >
+              {t.filterGroupOnly}
+            </FilterChip>
+          </div>
+        </div>
+
+        <div className="hidden h-5 w-px bg-gray-200 sm:block" />
+
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">{t.filterRequirementsLabel}</span>
+          <div className="flex gap-1">
+            <FilterChip active={requireThirdPartyOnly} onClick={() => setRequireThirdPartyOnly((v) => !v)}>
+              {t.requiresThirdParty}
+            </FilterChip>
+            <FilterChip active={requireCostCenterOnly} onClick={() => setRequireCostCenterOnly((v) => !v)}>
+              {t.requiresCostCenter}
+            </FilterChip>
+          </div>
+        </div>
+
+        {hasActiveQuickFilter && (
+          <button
+            type="button"
+            className="ml-auto text-xs font-medium text-slate-400 underline hover:text-slate-600"
+            onClick={() => {
+              setNatureFilter("ALL");
+              setAccountTypeFilter("ALL");
+              setRequireThirdPartyOnly(false);
+              setRequireCostCenterOnly(false);
+            }}
+          >
+            {t.filterClear}
+          </button>
+        )}
+      </div>
+
       {!loading && rows.length === 0 && (
         <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-6 flex flex-col gap-3">
           <p className="text-sm font-semibold text-indigo-900">{t.importPucTitle}</p>
@@ -1258,7 +1789,7 @@ function ChartOfAccountsPage({ language = "es" }) {
               ? `${t.importPucCurrentTemplateLabel}${chartTemplate === "COMERCIAL" ? t.importPucComercial : t.importPucSolidario}`
               : t.importPucNoTemplateYet}
           </p>
-          <div>
+          <div className="flex flex-wrap items-center gap-4">
             {/* FIX (2026-10-30): template choice moved into the modal
                 itself (see showImportModal below) so it's always explicit,
                 whether or not the company already has a chartTemplate.
@@ -1277,6 +1808,26 @@ function ChartOfAccountsPage({ language = "es" }) {
             >
               {t.importPucOpenButton}
             </Button>
+            {/* NEW (2026-10-31): completely separate migration path for a
+                client coming from the legacy SIEWIN system -- see
+                propuesta-importador-puc-siewin-2026-10-31.md. Deliberately
+                a plain text link, not a second primary Button, so the
+                COMERCIAL/SOLIDARIO choice above stays the obvious default
+                action for the vast majority of companies. */}
+            <button
+              type="button"
+              className="text-xs font-medium text-indigo-600 underline hover:text-indigo-800"
+              onClick={() => {
+                setSiewinIssues(null);
+                setSiewinSuccessResult(null);
+                setSiewinParseError("");
+                setSiewinRows(null);
+                setSiewinFileName("");
+                setShowSiewinModal(true);
+              }}
+            >
+              {t.siewinOpenLink}
+            </button>
           </div>
         </div>
       )}
