@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import api from "../../services/api";
 import Button from "../ui/Button";
 import { TAX_REGIME_LABELS, TAX_REGIMES_BY_PERSON } from "../../constants/taxRegimes";
+import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABELS } from "../../constants/documentTypes";
 import { getApiErrorMessage } from "../../constants/apiErrors";
 
 // NEW (2026-10-20, user request): sibling to AccountQuickCreateModal.jsx /
@@ -271,11 +272,16 @@ function ThirdPartyQuickCreateModal({ language = "es", onCreated, onClose }) {
           </TpField>
 
           <TpField label={t.docType} error={errors.documentType}>
+            {/* CHANGED (2026-11-01): was hardcoded to 4 options (NIT/CC/
+                CE/PP) -- now the full 11-type DIAN catalog, same source
+                of truth (DOCUMENT_TYPES/DOCUMENT_TYPE_LABELS) as
+                ThirdPartyPage.jsx's own full form. */}
             <select name="documentType" value={form.documentType} onChange={handleChange} className={tpInputCls(errors.documentType)}>
-              <option value="NIT">NIT</option>
-              <option value="CC">Cédula de Ciudadanía</option>
-              <option value="CE">Cédula de Extranjería</option>
-              <option value="PP">Pasaporte</option>
+              {DOCUMENT_TYPES.map((value) => (
+                <option key={value} value={value}>
+                  {DOCUMENT_TYPE_LABELS[language]?.[value] || value}
+                </option>
+              ))}
             </select>
           </TpField>
 

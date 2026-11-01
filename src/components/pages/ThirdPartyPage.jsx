@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react"; // CHANGED (2026-11-01): useMemo no longer needed -- filtering moved server-side
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
 import api from "../../services/api"; // Centralized Axios instance with multi-tenancy context
 import { useAuth } from "../../context/AuthContext";
 import { TAX_REGIME_LABELS, TAX_REGIMES_BY_PERSON } from "../../constants/taxRegimes";
 import { getApiErrorMessage } from "../../constants/apiErrors";
+import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABELS } from "../../constants/documentTypes";
+import * as XLSX from "xlsx";
 
 // Initial structure for a blank form setup based on ERP specs
 // FIX: taxRegime is now filtered by personType via TAX_REGIMES_BY_PERSON
@@ -100,6 +102,36 @@ const FIELD_TAB_MAP = {
 
 const TAB_ORDER = ["basic", "location", "accounting"];
 
+// NEW (2026-11-01, user request): every distinct TaxRegime value across
+// both person types, for the "Regimen" quick filter -- derived from
+// TAX_REGIMES_BY_PERSON instead of a separate hardcoded list, so it can
+// never drift out of sync with taxRegimes.js (same "single source of
+// truth" reasoning already used elsewhere in this file).
+const ALL_TAX_REGIMES = Array.from(
+  new Set([...TAX_REGIMES_BY_PERSON.NATURAL, ...TAX_REGIMES_BY_PERSON.JURIDICA])
+);
+
+// Lightweight reusable toggle-pill for quick filters -- same pattern as
+// ChartOfAccountPage.jsx's own FilterChip (duplicated locally rather than
+// shared, same reasoning the Quick-Create modal already uses for its own
+// copied helpers: keeps this page independent of that one's internals).
+function FilterChip({ active, onClick, title, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+        active
+          ? "border-blue-500 bg-blue-500 text-white"
+          : "border-gray-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-600"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
 function ThirdPartyPage({ language = "es" }) {
   // --- Component States ---
   const [rows, setRows]                         = useState([]);
@@ -111,8 +143,31 @@ function ThirdPartyPage({ language = "es" }) {
   const [activeTab, setActiveTab]               = useState("basic"); // 'basic', 'location', 'accounting'
   const [, setEditingId]                         = useState(null);
   const [searchTerm, setSearchTerm]             = useState("");
+  // FIX (2026-11-01): debounced copy actually sent to the server -- see
+  // loadThirdParties() below. Typing updates searchTerm instantly (so the
+  // input feels responsive); this settles 300ms after the user stops
+  // typing, which is what actually triggers the API call.
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
+
+  // --- Quick filters (2026-11-01, user request) ---
+  const [personTypeFilter, setPersonTypeFilter]   = useState("ALL");
+  const [documentTypeFilter, setDocumentTypeFilter] = useState("ALL");
+  const [taxRegimeFilter, setTaxRegimeFilter]     = useState("ALL");
   const [loading, setLoading]                   = useState(false);
   const [isSaving, setIsSaving]                 = useState(false);
+
+  // --- SIEWIN third-party importer modal states (2026-11-01) --- see
+  // propuesta-importador-terceros-siewin-2026-10-31.md. Same state shape
+  // as ChartOfAccountPage.jsx's SIEWIN PUC importer modal.
+  const [showSiewinModal, setShowSiewinModal]   = useState(false);
+  const [siewinFileName, setSiewinFileName]     = useState("");
+  const [siewinRows, setSiewinRows]             = useState(null);
+  const [siewinImporting, setSiewinImporting]   = useState(false);
+  const [siewinIssues, setSiewinIssues]         = useState(null);
+  const [siewinParseError, setSiewinParseError] = useState("");
+  const [siewinDragOver, setSiewinDragOver]     = useState(false);
+  const [siewinSuccessResult, setSiewinSuccessResult] = useState(null);
+  const siewinFileInputRef = useRef(null);
 
   const [toast, setToast]                       = useState(null);
 
@@ -196,7 +251,33 @@ function ThirdPartyPage({ language = "es" }) {
       of: "de",
       previous: "Anterior",
       next: "Siguiente",
-      newShortcutHint: "(tecla Insert)"
+      newShortcutHint: "(tecla Insert)",
+      // SIEWIN third-party importer (2026-11-01)
+      siewinOpenLink: "Importar desde SIEWIN",
+      siewinModalTitle: "Importar Terceros desde SIEWIN",
+      siewinModalBody: "Selecciona el archivo exportado de SIEWIN (.xlsx/.xls/.csv) con el catálogo de terceros (t_terceros). Se valida todo el archivo antes de crear cualquier tercero.",
+      siewinFileReadyPrefix: "Archivo:",
+      siewinRowsSuffix: "filas detectadas",
+      siewinParseEmpty: "El archivo no contiene filas.",
+      siewinParseError: "No se pudo leer el archivo. Verifica que sea un .xlsx, .xls o .csv válido.",
+      siewinIssuesTitle: "El archivo tiene problemas que impiden la importación:",
+      siewinIssueMissingDocNumber: "Fila sin número de documento",
+      siewinIssueDuplicateBatch: "Documento duplicado dentro del archivo",
+      siewinIssueDuplicateCompany: "El documento ya existe en esta compañía",
+      siewinIssueUnmappedDocType: "Tipo de documento no reconocido",
+      siewinIssueAmbiguousPerson: "No se pudo determinar si es Natural o Jurídica",
+      siewinIssueMunicipalityNotFound: "Código de municipio no existe en el catálogo cargado",
+      siewinIssueMore: "más",
+      siewinImportButton: "Migrar Terceros",
+      siewinSuccess: "¡Terceros importados exitosamente! Total creados:",
+      siewinPhoneListTitle: "Terceros con teléfono no válido en el origen (se dejó vacío):",
+      siewinDropHint: "Arrastra el archivo aquí o haz clic para elegirlo",
+      siewinChooseFileButton: "Elegir archivo",
+      siewinChangeFileButton: "Cambiar archivo",
+      siewinCloseButton: "Cerrar",
+      // Quick filters (2026-11-01)
+      filterAllOption: "Todos",
+      filterClear: "Limpiar filtros"
     },
     en: {
       title: "Third Parties",
@@ -259,7 +340,33 @@ function ThirdPartyPage({ language = "es" }) {
       of: "of",
       previous: "Previous",
       next: "Next",
-      newShortcutHint: "(Insert key)"
+      newShortcutHint: "(Insert key)",
+      // SIEWIN third-party importer (2026-11-01)
+      siewinOpenLink: "Import from SIEWIN",
+      siewinModalTitle: "Import Third Parties from SIEWIN",
+      siewinModalBody: "Select the SIEWIN export (.xlsx/.xls/.csv) with the third-party catalog (t_terceros). The whole file is validated before any third party is created.",
+      siewinFileReadyPrefix: "File:",
+      siewinRowsSuffix: "rows detected",
+      siewinParseEmpty: "The file has no rows.",
+      siewinParseError: "Could not read the file. Check that it's a valid .xlsx, .xls or .csv.",
+      siewinIssuesTitle: "The file has problems that prevent importing:",
+      siewinIssueMissingDocNumber: "Row with no document number",
+      siewinIssueDuplicateBatch: "Duplicate document within the file",
+      siewinIssueDuplicateCompany: "Document already exists in this company",
+      siewinIssueUnmappedDocType: "Unrecognized document type",
+      siewinIssueAmbiguousPerson: "Couldn't determine Natural or Legal Entity",
+      siewinIssueMunicipalityNotFound: "Municipality code not in the loaded catalog",
+      siewinIssueMore: "more",
+      siewinImportButton: "Migrate Third Parties",
+      siewinSuccess: "Third parties imported successfully! Total created:",
+      siewinPhoneListTitle: "Third parties with an invalid source phone (left empty):",
+      siewinDropHint: "Drag the file here or click to choose it",
+      siewinChooseFileButton: "Choose file",
+      siewinChangeFileButton: "Change file",
+      siewinCloseButton: "Close",
+      // Quick filters (2026-11-01)
+      filterAllOption: "All",
+      filterClear: "Clear filters"
     }
   }[language];
 
@@ -284,11 +391,27 @@ function ThirdPartyPage({ language = "es" }) {
   };
 
   // --- API Communications ---
+  // FIX (2026-11-01): search and the 3 quick filters are now sent to the
+  // backend (/v1/third-parties?search=&personType=&documentType=&taxRegime=)
+  // instead of being re-filtered client-side over whatever 10 rows
+  // happened to be on the loaded page. That client-side approach was the
+  // original bug report: filtering by NIT showed nothing whenever the
+  // current page's 10 rows all happened to be CC -- matches on OTHER
+  // pages were invisible. The backend already had a working
+  // findBySearchTerm() for `search`; this just wires it up and extends
+  // it with the 3 new filter columns (see ThirdPartyRepository.findByFilters()).
   const loadThirdParties = async () => {
     setLoading(true);
     try {
-      // Fixed: Pass currentPage and size parameters dynamically to Spring Boot backend
-      const response = await api.get(`/v1/third-parties?page=${currentPage}&size=10`);
+      const params = new URLSearchParams();
+      params.set("page", String(currentPage));
+      params.set("size", "10");
+      if (debouncedSearchTerm) params.set("search", debouncedSearchTerm);
+      if (personTypeFilter !== "ALL") params.set("personType", personTypeFilter);
+      if (documentTypeFilter !== "ALL") params.set("documentType", documentTypeFilter);
+      if (taxRegimeFilter !== "ALL") params.set("taxRegime", taxRegimeFilter);
+
+      const response = await api.get(`/v1/third-parties?${params.toString()}`);
       if (response.data) {
         const dataTarget = response.data.content || response.data.data || response.data;
         setRows(Array.isArray(dataTarget) ? dataTarget : []);
@@ -338,27 +461,39 @@ const loadCatalogs = async () => {
     }
   };
 
-  // Reload records whenever active page indexes shift
+  // Settle searchTerm into debouncedSearchTerm 300ms after typing stops
+  // -- this is what actually triggers a server request (see the reload
+  // effect below), so typing doesn't fire one request per keystroke.
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 300);
+    return () => clearTimeout(handle);
+  }, [searchTerm]);
+
+  // Whenever a filter or the (debounced) search term changes, jump back
+  // to page 0 -- staying on, say, page 3 after narrowing the result set
+  // could land past the end of the new, smaller result set.
+  useEffect(() => {
+    setCurrentPage(0);
+  }, [personTypeFilter, documentTypeFilter, taxRegimeFilter, debouncedSearchTerm]);
+
+  // Reload records whenever the page, a quick filter, or the debounced
+  // search term changes -- all of it is now resolved server-side (see
+  // loadThirdParties's own comment for why).
   useEffect(() => {
     loadThirdParties();
-  }, [currentPage]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, personTypeFilter, documentTypeFilter, taxRegimeFilter, debouncedSearchTerm]);
 
   useEffect(() => {
     loadCatalogs();
   }, []);
 
   // --- Filter Evaluation ---
-  const filteredRows = useMemo(() => {
-    const term = searchTerm.toLowerCase().trim();
-    if (!term) return rows;
-    return rows.filter(
-      (r) =>
-        (r.documentNumber || "").toLowerCase().includes(term) ||
-        (r.legalDisplayName || "").toLowerCase().includes(term) ||
-        (r.tradeName || "").toLowerCase().includes(term) ||
-        (r.cityName || "").toLowerCase().includes(term)
-    );
-  }, [rows, searchTerm]);
+  // Only drives the "Limpiar filtros" link's visibility now -- the
+  // actual filtering is server-side (see loadThirdParties). `rows` is
+  // rendered directly, no client-side re-filtering on top of it.
+  const hasActiveQuickFilter =
+    personTypeFilter !== "ALL" || documentTypeFilter !== "ALL" || taxRegimeFilter !== "ALL";
 
   // --- Form Lifecycle Controls ---
   const resetForm = () => {
@@ -628,6 +763,124 @@ const loadCatalogs = async () => {
     }
   };
 
+  // --- SIEWIN third-party importer (2026-11-01) ---
+  // Same frontend-parses-to-JSON pattern already approved for the PUC
+  // importer: no business logic here, only cell extraction from the
+  // uploaded file into the exact shape SiewinThirdPartyRowDTO expects.
+  const openSiewinModal = () => {
+    setSiewinIssues(null);
+    setSiewinSuccessResult(null);
+    setSiewinParseError("");
+    setSiewinRows(null);
+    setSiewinFileName("");
+    setShowSiewinModal(true);
+  };
+
+  const closeSiewinModal = () => {
+    if (siewinImporting) return;
+    setShowSiewinModal(false);
+  };
+
+  const processSiewinFile = async (file) => {
+    if (!file) return;
+    setSiewinParseError("");
+    setSiewinIssues(null);
+    setSiewinFileName(file.name);
+    try {
+      const isCsv = /\.csv$/i.test(file.name);
+      let workbook;
+      if (isCsv) {
+        const text = await file.text();
+        workbook = XLSX.read(text, { type: "string" });
+      } else {
+        const buffer = await file.arrayBuffer();
+        workbook = XLSX.read(buffer, { type: "array" });
+      }
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(sheet, { defval: null });
+
+      // Trims to null (not "") so the backend's hasText()-style checks
+      // treat a blank cell the same as a genuinely missing one.
+      const s = (v) => {
+        if (v === null || v === undefined) return null;
+        const str = String(v).trim();
+        return str === "" ? null : str;
+      };
+      const toIntOrNull = (v) => {
+        if (v === null || v === undefined || v === "") return null;
+        const n = parseInt(v, 10);
+        return Number.isNaN(n) ? null : n;
+      };
+
+      // Column names copied verbatim from the real
+      // CATALOGO_TERCEROS...xls header -- see
+      // SiewinThirdPartyRowDTO's javadoc for which source columns are
+      // deliberately NOT read here (D.V., the person-type flag, COD.PAIS).
+      const parsedRows = raw.map((r) => ({
+        documentNumber: s(r["ID."]),
+        documentTypeCode: toIntOrNull(r["0=CC,1=NIT,2=C.EXTR,3=T.I."]),
+        primerApellido: s(r["PRIMER APELLIDO"]),
+        segundoApellido: s(r["SEGUNDO APELLIDO"]),
+        primerNombre: s(r["PRIMER NOMBRE"]),
+        segundoNombre: s(r["SEGUNDO NOMBRE"]),
+        razonSocial: s(r["RAZON SOCIAL"]),
+        direccion: s(r["DIRECCION"]),
+        codMunicipio: toIntOrNull(r["COD.MUNICIPIO"]),
+        telefono: s(r["TELEFONO"]),
+      }));
+
+      if (parsedRows.length === 0) {
+        setSiewinParseError(t.siewinParseEmpty);
+        setSiewinRows(null);
+        return;
+      }
+      setSiewinRows(parsedRows);
+    } catch {
+      setSiewinParseError(t.siewinParseError);
+      setSiewinRows(null);
+    }
+  };
+
+  const handleSiewinFileChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (file) processSiewinFile(file);
+  };
+
+  const handleSiewinDrop = (e) => {
+    e.preventDefault();
+    setSiewinDragOver(false);
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) processSiewinFile(file);
+  };
+
+  const handleImportSiewin = async () => {
+    if (!siewinRows || siewinRows.length === 0) return;
+    setSiewinImporting(true);
+    setSiewinIssues(null);
+    try {
+      const response = await api.post("/v1/third-parties/import-siewin", { rows: siewinRows });
+      if (response.data && response.data.success) {
+        const result = response.data.data || {};
+        setSiewinSuccessResult(result);
+        setSiewinRows(null);
+        showToast(`${t.siewinSuccess} ${result.thirdPartiesCreated ?? ""}`.trim());
+        loadThirdParties();
+      } else {
+        showToast(response.data?.message || t.errorConn, "error");
+      }
+    } catch (error) {
+      const details = error?.response?.data?.data;
+      if (error?.response?.data?.message === "SIEWIN_THIRD_PARTY_INTEGRITY_GAP" && details) {
+        setSiewinIssues(details);
+      } else {
+        showToast(getApiErrorMessage(error, language, t.errorConn), "error");
+      }
+    } finally {
+      setSiewinImporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6 p-4">
       {/* Toast Alert Banner */}
@@ -645,6 +898,13 @@ const loadCatalogs = async () => {
         actions={
           <>
             <span className="hidden text-[11px] text-slate-400 sm:inline">{t.newShortcutHint}</span>
+            <button
+              type="button"
+              onClick={openSiewinModal}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline whitespace-nowrap"
+            >
+              {t.siewinOpenLink}
+            </button>
             <Button variant="primary" onClick={openCreatePanel} title={`${t.new} ${t.newShortcutHint}`}>
               + {t.new}
             </Button>
@@ -660,6 +920,71 @@ const loadCatalogs = async () => {
         placeholder={t.search}
         className="w-full md:max-w-md rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none shadow-sm focus:border-blue-500 transition-all"
       />
+
+      {/* Quick Filters Bar (2026-11-01, user request): Tipo de Persona as
+          chips (low cardinality, 2 options), Tipo de Documento and
+          Regimen as selects (11 and 6 options respectively -- too many
+          for a readable chip row). */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{t.type}:</span>
+          <FilterChip active={personTypeFilter === "ALL"} onClick={() => setPersonTypeFilter("ALL")}>
+            {t.filterAllOption}
+          </FilterChip>
+          <FilterChip active={personTypeFilter === "JURIDICA"} onClick={() => setPersonTypeFilter("JURIDICA")}>
+            {t.juridica}
+          </FilterChip>
+          <FilterChip active={personTypeFilter === "NATURAL"} onClick={() => setPersonTypeFilter("NATURAL")}>
+            {t.natural}
+          </FilterChip>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{t.docType}:</span>
+          <select
+            value={documentTypeFilter}
+            onChange={(e) => setDocumentTypeFilter(e.target.value)}
+            className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs outline-none focus:border-blue-500"
+          >
+            <option value="ALL">{t.filterAllOption}</option>
+            {DOCUMENT_TYPES.map((value) => (
+              <option key={value} value={value}>
+                {DOCUMENT_TYPE_LABELS[language]?.[value] || value}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{t.regime}:</span>
+          <select
+            value={taxRegimeFilter}
+            onChange={(e) => setTaxRegimeFilter(e.target.value)}
+            className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs outline-none focus:border-blue-500"
+          >
+            <option value="ALL">{t.filterAllOption}</option>
+            {ALL_TAX_REGIMES.map((value) => (
+              <option key={value} value={value}>
+                {getRegimeDisplayLabel(value, value === "CORPORATE" ? "JURIDICA" : "NATURAL", language, t)}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {hasActiveQuickFilter && (
+          <button
+            type="button"
+            onClick={() => {
+              setPersonTypeFilter("ALL");
+              setDocumentTypeFilter("ALL");
+              setTaxRegimeFilter("ALL");
+            }}
+            className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 hover:underline"
+          >
+            {t.filterClear}
+          </button>
+        )}
+      </div>
 
       {/* Primary Master Listing Datagrid Container */}
       <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden">
@@ -681,12 +1006,12 @@ const loadCatalogs = async () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filteredRows.length === 0 ? (
+                {rows.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-16 text-center text-slate-400">{t.noResults}</td>
                   </tr>
                 ) : (
-                  filteredRows.map((item) => (
+                  rows.map((item) => (
                     <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
                       <td className="px-5 py-4 font-mono text-slate-700 font-bold whitespace-nowrap">
                         {item.documentType} {item.documentNumber}
@@ -808,11 +1133,15 @@ const loadCatalogs = async () => {
                                 </Field>
 
                                 <Field label={t.docType} error={errors.documentType}>
+                                  {/* CHANGED (2026-11-01): was hardcoded to 4 options
+                                      (NIT/CC/CE/PP) -- now the full 11-type DIAN
+                                      catalog (see constants/documentTypes.js). */}
                                   <select name="documentType" value={form.documentType} onChange={handleChange} className={inputCls(errors.documentType)}>
-                                    <option value="NIT">NIT</option>
-                                    <option value="CC">Cédula de Ciudadanía</option>
-                                    <option value="CE">Cédula de Extranjería</option>
-                                    <option value="PP">Pasaporte</option>
+                                    {DOCUMENT_TYPES.map((value) => (
+                                      <option key={value} value={value}>
+                                        {DOCUMENT_TYPE_LABELS[language]?.[value] || value}
+                                      </option>
+                                    ))}
                                   </select>
                                 </Field>
 
@@ -985,6 +1314,128 @@ const loadCatalogs = async () => {
         </div>
       )}
 
+      {/* SIEWIN third-party importer modal (2026-11-01) -- same
+          dropzone/issues/success pattern as ChartOfAccountPage.jsx's
+          SIEWIN PUC importer modal, adapted to this importer's own
+          violation categories (see SiewinThirdPartyImportService). */}
+      {showSiewinModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/30" onClick={closeSiewinModal} />
+          <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
+            <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between">
+              <h2 className="text-lg font-black text-slate-800">{t.siewinModalTitle}</h2>
+              <button onClick={closeSiewinModal} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-sm text-slate-500">{t.siewinModalBody}</p>
+
+              {!siewinSuccessResult && (
+                <>
+                  <input
+                    ref={siewinFileInputRef}
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    onChange={handleSiewinFileChange}
+                  />
+                  <div
+                    onClick={() => siewinFileInputRef.current?.click()}
+                    onDragOver={(e) => { e.preventDefault(); setSiewinDragOver(true); }}
+                    onDragLeave={() => setSiewinDragOver(false)}
+                    onDrop={handleSiewinDrop}
+                    className={`cursor-pointer rounded-xl border-2 border-dashed px-6 py-8 text-center transition-colors ${
+                      siewinRows
+                        ? "border-emerald-300 bg-emerald-50"
+                        : siewinDragOver
+                        ? "border-indigo-400 bg-indigo-50"
+                        : "border-slate-200 bg-slate-50 hover:border-indigo-300"
+                    }`}
+                  >
+                    <svg className="mx-auto h-8 w-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                    </svg>
+                    <p className="mt-2 text-sm font-semibold text-slate-600">
+                      {siewinFileName ? `${t.siewinFileReadyPrefix} ${siewinFileName}` : t.siewinDropHint}
+                    </p>
+                    {siewinRows && (
+                      <p className="mt-1 text-xs text-emerald-600">{siewinRows.length} {t.siewinRowsSuffix}</p>
+                    )}
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="mt-3"
+                      onClick={(e) => { e.stopPropagation(); siewinFileInputRef.current?.click(); }}
+                    >
+                      {siewinFileName ? t.siewinChangeFileButton : t.siewinChooseFileButton}
+                    </Button>
+                  </div>
+
+                  {siewinParseError && (
+                    <p className="text-[12px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{siewinParseError}</p>
+                  )}
+                </>
+              )}
+
+              {siewinIssues && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700 space-y-3">
+                  <p className="font-bold">{t.siewinIssuesTitle}</p>
+                  <SiewinIssueList title={t.siewinIssueMissingDocNumber} items={siewinIssues.missingDocumentNumber} moreLabel={t.siewinIssueMore} />
+                  <SiewinIssueList title={t.siewinIssueDuplicateBatch} items={siewinIssues.duplicateInBatch} moreLabel={t.siewinIssueMore} />
+                  <SiewinIssueList title={t.siewinIssueDuplicateCompany} items={siewinIssues.duplicateInCompany} moreLabel={t.siewinIssueMore} />
+                  <SiewinIssueList title={t.siewinIssueUnmappedDocType} items={siewinIssues.unmappedDocumentTypes} moreLabel={t.siewinIssueMore} />
+                  <SiewinIssueList title={t.siewinIssueAmbiguousPerson} items={siewinIssues.ambiguousPersonType} moreLabel={t.siewinIssueMore} />
+                  <SiewinIssueList title={t.siewinIssueMunicipalityNotFound} items={siewinIssues.municipalityNotFound} moreLabel={t.siewinIssueMore} />
+                </div>
+              )}
+
+              {siewinSuccessResult && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 space-y-2">
+                  <p className="font-bold">
+                    {t.siewinSuccess} {siewinSuccessResult.thirdPartiesCreated}
+                  </p>
+                  {siewinSuccessResult.phonePlaceholderWarnings?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold">{t.siewinPhoneListTitle}</p>
+                      <ul className="mt-1 max-h-32 overflow-y-auto list-disc pl-4 text-xs">
+                        {siewinSuccessResult.phonePlaceholderWarnings.map((w) => (
+                          <li key={w}>{w}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="sticky bottom-0 bg-white border-t border-slate-100 px-6 py-4 flex gap-3">
+              {siewinSuccessResult ? (
+                <Button type="button" variant="primary" fullWidth onClick={closeSiewinModal}>
+                  {t.siewinCloseButton}
+                </Button>
+              ) : (
+                <>
+                  <Button type="button" variant="secondary" fullWidth onClick={closeSiewinModal} disabled={siewinImporting}>
+                    {t.cancel}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    fullWidth
+                    loading={siewinImporting}
+                    disabled={!siewinRows || siewinRows.length === 0}
+                    onClick={handleImportSiewin}
+                  >
+                    {t.siewinImportButton}
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Read-only "View" Side Panel — shows the same 3 tabs as Editar, but no inputs */}
       {viewItem && (
         <div className="fixed inset-0 z-50 flex items-start justify-end">
@@ -1135,6 +1586,27 @@ function DataRow({ label, value, t }) {
       <div className="border-b-2 border-gray-100 p-3 text-sm text-slate-700 min-h-[42px]">
         {value ? value : <span className="text-slate-300 italic">{t.notProvided}</span>}
       </div>
+    </div>
+  );
+}
+
+// Renders one violation category from the SIEWIN importer's
+// SIEWIN_THIRD_PARTY_INTEGRITY_GAP details map, same "up to 20 items +
+// a '...N mas' tail" pattern as ChartOfAccountPage.jsx's PUC importer.
+// Renders nothing when the category has no violations.
+function SiewinIssueList({ title, items, moreLabel }) {
+  if (!items || items.length === 0) return null;
+  const shown = items.slice(0, 20);
+  const extra = items.length - shown.length;
+  return (
+    <div>
+      <p className="font-semibold">{title} ({items.length})</p>
+      <ul className="mt-1 max-h-28 overflow-y-auto list-disc pl-4">
+        {shown.map((item, idx) => (
+          <li key={idx}>{item}</li>
+        ))}
+      </ul>
+      {extra > 0 && <p className="mt-1 italic">...{extra} {moreLabel}</p>}
     </div>
   );
 }

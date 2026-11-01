@@ -97,6 +97,13 @@ export const API_ERROR_LABELS = {
     SIEWIN_EMPTY_FILE: "El archivo no contiene filas para importar.",
     SIEWIN_UNMAPPED_GROUP: "Un grupo del archivo SIEWIN no tiene una categoria configurada. Contacta a soporte para completar la configuracion.",
     COMPANY_NOT_FOUND: "No se encontro la compania de la sesion actual.",
+    // Importador de Terceros legado SIEWIN (2026-11-01).
+    // SIEWIN_THIRD_PARTY_INTEGRITY_GAP normally never reaches this generic
+    // lookup -- ThirdPartyPage.jsx reads its structured details
+    // (error.response.data.data) directly and renders the per-violation
+    // lists instead, same pattern as the PUC importer. This label is just
+    // the fallback for any other place that error code might surface.
+    SIEWIN_THIRD_PARTY_INTEGRITY_GAP: "El archivo de terceros SIEWIN tiene problemas de datos que impiden la importacion. Revisa el detalle mostrado en el formulario.",
   },
   en: {
     DUPLICATE_VALUE: "A record with this value already exists. Check the code or identifier.",
@@ -177,6 +184,9 @@ export const API_ERROR_LABELS = {
     SIEWIN_EMPTY_FILE: "The file has no rows to import.",
     SIEWIN_UNMAPPED_GROUP: "A group in the SIEWIN file has no category configured. Contact support to complete the configuration.",
     COMPANY_NOT_FOUND: "The current session's company could not be found.",
+    // SIEWIN legacy Third Party importer (2026-11-01). Same fallback-only
+    // note as SIEWIN_IMPORT_INTEGRITY_GAP above.
+    SIEWIN_THIRD_PARTY_INTEGRITY_GAP: "The SIEWIN third-party file has data problems that prevent importing. Review the detail shown in the form.",
   },
 };
 
