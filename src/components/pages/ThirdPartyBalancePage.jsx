@@ -4,7 +4,16 @@ import Button from "../ui/Button";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
-import { formatGeneratedAt, todayLocalIso } from "../../utils/reportExport";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import {
+  addPdfReportHeader,
+  addPdfRunningHeader,
+  buildExcelHeaderRows,
+  formatGeneratedAt,
+  todayLocalIso,
+} from "../../utils/reportExport";
 
 // NEW (2026-09-24): "Estado de Cuenta por Tercero", built right after
 // CostCenterBalancePage using the exact same Auxiliar-style shape (Saldo
@@ -14,7 +23,8 @@ import { formatGeneratedAt, todayLocalIso } from "../../utils/reportExport";
 // third party's transactions can span several accounts AND several cost
 // centers, so each row shows its own account and cost center instead of
 // the group carrying a single fixed one.
-// Export to Excel/PDF deliberately left out, same as Cost Center Balance.
+// Export to Excel/PDF (2026-11-01, user request): added later, same
+// pattern as CostCenterBalancePage/AuxiliaryLedgerPage.
 function ThirdPartyBalancePage({ language = "es" }) {
   const [accounts, setAccounts] = useState([]);
   const [thirdParties, setThirdParties] = useState([]);
@@ -76,6 +86,8 @@ function ThirdPartyBalancePage({ language = "es" }) {
       grandTotals: "Totales Generales",
       hideEmpty: "Ocultar terceros sin movimiento (S.I., movimientos y saldo final en cero)",
       allHidden: "Todos los terceros tienen saldo inicial, movimientos y saldo final en cero (ocultos por el filtro).",
+      exportExcel: "Exportar Excel",
+      exportPdf: "Exportar PDF",
     },
     en: {
       title: "Third Party Statement",
@@ -112,6 +124,8 @@ function ThirdPartyBalancePage({ language = "es" }) {
       grandTotals: "Grand Totals",
       hideEmpty: "Hide third parties with no activity (opening, movements and closing balance all zero)",
       allHidden: "Every third party has zero opening balance, movements and closing balance (hidden by the filter).",
+      exportExcel: "Export Excel",
+      exportPdf: "Export PDF",
     },
   }[language];
 
@@ -268,6 +282,153 @@ function ThirdPartyBalancePage({ language = "es" }) {
     );
   }, [visibleGroups]);
 
+  // --- Export (2026-11-01, user request) -- same pattern as
+  // CostCenterBalancePage, grouped by third party instead, with an
+  // account column AND a cost center column per row (a third party's
+  // transactions can span several of each). Exports visibleGroups, not
+  // report.thirdPartyGroups, so "Ocultar terceros sin movimiento" is
+  // respected in the export too.
+  const exportFileStem = () => {
+    if (!report) return t.title.replace(/\s+/g, "_");
+    const range = `${report.startDate || filters.startDate}_${report.endDate || filters.endDate}`;
+    return `${t.title.replace(/\s+/g, "_")}_${range}`;
+  };
+
+  const rawAmount = (value) => {
+    const num = Number(value);
+    return !value || Number.isNaN(num) ? 0 : num;
+  };
+
+  const reportPeriodLabel = () =>
+    `${t.startDate}: ${report?.startDate || filters.startDate} - ${t.endDate}: ${report?.endDate || filters.endDate}`;
+
+  const exportHeaderInfo = () => ({
+    companyName: report?.companyName,
+    reportTitle: t.title,
+    period: reportPeriodLabel(),
+    generatedAtLabel: t.generatedAt,
+    generatedAt: report?.generatedAt,
+  });
+
+  const buildSheetRows = (group, includeHeader) => {
+    const columnHeader = [t.date, t.document, t.detail, t.accountCol, t.costCenterCol, t.debit, t.credit, t.balance];
+    return [
+      ...(includeHeader ? buildExcelHeaderRows(exportHeaderInfo()) : []),
+      [`${group.thirdPartyDocument} — ${group.thirdPartyName}`],
+      [t.openingBalance, "", "", "", "", "", "", rawAmount(group.openingBalance)],
+      columnHeader,
+      ...(group.transactions || []).map((tx) => [
+        tx.transactionDate,
+        tx.documentNumber,
+        tx.detail,
+        tx.accountCode ? `${tx.accountCode} — ${tx.accountName || ""}` : "",
+        tx.costCenterCode || "",
+        rawAmount(tx.debit),
+        rawAmount(tx.credit),
+        rawAmount(tx.newBalance),
+      ]),
+      [
+        `${t.totalRecords}: ${group.totalRecords ?? 0}`,
+        "",
+        "",
+        "",
+        "",
+        rawAmount(group.totalDebits),
+        rawAmount(group.totalCredits),
+        rawAmount(group.closingBalance),
+      ],
+    ];
+  };
+
+  const handleExportExcel = () => {
+    if (!visibleGroups.length) return;
+
+    const workbook = XLSX.utils.book_new();
+    visibleGroups.forEach((group, index) => {
+      const sheet = XLSX.utils.aoa_to_sheet(buildSheetRows(group, true));
+      const sheetName = String(group.thirdPartyDocument).replace(/[/?*[\]:]/g, "-").slice(0, 31);
+      XLSX.utils.book_append_sheet(workbook, sheet, sheetName || `Tercero${index + 1}`);
+    });
+
+    XLSX.writeFile(workbook, `${exportFileStem()}.xlsx`);
+  };
+
+  const handleExportPdf = () => {
+    if (!visibleGroups.length) return;
+
+    const doc = new jsPDF({ orientation: "landscape" });
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const bottomMargin = 15;
+    const minGroupSpace = 35;
+
+    const headerInfo = exportHeaderInfo();
+
+    let isFirstPage = true;
+    const drawPageHeader = () => {
+      if (isFirstPage) {
+        isFirstPage = false;
+        return addPdfReportHeader(doc, headerInfo);
+      }
+      return addPdfRunningHeader(doc, headerInfo);
+    };
+
+    let cursorY = drawPageHeader();
+
+    visibleGroups.forEach((group) => {
+      if (cursorY + minGroupSpace > pageHeight - bottomMargin) {
+        doc.addPage();
+        cursorY = drawPageHeader();
+      }
+
+      doc.setFontSize(11);
+      doc.text(`${t.thirdParty}: ${group.thirdPartyDocument} — ${group.thirdPartyName}`, 14, cursorY);
+      doc.setFontSize(9);
+      doc.text(`${t.openingBalance}: ${formatAmount(group.openingBalance) || "0.00"}`, 14, cursorY + 6);
+
+      const body = (group.transactions || []).map((tx) => [
+        tx.transactionDate || "",
+        tx.documentNumber || "",
+        tx.detail || "",
+        tx.accountCode ? `${tx.accountCode} — ${tx.accountName || ""}` : "",
+        tx.costCenterCode || "",
+        formatAmount(tx.debit),
+        formatAmount(tx.credit),
+        formatAmount(tx.newBalance),
+      ]);
+      body.push([
+        `${t.totalRecords}: ${group.totalRecords ?? 0}`,
+        "",
+        "",
+        "",
+        "",
+        formatAmount(group.totalDebits),
+        formatAmount(group.totalCredits),
+        formatAmount(group.closingBalance),
+      ]);
+
+      const pageBeforeTable = doc.internal.getCurrentPageInfo().pageNumber;
+
+      autoTable(doc, {
+        startY: cursorY + 10,
+        head: [[t.date, t.document, t.detail, t.accountCol, t.costCenterCol, t.debit, t.credit, t.balance]],
+        body,
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [30, 41, 59] },
+        columnStyles: { 5: { halign: "right" }, 6: { halign: "right" }, 7: { halign: "right" } },
+        margin: { top: 20, bottom: bottomMargin },
+        didDrawPage: (data) => {
+          if (data.pageNumber > pageBeforeTable) {
+            drawPageHeader();
+          }
+        },
+      });
+
+      cursorY = doc.lastAutoTable.finalY + 8;
+    });
+
+    doc.save(`${exportFileStem()}.pdf`);
+  };
+
   return (
     <div className="space-y-6 p-4">
       <AppHeader title={t.title} subtitle={t.subtitle} tenantId={activeTenantId} />
@@ -382,13 +543,28 @@ function ThirdPartyBalancePage({ language = "es" }) {
 
       {report && (
         <div className="space-y-6">
-          {(report.generatedAt || report.companyName) && (
-            <p className="text-xs text-slate-400">
-              {report.companyName && <strong className="text-slate-500">{report.companyName}</strong>}
-              {report.companyName && report.generatedAt && " — "}
-              {report.generatedAt && `${t.generatedAt}: ${formatGeneratedAt(report.generatedAt)}`}
-            </p>
-          )}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {report.generatedAt || report.companyName ? (
+              <p className="text-xs text-slate-400">
+                {report.companyName && <strong className="text-slate-500">{report.companyName}</strong>}
+                {report.companyName && report.generatedAt && " — "}
+                {report.generatedAt && `${t.generatedAt}: ${formatGeneratedAt(report.generatedAt)}`}
+              </p>
+            ) : (
+              <span />
+            )}
+
+            {visibleGroups.length > 0 && (
+              <div className="flex gap-2">
+                <Button variant="secondary" size="sm" onClick={handleExportExcel}>
+                  {t.exportExcel}
+                </Button>
+                <Button variant="secondary" size="sm" onClick={handleExportPdf}>
+                  {t.exportPdf}
+                </Button>
+              </div>
+            )}
+          </div>
 
           {(!report.thirdPartyGroups || report.thirdPartyGroups.length === 0) && (
             <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-slate-400 shadow-sm">

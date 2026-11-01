@@ -4,7 +4,14 @@ import Button from "../ui/Button";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
-import { formatGeneratedAt } from "../../utils/reportExport";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import {
+  addPdfReportHeader,
+  buildExcelHeaderRows,
+  formatGeneratedAt,
+} from "../../utils/reportExport";
 
 // NEW (2026-10-20, user request): "Informe de Movimientos Incompletos" --
 // an audit tool, not a period report. Some accounts get configured
@@ -69,6 +76,8 @@ function IncompleteMovementsPage({ language = "es", onEditEntry }) {
       totalRecords: "Registros",
       generatedAt: "Generado",
       errorConn: "Error de conexión con el servidor.",
+      exportExcel: "Exportar Excel",
+      exportPdf: "Exportar PDF",
     },
     en: {
       title: "Incomplete Movements Report",
@@ -94,6 +103,8 @@ function IncompleteMovementsPage({ language = "es", onEditEntry }) {
       totalRecords: "Records",
       generatedAt: "Generated",
       errorConn: "Server connection error.",
+      exportExcel: "Export Excel",
+      exportPdf: "Export PDF",
     },
   }[language];
 
@@ -147,6 +158,79 @@ function IncompleteMovementsPage({ language = "es", onEditEntry }) {
     onEditEntry?.(journalEntryId);
   };
 
+  // --- Export (2026-11-01, user request) -- a simple flat list, same
+  // single-table pattern as TrialBalancePage. The "Accion" (Editar)
+  // column is interactive-only and makes no sense in a static export, so
+  // it's left out -- journalEntryId isn't a useful standalone column
+  // either without the button behind it.
+  const exportFileStem = () => {
+    const range = startDate || endDate ? `${startDate || "..."}_${endDate || "..."}` : "historico";
+    return `${t.title.replace(/\s+/g, "_")}_${range}`;
+  };
+
+  const handleExportExcel = () => {
+    if (!report?.lines?.length) return;
+
+    const rows = [
+      ...buildExcelHeaderRows({
+        companyName: report.companyName,
+        reportTitle: t.title,
+        generatedAtLabel: t.generatedAt,
+        generatedAt: report.generatedAt,
+      }),
+      [t.date, t.document, t.account, t.inconsistency, t.value],
+      ...report.lines.map((line) => [
+        line.entryDate,
+        line.documentNumber,
+        `${line.accountCode} — ${line.accountName}`,
+        inconsistencyLabel(line),
+        (line.side === "C" ? -1 : 1) * (Number(line.amount) || 0),
+      ]),
+      [t.totalRecords, report.totalRecords ?? 0],
+    ];
+
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, t.title.slice(0, 31));
+    XLSX.writeFile(workbook, `${exportFileStem()}.xlsx`);
+  };
+
+  const handleExportPdf = () => {
+    if (!report?.lines?.length) return;
+
+    const doc = new jsPDF({ orientation: "landscape" });
+
+    const headerInfo = {
+      companyName: report.companyName,
+      reportTitle: t.title,
+      generatedAtLabel: t.generatedAt,
+      generatedAt: report.generatedAt,
+    };
+
+    const cursorY = addPdfReportHeader(doc, headerInfo);
+
+    const body = report.lines.map((line) => [
+      line.entryDate,
+      line.documentNumber,
+      `${line.accountCode} — ${line.accountName}`,
+      inconsistencyLabel(line),
+      `${formatAmount(line.amount)} (${line.side})`,
+    ]);
+
+    autoTable(doc, {
+      startY: cursorY,
+      head: [[t.date, t.document, t.account, t.inconsistency, t.value]],
+      body,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [30, 41, 59] },
+      columnStyles: { 4: { halign: "right" } },
+      margin: { top: 20, bottom: 15 },
+      foot: [[`${t.totalRecords}: ${report.totalRecords ?? 0}`, "", "", "", ""]],
+    });
+
+    doc.save(`${exportFileStem()}.pdf`);
+  };
+
   return (
     <div className="space-y-6 p-4">
       <AppHeader title={t.title} subtitle={t.subtitle} tenantId={activeTenantId} />
@@ -194,11 +278,24 @@ function IncompleteMovementsPage({ language = "es", onEditEntry }) {
 
       {report && (
         <div className="space-y-6">
-          <p className="text-xs text-slate-400">
-            {report.companyName && <strong className="text-slate-500">{report.companyName}</strong>}
-            {report.companyName && report.generatedAt && " — "}
-            {report.generatedAt && `${t.generatedAt}: ${formatGeneratedAt(report.generatedAt)}`}
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-slate-400">
+              {report.companyName && <strong className="text-slate-500">{report.companyName}</strong>}
+              {report.companyName && report.generatedAt && " — "}
+              {report.generatedAt && `${t.generatedAt}: ${formatGeneratedAt(report.generatedAt)}`}
+            </p>
+
+            {report.lines?.length > 0 && (
+              <div className="flex gap-2">
+                <Button variant="secondary" size="sm" onClick={handleExportExcel}>
+                  {t.exportExcel}
+                </Button>
+                <Button variant="secondary" size="sm" onClick={handleExportPdf}>
+                  {t.exportPdf}
+                </Button>
+              </div>
+            )}
+          </div>
 
           {(!report.lines || report.lines.length === 0) && (
             <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-slate-400 shadow-sm">

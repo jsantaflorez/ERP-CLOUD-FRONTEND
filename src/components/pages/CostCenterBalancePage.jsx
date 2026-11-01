@@ -4,7 +4,16 @@ import Button from "../ui/Button";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
-import { formatGeneratedAt, todayLocalIso } from "../../utils/reportExport";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import {
+  addPdfReportHeader,
+  addPdfRunningHeader,
+  buildExcelHeaderRows,
+  formatGeneratedAt,
+  todayLocalIso,
+} from "../../utils/reportExport";
 
 // NEW (2026-09-21): third report screen, after Libro Auxiliar and Balance
 // de Comprobación. First built as a simple period-totals report (no
@@ -19,9 +28,9 @@ import { formatGeneratedAt, todayLocalIso } from "../../utils/reportExport";
 // different accounts, so each row shows its own account code/name
 // (the account-grouped ledger doesn't need that column, since there the
 // account is already the group's header).
-// Export to Excel/PDF deliberately left out of this first version, same
-// as the original period-totals cut -- can be added later the same way
-// TrialBalancePage/AuxiliaryLedgerPage already do it.
+// Export to Excel/PDF (2026-11-01, user request): added later, same
+// grouped-sheet/grouped-page pattern as AuxiliaryLedgerPage -- see
+// handleExportExcel/handleExportPdf below.
 function CostCenterBalancePage({ language = "es" }) {
   const [accounts, setAccounts] = useState([]);
   const [costCenters, setCostCenters] = useState([]);
@@ -79,6 +88,8 @@ function CostCenterBalancePage({ language = "es" }) {
       grandTotals: "Totales Generales",
       hideEmpty: "Ocultar grupos sin movimiento (S.I., movimientos y saldo final en cero)",
       allHidden: "Todos los grupos tienen saldo inicial, movimientos y saldo final en cero (ocultos por el filtro).",
+      exportExcel: "Exportar Excel",
+      exportPdf: "Exportar PDF",
     },
     en: {
       title: "Auxiliary Ledger by Cost Center",
@@ -113,6 +124,8 @@ function CostCenterBalancePage({ language = "es" }) {
       grandTotals: "Grand Totals",
       hideEmpty: "Hide groups with no activity (opening, movements and closing balance all zero)",
       allHidden: "Every group has zero opening balance, movements and closing balance (hidden by the filter).",
+      exportExcel: "Export Excel",
+      exportPdf: "Export PDF",
     },
   }[language];
 
@@ -249,6 +262,155 @@ function CostCenterBalancePage({ language = "es" }) {
     );
   }, [visibleGroups]);
 
+  // --- Export (2026-11-01, user request) -- same grouped-sheet (Excel)
+  // / grouped-page (PDF) pattern as AuxiliaryLedgerPage, just grouped by
+  // cost center instead of account, with an extra Cuenta column per row
+  // (a cost center's transactions can come from several different
+  // accounts, unlike the account-grouped ledger where the account IS the
+  // group). Exports visibleGroups, not report.costCenterGroups, so
+  // "Ocultar grupos sin movimiento" is respected in the export too --
+  // matches exactly what's on screen at the moment of export.
+  const exportFileStem = () => {
+    if (!report) return t.title.replace(/\s+/g, "_");
+    const range = `${report.startDate || filters.startDate}_${report.endDate || filters.endDate}`;
+    return `${t.title.replace(/\s+/g, "_")}_${range}`;
+  };
+
+  const rawAmount = (value) => {
+    const num = Number(value);
+    return !value || Number.isNaN(num) ? 0 : num;
+  };
+
+  const reportPeriodLabel = () =>
+    `${t.startDate}: ${report?.startDate || filters.startDate} - ${t.endDate}: ${report?.endDate || filters.endDate}`;
+
+  const exportHeaderInfo = () => ({
+    companyName: report?.companyName,
+    reportTitle: t.title,
+    period: reportPeriodLabel(),
+    generatedAtLabel: t.generatedAt,
+    generatedAt: report?.generatedAt,
+  });
+
+  const buildSheetRows = (group, includeHeader) => {
+    const columnHeader = [t.date, t.document, t.detail, t.accountCol, t.thirdParty, t.debit, t.credit, t.balance];
+    return [
+      ...(includeHeader ? buildExcelHeaderRows(exportHeaderInfo()) : []),
+      [`${group.costCenterCode} — ${group.costCenterName}`],
+      [t.openingBalance, "", "", "", "", "", "", rawAmount(group.openingBalance)],
+      columnHeader,
+      ...(group.transactions || []).map((tx) => [
+        tx.transactionDate,
+        tx.documentNumber,
+        tx.detail,
+        tx.accountCode ? `${tx.accountCode} — ${tx.accountName || ""}` : "",
+        tx.thirdPartyName || "",
+        rawAmount(tx.debit),
+        rawAmount(tx.credit),
+        rawAmount(tx.newBalance),
+      ]),
+      [
+        `${t.totalRecords}: ${group.totalRecords ?? 0}`,
+        "",
+        "",
+        "",
+        "",
+        rawAmount(group.totalDebits),
+        rawAmount(group.totalCredits),
+        rawAmount(group.closingBalance),
+      ],
+    ];
+  };
+
+  const handleExportExcel = () => {
+    if (!visibleGroups.length) return;
+
+    const workbook = XLSX.utils.book_new();
+    visibleGroups.forEach((group, index) => {
+      const sheet = XLSX.utils.aoa_to_sheet(buildSheetRows(group, true));
+      const sheetName = String(group.costCenterCode).replace(/[/?*[\]:]/g, "-").slice(0, 31);
+      XLSX.utils.book_append_sheet(workbook, sheet, sheetName || `CC${index + 1}`);
+    });
+
+    XLSX.writeFile(workbook, `${exportFileStem()}.xlsx`);
+  };
+
+  const handleExportPdf = () => {
+    if (!visibleGroups.length) return;
+
+    const doc = new jsPDF({ orientation: "landscape" });
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const bottomMargin = 15;
+    const minGroupSpace = 35;
+
+    const headerInfo = exportHeaderInfo();
+
+    let isFirstPage = true;
+    const drawPageHeader = () => {
+      if (isFirstPage) {
+        isFirstPage = false;
+        return addPdfReportHeader(doc, headerInfo);
+      }
+      return addPdfRunningHeader(doc, headerInfo);
+    };
+
+    let cursorY = drawPageHeader();
+
+    visibleGroups.forEach((group) => {
+      if (cursorY + minGroupSpace > pageHeight - bottomMargin) {
+        doc.addPage();
+        cursorY = drawPageHeader();
+      }
+
+      doc.setFontSize(11);
+      doc.text(`${t.costCenter}: ${group.costCenterCode} — ${group.costCenterName}`, 14, cursorY);
+      doc.setFontSize(9);
+      doc.text(`${t.openingBalance}: ${formatAmount(group.openingBalance) || "0.00"}`, 14, cursorY + 6);
+
+      const body = (group.transactions || []).map((tx) => [
+        tx.transactionDate || "",
+        tx.documentNumber || "",
+        tx.detail || "",
+        tx.accountCode ? `${tx.accountCode} — ${tx.accountName || ""}` : "",
+        tx.thirdPartyName || "",
+        formatAmount(tx.debit),
+        formatAmount(tx.credit),
+        formatAmount(tx.newBalance),
+      ]);
+      body.push([
+        `${t.totalRecords}: ${group.totalRecords ?? 0}`,
+        "",
+        "",
+        "",
+        "",
+        formatAmount(group.totalDebits),
+        formatAmount(group.totalCredits),
+        formatAmount(group.closingBalance),
+      ]);
+
+      const pageBeforeTable = doc.internal.getCurrentPageInfo().pageNumber;
+
+      autoTable(doc, {
+        startY: cursorY + 10,
+        head: [[t.date, t.document, t.detail, t.accountCol, t.thirdParty, t.debit, t.credit, t.balance]],
+        body,
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [30, 41, 59] },
+        columnStyles: { 5: { halign: "right" }, 6: { halign: "right" }, 7: { halign: "right" } },
+        margin: { top: 20, bottom: bottomMargin },
+        didDrawPage: (data) => {
+          if (data.pageNumber > pageBeforeTable) {
+            drawPageHeader();
+          }
+        },
+      });
+
+      cursorY = doc.lastAutoTable.finalY + 8;
+    });
+
+    doc.save(`${exportFileStem()}.pdf`);
+  };
+
   return (
     <div className="space-y-6 p-4">
       <AppHeader title={t.title} subtitle={t.subtitle} tenantId={activeTenantId} />
@@ -344,13 +506,28 @@ function CostCenterBalancePage({ language = "es" }) {
 
       {report && (
         <div className="space-y-6">
-          {(report.generatedAt || report.companyName) && (
-            <p className="text-xs text-slate-400">
-              {report.companyName && <strong className="text-slate-500">{report.companyName}</strong>}
-              {report.companyName && report.generatedAt && " — "}
-              {report.generatedAt && `${t.generatedAt}: ${formatGeneratedAt(report.generatedAt)}`}
-            </p>
-          )}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {report.generatedAt || report.companyName ? (
+              <p className="text-xs text-slate-400">
+                {report.companyName && <strong className="text-slate-500">{report.companyName}</strong>}
+                {report.companyName && report.generatedAt && " — "}
+                {report.generatedAt && `${t.generatedAt}: ${formatGeneratedAt(report.generatedAt)}`}
+              </p>
+            ) : (
+              <span />
+            )}
+
+            {visibleGroups.length > 0 && (
+              <div className="flex gap-2">
+                <Button variant="secondary" size="sm" onClick={handleExportExcel}>
+                  {t.exportExcel}
+                </Button>
+                <Button variant="secondary" size="sm" onClick={handleExportPdf}>
+                  {t.exportPdf}
+                </Button>
+              </div>
+            )}
+          </div>
 
           {(!report.costCenterGroups || report.costCenterGroups.length === 0) && (
             <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-slate-400 shadow-sm">
