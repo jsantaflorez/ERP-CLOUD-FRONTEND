@@ -50,6 +50,14 @@ function JournalBookPage({ language = "es" }) {
 
   const { session } = useAuth();
   const activeTenantId = session.companyName || session.companyId;
+  // NEW (2026-11-01, user request): every exported report must show the
+  // company's LEGAL name, never tradeName or the bare id -- see the same
+  // fix in ChartOfAccountPage for the full reasoning (session.companyName
+  // prefers tradeName and is not persisted across a reload). Fetched once
+  // on mount; activeTenantId stays as the fallback used elsewhere on this
+  // page (AppHeader's badge, the on-screen label) which is unaffected by
+  // this change.
+  const [companyLegalName, setCompanyLegalName] = useState(null);
 
   const t = {
     es: {
@@ -151,6 +159,18 @@ function JournalBookPage({ language = "es" }) {
       .catch(() => setDocumentTypes([]));
   }, []);
 
+  useEffect(() => {
+    api
+      .get("/v1/companies/me")
+      .then((res) => {
+        if (res.data?.success) setCompanyLegalName(res.data.data?.legalName || null);
+      })
+      .catch(() => {
+        // Non-critical -- handleExportExcel/handleExportPdf fall back to
+        // activeTenantId if this never resolves.
+      });
+  }, []);
+
   const documentTypeById = (id) => documentTypes.find((d) => String(d.id) === String(id));
   const documentTypeLabel = (entry) => {
     const dt = documentTypeById(entry.documentTypeId);
@@ -242,7 +262,7 @@ function JournalBookPage({ language = "es" }) {
     setExporting(true);
 
     const headerInfo = {
-      companyName: activeTenantId,
+      companyName: companyLegalName || activeTenantId,
       reportTitle: t.exportTitle,
       period: `${reportPeriodLabel()}   ·   ${statusFilterLabel()}`,
       generatedAtLabel: t.generatedAt,
@@ -295,7 +315,7 @@ function JournalBookPage({ language = "es" }) {
     const doc = new jsPDF({ orientation: "landscape" });
 
     const headerInfo = {
-      companyName: activeTenantId,
+      companyName: companyLegalName || activeTenantId,
       reportTitle: t.exportTitle,
       period: `${reportPeriodLabel()}   ·   ${statusFilterLabel()}   ·   ${t.entriesCount}: ${displayedEntries.length}`,
       generatedAtLabel: t.generatedAt,

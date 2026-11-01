@@ -72,6 +72,11 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
 
   const { session } = useAuth();
   const activeTenantId = session.companyName || session.companyId;
+  // NEW (2026-11-01, user request): every exported report must show the
+  // company's LEGAL name -- see the same fix in ChartOfAccountPage for
+  // the full reasoning. activeTenantId stays as the fallback used
+  // elsewhere on this page.
+  const [companyLegalName, setCompanyLegalName] = useState(null);
 
   const t = {
     es: {
@@ -194,6 +199,17 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
         setDocumentTypes(Array.isArray(data) ? data : []);
       })
       .catch(() => setDocumentTypes([]));
+  }, []);
+
+  useEffect(() => {
+    api
+      .get("/v1/companies/me")
+      .then((res) => {
+        if (res.data?.success) setCompanyLegalName(res.data.data?.legalName || null);
+      })
+      .catch(() => {
+        // Non-critical -- export handlers fall back to activeTenantId.
+      });
   }, []);
 
   const documentTypeById = (id) => documentTypes.find((d) => String(d.id) === String(id));
@@ -358,7 +374,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
     setExporting(true);
     try {
       const headerInfo = {
-        companyName: activeTenantId,
+        companyName: companyLegalName || activeTenantId,
         reportTitle: t.exportTitle,
         period: reportPeriodLabel(),
         generatedAtLabel: t.generatedAt,
@@ -400,7 +416,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
       const bottomMargin = 15;
 
       const headerInfo = {
-        companyName: activeTenantId,
+        companyName: companyLegalName || activeTenantId,
         reportTitle: t.exportTitle,
         period: reportPeriodLabel(),
         generatedAtLabel: t.generatedAt,

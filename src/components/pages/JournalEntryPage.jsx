@@ -203,6 +203,12 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
 
   const { session } = useAuth();
   const activeTenantId = session.companyName || session.companyId;
+  // NEW (2026-11-01, user request): every exported/printed report must
+  // show the company's LEGAL name -- see the same fix in
+  // ChartOfAccountPage for the full reasoning. Fetched alongside the
+  // other catalogs in loadCatalogs() below. activeTenantId stays as the
+  // fallback used elsewhere on this page (AppHeader's badge, etc.).
+  const [companyLegalName, setCompanyLegalName] = useState(null);
 
   const t = {
     es: {
@@ -446,7 +452,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   const loadCatalogs = async () => {
     setLoadingCatalogs(true);
     try {
-      const [accRes, tpRes, ccRes, dtRes, taxRes] = await Promise.allSettled([
+      const [accRes, tpRes, ccRes, dtRes, taxRes, companyRes] = await Promise.allSettled([
         // /v1/chart-of-accounts is paginated (Spring PageImpl), same as
         // /v1/third-parties -- unlike /v1/cost-centers and
         // /v1/document-types, which return flat arrays. Mirrors the
@@ -462,6 +468,10 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
         // matched to its parameterized Tax (if any) -- same flat-array
         // envelope TaxPage.jsx already reads ({success, data: [...]}).
         api.get("/v1/taxes"),
+        // NEW (2026-11-01, user request): the company's legal name, for
+        // the Excel/PDF export header and the JeDetailModal voucher
+        // print -- see companyLegalName above.
+        api.get("/v1/companies/me"),
       ]);
 
       if (accRes.status === "fulfilled") {
@@ -496,6 +506,9 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       if (taxRes.status === "fulfilled") {
         const data = taxRes.value.data?.data ?? taxRes.value.data;
         setTaxes(Array.isArray(data) ? data : []);
+      }
+      if (companyRes.status === "fulfilled" && companyRes.value.data?.success) {
+        setCompanyLegalName(companyRes.value.data.data?.legalName || null);
       }
     } catch (error) {
       showToast(getApiErrorMessage(error, language, t.errorConn), "error");
@@ -593,7 +606,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       }
 
       const headerInfo = {
-        companyName: activeTenantId,
+        companyName: companyLegalName || activeTenantId,
         reportTitle: t.exportTitle,
         period: exportFilterSummary(),
         generatedAtLabel: t.generatedAt,
@@ -646,7 +659,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       const bottomMargin = 15;
 
       const headerInfo = {
-        companyName: activeTenantId,
+        companyName: companyLegalName || activeTenantId,
         reportTitle: t.exportTitle,
         period: exportFilterSummary(),
         generatedAtLabel: t.generatedAt,
@@ -1290,7 +1303,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
           t={t}
           entry={viewingEntry}
           documentTypeLabel={documentTypeLabel}
-          companyName={activeTenantId}
+          companyName={companyLegalName || activeTenantId}
           onClose={() => setViewingEntry(null)}
         />
       )}
