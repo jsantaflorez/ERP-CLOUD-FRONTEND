@@ -610,25 +610,48 @@ function ChartOfAccountsPage({ language = "es" }) {
 
   /**
    * Dispatches asynchronous fetch via Axios targeting database ledger definitions.
+   *
+   * FIXED (2026-11-01, user report: NAVARRA's Plan de Cuentas was cut off
+   * around the 27xx accounts): this used to request a single page with a
+   * hardcoded size:200 and never asked for more. Any tenant with more than
+   * 200 active accounts (expected after a full PUC import) silently lost
+   * everything past account #200 in code order -- no error, just missing
+   * rows. Now it pages through the whole collection (still 200 per
+   * request, to keep each response reasonably sized) and keeps fetching
+   * until the backend reports this was the last page.
    */
   const loadAccounts = async () => {
     setLoading(true);
     try {
-      // Retaining standard sorting options via Spring request params
-      const response = await api.get("/v1/chart-of-accounts", {
-        params: { size: 200, sort: "code" }
-      });
+      let page = 0;
+      let allAccounts = [];
+      let isLastPage = false;
 
-      if (response.data && response.data.success) {
+      while (!isLastPage) {
+        // Retaining standard sorting options via Spring request params
+        const response = await api.get("/v1/chart-of-accounts", {
+          params: { page, size: 200, sort: "code" }
+        });
+
+        if (!response.data || !response.data.success) {
+          showToast(response.data?.message || t.errorConn, "error");
+          break;
+        }
+
         const payloadData = response.data.data;
         // Fallback protection check to support both PageImpl wrappers and linear collections
-        const accountsList = Array.isArray(payloadData)
+        const pageContent = Array.isArray(payloadData)
           ? payloadData
           : (Array.isArray(payloadData?.content) ? payloadData.content : []);
-        setRows(accountsList);
-      } else {
-        showToast(response.data?.message || t.errorConn, "error");
+        allAccounts = allAccounts.concat(pageContent);
+
+        // A plain array (not a Page wrapper) has no "last" flag -- treat
+        // it as complete after one pass rather than looping forever.
+        isLastPage = Array.isArray(payloadData) || payloadData?.last !== false;
+        page += 1;
       }
+
+      setRows(allAccounts);
     } catch (error) {
       showToast(getApiErrorMessage(error, language, t.errorConn), "error");
     } finally {
