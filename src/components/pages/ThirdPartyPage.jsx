@@ -7,6 +7,15 @@ import { TAX_REGIME_LABELS, TAX_REGIMES_BY_PERSON } from "../../constants/taxReg
 import { getApiErrorMessage } from "../../constants/apiErrors";
 import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABELS } from "../../constants/documentTypes";
 import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import {
+  addPdfReportHeader,
+  addPdfRunningHeader,
+  buildExcelHeaderRows,
+  nowLocalIso,
+  todayLocalIso,
+} from "../../utils/reportExport";
 
 // Initial structure for a blank form setup based on ERP specs
 // FIX: taxRegime is now filtered by personType via TAX_REGIMES_BY_PERSON
@@ -155,6 +164,7 @@ function ThirdPartyPage({ language = "es" }) {
   const [taxRegimeFilter, setTaxRegimeFilter]     = useState("ALL");
   const [loading, setLoading]                   = useState(false);
   const [isSaving, setIsSaving]                 = useState(false);
+  const [exporting, setExporting]               = useState(false);
 
   // --- SIEWIN third-party importer modal states (2026-11-01) --- see
   // propuesta-importador-terceros-siewin-2026-10-31.md. Same state shape
@@ -187,6 +197,11 @@ function ThirdPartyPage({ language = "es" }) {
   // localStorage directly, which wouldn't trigger a re-render.
   const { session } = useAuth();
   const activeTenantId = session.companyName || session.companyId;
+  // NEW (2026-11-01, user request): exported report header uses the
+  // company's LEGAL name -- same fix/reasoning as every other report in
+  // the app (see ChartOfAccountPage). Fetched alongside cities/cost
+  // centers in loadCatalogs() below.
+  const [companyLegalName, setCompanyLegalName] = useState(null);
 
   // --- UI Translation Dictionary ---
   const t = {
@@ -277,7 +292,11 @@ function ThirdPartyPage({ language = "es" }) {
       siewinCloseButton: "Cerrar",
       // Quick filters (2026-11-01)
       filterAllOption: "Todos",
-      filterClear: "Limpiar filtros"
+      filterClear: "Limpiar filtros",
+      // Export (2026-11-01)
+      exportExcel: "Exportar Excel",
+      exportPdf: "Exportar PDF",
+      generatedAt: "Generado"
     },
     en: {
       title: "Third Parties",
@@ -366,7 +385,11 @@ function ThirdPartyPage({ language = "es" }) {
       siewinCloseButton: "Close",
       // Quick filters (2026-11-01)
       filterAllOption: "All",
-      filterClear: "Clear filters"
+      filterClear: "Clear filters",
+      // Export (2026-11-01)
+      exportExcel: "Export Excel",
+      exportPdf: "Export PDF",
+      generatedAt: "Generated"
     }
   }[language];
 
@@ -458,6 +481,19 @@ const loadCatalogs = async () => {
       }
     } catch (error) {
       console.error("Error loading cost centers:", error.response?.data || error.message);
+    }
+
+    // Fetch the company's legal name independently -- non-critical for
+    // the page itself, only used by the export header (see
+    // companyLegalName above), so a failure here never blocks anything
+    // else on this page.
+    try {
+      const resCompany = await api.get("/v1/companies/me");
+      if (resCompany.data?.success) {
+        setCompanyLegalName(resCompany.data.data?.legalName || null);
+      }
+    } catch (error) {
+      console.error("Error loading company:", error.response?.data || error.message);
     }
   };
 
@@ -881,6 +917,142 @@ const loadCatalogs = async () => {
     }
   };
 
+  // --- Export (2026-11-01, user request) ---
+  // Exports whatever the active search/filters currently match, not the
+  // whole Terceros table -- confirmed explicitly with the user, unlike
+  // Plan de Cuentas (a small, bounded catalog where the opposite made
+  // sense). Re-fetches from the backend with the SAME filter params
+  // loadThirdParties() already sends, just paging through everything
+  // that matches instead of stopping at 10 rows -- never exports only
+  // what happens to be on the currently loaded page.
+  const fetchAllFilteredThirdParties = async () => {
+    let page = 0;
+    let all = [];
+    let isLastPage = false;
+
+    while (!isLastPage) {
+      const params = new URLSearchParams();
+      params.set("page", String(page));
+      params.set("size", "200");
+      if (debouncedSearchTerm) params.set("search", debouncedSearchTerm);
+      if (personTypeFilter !== "ALL") params.set("personType", personTypeFilter);
+      if (documentTypeFilter !== "ALL") params.set("documentType", documentTypeFilter);
+      if (taxRegimeFilter !== "ALL") params.set("taxRegime", taxRegimeFilter);
+
+      const response = await api.get(`/v1/third-parties?${params.toString()}`);
+      const payload = response.data;
+      const pageContent = Array.isArray(payload?.content)
+        ? payload.content
+        : Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload)
+        ? payload
+        : [];
+      all = all.concat(pageContent);
+
+      // A plain array (not a Page wrapper) has no "last" flag -- treat
+      // it as complete after one pass rather than looping forever.
+      isLastPage = Array.isArray(payload) || payload?.last !== false;
+      page += 1;
+    }
+
+    return all;
+  };
+
+  const exportIdentity = (item) =>
+    `${item.documentType || ""} ${item.documentNumber || ""}${item.verificationDigit != null ? `-${item.verificationDigit}` : ""}`.trim();
+
+  const exportName = (item) =>
+    item.legalDisplayName || item.businessName || `${item.firstName || ""} ${item.lastName || ""}`.trim();
+
+  const exportColumns = (item) => [
+    exportIdentity(item),
+    exportName(item),
+    item.personType === "JURIDICA" ? t.juridica : t.natural,
+    getRegimeDisplayLabel(item.taxRegime, item.personType, language, t),
+    item.email || "",
+    item.mobile || "",
+    item.phone || "",
+    item.address || "",
+    item.cityName || "",
+    item.active ? t.active : t.inactive,
+  ];
+
+  const exportHeaderInfo = () => ({
+    companyName: companyLegalName || activeTenantId,
+    reportTitle: t.title,
+    generatedAtLabel: t.generatedAt,
+    generatedAt: nowLocalIso(),
+  });
+
+  const exportFileStem = () => `${t.title.replace(/\s+/g, "_")}_${todayLocalIso()}`;
+
+  const handleExportExcel = async () => {
+    setExporting(true);
+    try {
+      const data = await fetchAllFilteredThirdParties();
+      if (!data.length) {
+        showToast(t.noResults, "error");
+        return;
+      }
+
+      const sheetRows = [
+        ...buildExcelHeaderRows(exportHeaderInfo()),
+        [t.identity, t.name, t.type, t.regime, t.email, t.mobile, t.phone, t.address, t.city, t.active],
+        ...data.map(exportColumns),
+      ];
+
+      const sheet = XLSX.utils.aoa_to_sheet(sheetRows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, sheet, t.title.slice(0, 31));
+      XLSX.writeFile(workbook, `${exportFileStem()}.xlsx`);
+    } catch (error) {
+      showToast(getApiErrorMessage(error, language, t.errorConn), "error");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    setExporting(true);
+    try {
+      const data = await fetchAllFilteredThirdParties();
+      if (!data.length) {
+        showToast(t.noResults, "error");
+        return;
+      }
+
+      const doc = new jsPDF({ orientation: "landscape" });
+      const headerInfo = exportHeaderInfo();
+      const cursorY = addPdfReportHeader(doc, headerInfo);
+      const pageBeforeTable = doc.internal.getCurrentPageInfo().pageNumber;
+
+      autoTable(doc, {
+        startY: cursorY,
+        head: [[t.identity, t.name, t.type, t.regime, t.email, t.mobile, t.phone, t.address, t.city, t.active]],
+        body: data.map(exportColumns),
+        styles: { fontSize: 7, cellPadding: 1.5 },
+        headStyles: { fillColor: [30, 41, 59] },
+        columnStyles: {
+          0: { cellWidth: 28 },
+          1: { cellWidth: 45 },
+        },
+        margin: { top: 20, bottom: 15 },
+        didDrawPage: (pageData) => {
+          if (pageData.pageNumber > pageBeforeTable) {
+            addPdfRunningHeader(doc, headerInfo);
+          }
+        },
+      });
+
+      doc.save(`${exportFileStem()}.pdf`);
+    } catch (error) {
+      showToast(getApiErrorMessage(error, language, t.errorConn), "error");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6 p-4">
       {/* Toast Alert Banner */}
@@ -898,6 +1070,16 @@ const loadCatalogs = async () => {
         actions={
           <>
             <span className="hidden text-[11px] text-slate-400 sm:inline">{t.newShortcutHint}</span>
+            {rows.length > 0 && (
+              <>
+                <Button variant="secondary" size="sm" loading={exporting} disabled={exporting} onClick={handleExportExcel}>
+                  {t.exportExcel}
+                </Button>
+                <Button variant="secondary" size="sm" loading={exporting} disabled={exporting} onClick={handleExportPdf}>
+                  {t.exportPdf}
+                </Button>
+              </>
+            )}
             <button
               type="button"
               onClick={openSiewinModal}
