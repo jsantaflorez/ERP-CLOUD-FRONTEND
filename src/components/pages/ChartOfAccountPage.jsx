@@ -1,10 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
 import api from "../../services/api"; // Centralized Axios instance with multi-tenancy context
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage, API_ERROR_LABELS } from "../../constants/apiErrors";
+import {
+  addPdfReportHeader,
+  addPdfRunningHeader,
+  buildExcelHeaderRows,
+  nowLocalIso,
+  todayLocalIso,
+} from "../../utils/reportExport";
 
 const initialForm = {
   code: "",
@@ -322,6 +331,13 @@ function ChartOfAccountsPage({ language = "es" }) {
   // is a { code: name } lookup built once from GET /chart-account-templates
   // when a template is configured.
   const [chartTemplate, setChartTemplate]         = useState(null);
+  // NEW (2026-11-01, user request): the company's LEGAL name specifically
+  // -- every exported report in this app uses legalName, never tradeName,
+  // so a printed/exported document always shows the official registered
+  // name. Fetched alongside chartTemplate below (same /v1/companies/me
+  // call) rather than session.companyName, which prefers tradeName and
+  // is also not persisted across a page reload (see tenantSession.js).
+  const [companyLegalName, setCompanyLegalName] = useState(null);
   const [templateEntriesMap, setTemplateEntriesMap] = useState({});
 
   // NEW (Fase 4, Importar PUC Estandar): lets an empty Plan de Cuentas be
@@ -384,6 +400,13 @@ function ChartOfAccountsPage({ language = "es" }) {
       requiresCostCenter: "Requiere C. Costo",
       noRequiresThirdParty: "Sin Tercero",
       noRequiresCostCenter: "Sin C. Costo",
+      // NEW (2026-11-01, user request): export the full PUC to Excel/PDF,
+      // same pattern as the "Reportes" screens (reportExport.js) -- always
+      // the whole catalog regardless of active search/filters, per the
+      // user's explicit choice.
+      exportExcel: "Exportar Excel",
+      exportPdf: "Exportar PDF",
+      generatedAt: "Generado",
       // NEW (2026-10-31, user request): quick filter bar above the
       // table -- Naturaleza / Tipo de Cuenta / Requerimientos.
       filterAll: "Todas",
@@ -505,6 +528,9 @@ function ChartOfAccountsPage({ language = "es" }) {
       requiresCostCenter: "Requires Cost Center",
       noRequiresThirdParty: "No Third Party",
       noRequiresCostCenter: "No Cost Center",
+      exportExcel: "Export Excel",
+      exportPdf: "Export PDF",
+      generatedAt: "Generated",
       // NEW (2026-10-31, user request): quick filter bar above the
       // table -- Nature / Account Type / Requirements.
       filterAll: "All",
@@ -696,6 +722,7 @@ function ChartOfAccountsPage({ language = "es" }) {
       const response = await api.get("/v1/companies/me");
       if (response.data && response.data.success) {
         setChartTemplate(response.data.data?.chartTemplate || null);
+        setCompanyLegalName(response.data.data?.legalName || null);
       }
     } catch {
       // Non-critical -- see comment above.
@@ -1407,6 +1434,121 @@ function ChartOfAccountsPage({ language = "es" }) {
     return editingRow != null && hasChildren(editingRow.code, rows);
   }, [editingId, rows]);
 
+  // --- Export (2026-11-01, user request) ---
+  // Deliberately exports the WHOLE PUC every time, ignoring whatever
+  // search/quick-filter is active on screen right now -- confirmed
+  // explicitly with the user rather than assumed, since every other
+  // report in the app (reportExport.js consumers) exports what's
+  // currently visible. A sent-out/printed chart of accounts that quietly
+  // dropped rows because a filter happened to be on would be a much
+  // worse surprise than one that's occasionally longer than expected.
+  // Sorted defensively by code even though loadAccounts() already
+  // fetches in that order, so this never depends on load-order staying
+  // that way.
+  const exportRows = () =>
+    [...rows].sort((a, b) => (a.code || "").localeCompare(b.code || ""));
+
+  const resolveAccountClassLabel = (item) =>
+    getMetadataLabel(accountClasses, item.accountClass, language) || item.accountClass || "";
+
+  const resolveAccountCategoryLabel = (item) =>
+    item.accountCategoryDisplay ||
+    getMetadataLabel(accountCategories, item.accountCategory, language) ||
+    item.accountCategory ||
+    "";
+
+  const resolveFinancialStatementLabel = (item) =>
+    item.financialStatementDisplay ||
+    getMetadataLabel(financialStatements, item.financialStatement, language) ||
+    item.financialStatement ||
+    "";
+
+  const exportColumns = (item) => [
+    item.code,
+    // Indent the name by level so the hierarchy (class > group > account >
+    // sub-account) is still legible once this leaves the app's own
+    // collapsible tree view.
+    "  ".repeat(Math.max((item.level || 1) - 1, 0)) + (item.name || ""),
+    item.level ?? "",
+    item.nature === "D" ? t.debit : t.credit,
+    resolveAccountClassLabel(item),
+    resolveAccountCategoryLabel(item),
+    resolveFinancialStatementLabel(item),
+    item.active ? t.active : t.inactive,
+    item.postingAccount ? t.postingAccount : t.noPostingAccount,
+    item.requiresThirdParty ? t.requiresThirdParty : t.noRequiresThirdParty,
+    item.requiresCostCenter ? t.requiresCostCenter : t.noRequiresCostCenter,
+  ];
+
+  // FIX (2026-11-01, user report: exported header had no company name):
+  // session.companyName alone can be null right after a page reload --
+  // it is not persisted to localStorage and only gets resolved once
+  // AppHeader's own company-list fetch finishes (see tenantSession.js).
+  //
+  // UPDATED (2026-11-01, user request: every report must show legalName):
+  // companyLegalName (loaded above via /v1/companies/me, the company's
+  // true legal name) is now the primary source, matching every other
+  // report in the app (all backend-generated reports already send
+  // report.companyName as legalName). activeTenantId is kept only as a
+  // last-resort fallback for the brief window before that fetch
+  // resolves, or if it fails -- so the header is never blank, though it
+  // may briefly show tradeName/companyId instead of legalName.
+  const exportHeaderInfo = () => ({
+    companyName: companyLegalName || activeTenantId,
+    reportTitle: t.title,
+    generatedAtLabel: t.generatedAt,
+    generatedAt: nowLocalIso(),
+  });
+
+  const exportFileStem = () => `${t.title.replace(/\s+/g, "_")}_${todayLocalIso()}`;
+
+  const handleExportExcel = () => {
+    const data = exportRows();
+    if (!data.length) return;
+
+    const sheetRows = [
+      ...buildExcelHeaderRows(exportHeaderInfo()),
+      [t.code, t.name, t.level, t.nature, t.accountClass, t.accountCategory, t.financialStatement, t.active, t.postingAccount, t.requiresThirdParty, t.requiresCostCenter],
+      ...data.map(exportColumns),
+    ];
+
+    const sheet = XLSX.utils.aoa_to_sheet(sheetRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, t.title.slice(0, 31));
+    XLSX.writeFile(workbook, `${exportFileStem()}.xlsx`);
+  };
+
+  const handleExportPdf = () => {
+    const data = exportRows();
+    if (!data.length) return;
+
+    const doc = new jsPDF({ orientation: "landscape" });
+    const headerInfo = exportHeaderInfo();
+    const cursorY = addPdfReportHeader(doc, headerInfo);
+    const pageBeforeTable = doc.internal.getCurrentPageInfo().pageNumber;
+
+    autoTable(doc, {
+      startY: cursorY,
+      head: [[t.code, t.name, t.level, t.nature, t.accountClass, t.accountCategory, t.financialStatement, t.active, t.postingAccount, t.requiresThirdParty, t.requiresCostCenter]],
+      body: data.map(exportColumns),
+      styles: { fontSize: 7, cellPadding: 1.5 },
+      headStyles: { fillColor: [30, 41, 59] },
+      columnStyles: {
+        0: { cellWidth: 20 },
+        1: { cellWidth: 55 },
+        2: { cellWidth: 12, halign: "center" },
+      },
+      margin: { top: 20, bottom: 15 },
+      didDrawPage: (pageData) => {
+        if (pageData.pageNumber > pageBeforeTable) {
+          addPdfRunningHeader(doc, headerInfo);
+        }
+      },
+    });
+
+    doc.save(`${exportFileStem()}.pdf`);
+  };
+
   return (
     <div className="space-y-6 p-4">
       {toast && (
@@ -1707,6 +1849,16 @@ function ChartOfAccountsPage({ language = "es" }) {
                 the create panel from anywhere on the page -- see the
                 keydown effect below. Shown here so it's discoverable. */}
             <span className="hidden text-[11px] text-slate-400 sm:inline">{t.newShortcutHint}</span>
+            {rows.length > 0 && (
+              <>
+                <Button variant="secondary" size="sm" onClick={handleExportExcel}>
+                  {t.exportExcel}
+                </Button>
+                <Button variant="secondary" size="sm" onClick={handleExportPdf}>
+                  {t.exportPdf}
+                </Button>
+              </>
+            )}
             <Button variant="primary" onClick={openCreatePanel} title={`${t.new} ${t.newShortcutHint}`}>
               + {t.new}
             </Button>
