@@ -62,6 +62,16 @@ function AppShell() {
     localStorage.removeItem("erp_language");
   };
 
+  // Audit 2026-11-02 (M2): api.js fires "auth:expired" when the backend
+  // answers 401 (expired token, revoked access, inactive user/company).
+  // Logging out here sends the user back to the login screen instead of
+  // leaving every screen failing silently.
+  useEffect(() => {
+    const onSessionExpired = () => handleLogout();
+    window.addEventListener("auth:expired", onSessionExpired);
+    return () => window.removeEventListener("auth:expired", onSessionExpired);
+  });
+
   /**
    * Updates and synchronizes global localization flags.
    * @param {string} lang - The new language iso code ('es' | 'en').
