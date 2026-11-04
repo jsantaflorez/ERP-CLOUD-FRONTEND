@@ -132,7 +132,9 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
 
   // Resolve role hierarchy dynamically supporting both legacy integers and enterprise string tokens
   const userLevel = user?.level;
-  const isAuthorizedOperational = userLevel === "Administrator" || userLevel === "ADMIN" || (Number(userLevel) <= 3);
+  // "Accountant" (2026-11-04): ACCOUNTANT role -> operational menus only
+  // (entries, catalogs, reports); not periods or users. See utils/roleLevel.js.
+  const isAuthorizedOperational = userLevel === "Administrator" || userLevel === "ADMIN" || userLevel === "Accountant" || (Number(userLevel) <= 3);
   const isAuthorizedManagement  = userLevel === "Administrator" || userLevel === "ADMIN" || (Number(userLevel) <= 2);
 
   return (

@@ -5,6 +5,7 @@ import logo from "../logo/logo.png";
 import spain from "../logo/spain.png";
 import uk from "../logo/uk.png";
 import translations from "../translations";
+import { levelFromRoles } from "../utils/roleLevel";
 
 function Login({ onLogin, language, onLanguageChange }) {
   const [username, setUsername] = useState("");
@@ -116,9 +117,10 @@ function Login({ onLogin, language, onLanguageChange }) {
           // logic should ideally be updated to check the `roles` array
           // directly instead of this flattened string; flagging this as
           // a follow-up rather than changing Dashboard.jsx silently here.
-          level: Array.isArray(result.data.roles) && result.data.roles.includes("SYS_ADMIN")
-            ? "Administrator"
-            : "USER",
+          // FIX (2026-11-04): used to map ONLY SYS_ADMIN to "Administrator"
+          // and everything else to "USER", so COMPANY_ADMIN and ACCOUNTANT
+          // users saw an empty menu. See utils/roleLevel.js.
+          level: levelFromRoles(result.data.roles),
           active: true
         };
 

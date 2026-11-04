@@ -1,6 +1,7 @@
 // src/context/AuthContext.jsx
 import { createContext, useContext, useState, useCallback } from "react";
 import api from "../services/api";
+import { levelFromRoles } from "../utils/roleLevel";
 import {
   getActiveSession,
   setActiveSession,
@@ -73,6 +74,22 @@ export function AuthProvider({ children }) {
 
     if (nextSession.token) localStorage.setItem("token", nextSession.token);
     if (nextSession.companyId) localStorage.setItem("companyId", nextSession.companyId);
+
+    // FIX (2026-11-04): roles are per company. AppHeader reloads the page
+    // after switching and App.jsx restores "erp_user" from localStorage, so
+    // without this the menu kept the PREVIOUS company's level.
+    try {
+      const savedUser = JSON.parse(localStorage.getItem("erp_user") || "null");
+      if (savedUser && Array.isArray(data?.roles)) {
+        localStorage.setItem("erp_user", JSON.stringify({
+          ...savedUser,
+          roles: data.roles,
+          level: levelFromRoles(data.roles),
+        }));
+      }
+    } catch {
+      // corrupted erp_user: the next login rebuilds it
+    }
 
     return data;
   }, []);
