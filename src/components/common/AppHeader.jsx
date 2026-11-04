@@ -5,6 +5,7 @@ import api from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
 import Button from "../ui/Button";
+import { roleLabel, sortRoles } from "../../utils/roleLevel";
 
 // NEW (2026-10-28, Multiempresa Fase 2): the static tenant badge below
 // became a live company switcher. Deliberately self-contained -- it
@@ -42,6 +43,9 @@ const LABELS = {
     confirmTo: "A",
     confirmButton: "Sí, cambiar de empresa",
     cancelButton: "Cancelar",
+    activeUser: "Usuario",
+    roleInCompany: "Rol en esta empresa",
+    noRole: "Sin rol",
   },
   en: {
     switching: "Switching company...",
@@ -54,11 +58,49 @@ const LABELS = {
     confirmTo: "To",
     confirmButton: "Yes, switch company",
     cancelButton: "Cancel",
+    activeUser: "User",
+    roleInCompany: "Role in this company",
+    noRole: "No role",
   },
 };
 
 function companyLabel(c) {
   return `${c.tradeName || c.legalName}${c.taxId ? ` -- NIT ${c.taxId}` : ""}`;
+}
+
+function initials(name) {
+  const parts = String(name || "").replace(/@.*/, "").split(/[\s._-]+/).filter(Boolean);
+  return ((parts[0]?.[0] || "") + (parts[1]?.[0] || "")).toUpperCase() || "?";
+}
+
+// NEW (2026-11-04): session context block -- WHO is working (name/email)
+// and WITH WHICH ROLE in the active company. Reads AuthContext's session,
+// which Login fills and switchCompany() refreshes with the new company's
+// roles (persisted by tenantSession, so it also survives the reload that
+// follows a switch). Purely informative: the backend enforces permissions.
+function SessionUserBlock({ session, t, language }) {
+  const name = session?.username || session?.email;
+  if (!name) return null;
+  const roles = sortRoles(session?.roles);
+  const mainRole = roles.length ? roleLabel(roles[0], language) : t.noRole;
+  const allRoles = roles.map((r) => roleLabel(r, language)).join(", ");
+  const tooltip = [session?.email, allRoles && `${t.roleInCompany}: ${allRoles}`].filter(Boolean).join("\n");
+
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" title={tooltip}>
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-white">
+        {initials(name)}
+      </span>
+      <div className="flex min-w-0 flex-col leading-tight">
+        <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{t.activeUser}</span>
+        <span className="max-w-[14rem] truncate text-sm font-bold text-slate-800">{name}</span>
+        <span className="mt-0.5 w-fit rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
+          {mainRole}
+          {roles.length > 1 && <span className="ml-1 font-semibold text-emerald-600">+{roles.length - 1}</span>}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function AppHeader({ title, subtitle, actions, tenantId, language = "es" }) {
@@ -151,6 +193,11 @@ function AppHeader({ title, subtitle, actions, tenantId, language = "es" }) {
   // loaded for some reason -- still informative, just less pretty).
   const currentCompany = companies.find((c) => String(c.id) === String(session?.companyId));
   const currentLabel = currentCompany ? companyLabel(currentCompany) : (tenantId || session?.companyId);
+  // Name shown when there is nothing to switch to (single-company users):
+  // the real company name, never the bare numeric id when we can avoid it.
+  const staticCompanyLabel = currentCompany
+    ? companyLabel(currentCompany)
+    : (session?.companyName || tenantId || session?.companyId);
 
   return (
     <div className="relative mb-6 flex items-center justify-between rounded-2xl bg-white px-6 py-4 shadow-sm ring-1 ring-slate-200">
@@ -171,7 +218,9 @@ function AppHeader({ title, subtitle, actions, tenantId, language = "es" }) {
       </div>
 
       {/* -- Bloque derecho: Banner de Compania (llamativo a proposito) + Acciones -- */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-end gap-3">
+
+        <SessionUserBlock session={session} t={t} language={language} />
 
         {canSwitch ? (
           <div className="flex items-center gap-2 rounded-xl border-2 border-indigo-800 bg-indigo-700 px-4 py-2 shadow-md">
@@ -196,14 +245,14 @@ function AppHeader({ title, subtitle, actions, tenantId, language = "es" }) {
             </div>
           </div>
         ) : (
-          tenantId && (
+          staticCompanyLabel && (
             <div className="flex items-center gap-2 rounded-xl border-2 border-indigo-800 bg-indigo-700 px-4 py-2 shadow-md">
               <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
               <div className="flex flex-col leading-tight">
                 <span className="text-[9px] font-bold uppercase tracking-widest text-indigo-200">
                   {t.activeCompany}
                 </span>
-                <span className="text-sm font-black text-white">{tenantId}</span>
+                <span className="text-sm font-black text-white">{staticCompanyLabel}</span>
               </div>
             </div>
           )

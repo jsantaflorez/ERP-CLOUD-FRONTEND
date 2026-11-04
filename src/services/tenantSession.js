@@ -19,11 +19,40 @@
 // companyName is not persisted to localStorage today (see AuthContext's
 // login()), so it starts null on reload until AppHeader's own company
 // list fetch resolves the label again.
+//
+// UPDATED (2026-11-04): the display metadata (user name, email, roles and
+// company name) is now persisted under "erp_session_meta", so the header's
+// session block (AppHeader) survives a page reload -- including the reload
+// AppHeader itself triggers after a company switch. Only display data lives
+// there; authorization is always decided by the backend from the JWT.
+const META_KEY = 'erp_session_meta';
+
+function readMeta() {
+  try {
+    return JSON.parse(localStorage.getItem(META_KEY) || 'null') || {};
+  } catch {
+    return {};
+  }
+}
+
+function persistMeta(session) {
+  try {
+    const { companyName, username, email, roles, role } = session;
+    localStorage.setItem(META_KEY, JSON.stringify({ companyName, username, email, roles, role }));
+  } catch {
+    // storage unavailable (private mode, quota): the header falls back to ids
+  }
+}
+
+const meta = readMeta();
+
 let activeSession = {
   companyId: localStorage.getItem('companyId') || null,
-  companyName: null,
-  username: null,
-  role: null,
+  companyName: meta.companyName ?? null,
+  username: meta.username ?? null,
+  email: meta.email ?? null,
+  roles: Array.isArray(meta.roles) ? meta.roles : [],
+  role: meta.role ?? null,
   token: localStorage.getItem('token') || null,
 };
 
@@ -36,6 +65,7 @@ let activeSession = {
  */
 export function setActiveSession(session) {
   activeSession = { ...activeSession, ...session };
+  persistMeta(activeSession);
 }
 
 /**
@@ -56,7 +86,14 @@ export function clearActiveSession() {
     companyId: null,
     companyName: null,
     username: null,
+    email: null,
+    roles: [],
     role: null,
     token: null,
   };
+  try {
+    localStorage.removeItem(META_KEY);
+  } catch {
+    // ignore
+  }
 }

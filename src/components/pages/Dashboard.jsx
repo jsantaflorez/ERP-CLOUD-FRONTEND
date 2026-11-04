@@ -6,6 +6,7 @@ import translations from "../../translations";
 
 import UserManagementPage from "./UserManagementPage";
 import AppHeader from "../common/AppHeader";
+import { roleLabel, sortRoles } from "../../utils/roleLevel";
 import DocumentTypePage from "./DocumentTypePage";
 import CostCenterPage from "./CostCenterPage";
 import ChartOfAccountPage from "./ChartOfAccountPage";
@@ -344,7 +345,8 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
               </p>
 
               <p className="mt-2 text-slate-700">
-                <b>{language === "es" ? "Nivel" : "Level"}:</b> {user.level}
+                <b>{language === "es" ? "Rol" : "Role"}:</b>{" "}
+                {sortRoles(user.roles).map((r) => roleLabel(r, language)).join(", ") || user.level}
               </p>
             </div>
           </>

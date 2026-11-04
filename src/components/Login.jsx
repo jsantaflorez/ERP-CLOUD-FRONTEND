@@ -150,6 +150,8 @@ function Login({ onLogin, language, onLanguageChange }) {
           companyId: result.data.companyId != null ? String(result.data.companyId) : null,
           companyName: matchedCompany ? (matchedCompany.tradeName || matchedCompany.legalName) : null,
           username: mappedUser.username,
+          email: result.data.email || cleanUser,
+          roles: mappedUser.roles,
           role: mappedUser.level,
         });
 

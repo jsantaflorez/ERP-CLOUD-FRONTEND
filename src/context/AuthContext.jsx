@@ -67,6 +67,10 @@ export function AuthProvider({ children }) {
       token: data?.token,
       companyId: data?.companyId != null ? String(data.companyId) : String(newCompanyId),
       companyName: newCompanyName ?? null,
+      // Roles are per company: the header's role badge must show the NEW
+      // company's roles, not the ones from the company we just left.
+      roles: Array.isArray(data?.roles) ? data.roles : [],
+      role: levelFromRoles(data?.roles),
     };
 
     setActiveSession(nextSession);
