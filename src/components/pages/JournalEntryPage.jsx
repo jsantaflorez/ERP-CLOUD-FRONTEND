@@ -175,6 +175,10 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   const [toast, setToast] = useState(null);
   // null = creating a new entry; otherwise the id of the entry being edited.
   const [editingId, setEditingId] = useState(null);
+  // 2026-11-04: third parties that were already on the entry being edited.
+  // They stay selectable even if deactivated afterwards (the backend allows
+  // keeping them on that entry, but never using them in NEW vouchers).
+  const [keptThirdPartyIds, setKeptThirdPartyIds] = useState(() => new Set());
   const [loadingEntry, setLoadingEntry] = useState(false);
 
   // Annulment modal state -- a separate lightweight flow from the main
@@ -530,7 +534,14 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
     () => accounts.filter((a) => a.active && a.postingAccount),
     [accounts]
   );
-  const activeThirdParties = useMemo(() => thirdParties.filter((tp) => tp.active), [thirdParties]);
+  // Active third parties, plus -- only while EDITING -- the inactive ones that
+  // were already on that entry, labelled "(inactivo)" so the user sees why.
+  const activeThirdParties = useMemo(() => {
+    const inactiveTag = language === "es" ? " (inactivo)" : " (inactive)";
+    return thirdParties
+      .filter((tp) => tp.active || (editingId && keptThirdPartyIds.has(String(tp.id))))
+      .map((tp) => (tp.active ? tp : { ...tp, legalDisplayName: `${tp.legalDisplayName}${inactiveTag}` }));
+  }, [thirdParties, editingId, keptThirdPartyIds, language]);
   // NEW (2026-10-14): maps a chart-of-accounts id to its parameterized
   // Tax, if any -- enforced unique by the backend (uk_tax_company_account,
   // one Tax per account), so a plain object keyed by accountId is enough.
@@ -787,6 +798,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       setForm(loadedForm);
       pristineFormRef.current = JSON.stringify(loadedForm);
       setEditingId(entry.id);
+      setKeptThirdPartyIds(new Set(loadedForm.items.map((i) => i.thirdPartyId).filter(Boolean)));
       setPeriodClosed(Boolean(data.periodClosed));
     } catch (error) {
       showToast(getApiErrorMessage(error, language, t.errorConn), "error");
@@ -844,6 +856,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       setForm(loadedForm);
       pristineFormRef.current = JSON.stringify(loadedForm);
       setEditingId(id);
+      setKeptThirdPartyIds(new Set(loadedForm.items.map((i) => i.thirdPartyId).filter(Boolean)));
       setPeriodClosed(Boolean(data.periodClosed));
     } catch (error) {
       showToast(getApiErrorMessage(error, language, t.errorConn), "error");
