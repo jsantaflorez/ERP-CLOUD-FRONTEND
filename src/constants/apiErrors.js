@@ -74,7 +74,9 @@ export const API_ERROR_LABELS = {
     // authenticated user tried to switch into a company they have no
     // UserRole for, or their account is temporarily locked.
     NO_ACCESS_TO_COMPANY: "No tienes acceso a la empresa seleccionada.",
-    ACCOUNT_LOCKED: "Tu cuenta está temporalmente bloqueada.",
+    ACCOUNT_LOCKED: "Tu cuenta está bloqueada temporalmente por varios intentos fallidos. Inténtalo de nuevo en 15 minutos.",
+    INVALID_CREDENTIALS: "Usuario o contraseña incorrectos.",
+    NETWORK_ERROR: "No se pudo conectar con el servidor. Verifica tu conexión e inténtalo de nuevo.",
     // Multiempresa Fase 3 (UserManagementController/UserManagementService).
     PASSWORD_TOO_SHORT: "La contraseña debe tener al menos 6 caracteres.",
     ROLE_NOT_IN_COMPANY: "El rol seleccionado no pertenece a esta empresa.",
@@ -170,7 +172,9 @@ export const API_ERROR_LABELS = {
     PRIOR_YEAR_NOT_CLOSED: "Can't close this year: the prior year must be closed first.",
     NEXT_YEAR_MUST_BE_OPEN_BEFORE_REOPEN: "Can't reopen this year because the following year is still closed. Reopen the following year first.",
     NO_ACCESS_TO_COMPANY: "You don't have access to the selected company.",
-    ACCOUNT_LOCKED: "Your account is temporarily locked.",
+    ACCOUNT_LOCKED: "Your account is temporarily locked after several failed attempts. Try again in 15 minutes.",
+    INVALID_CREDENTIALS: "Incorrect username or password.",
+    NETWORK_ERROR: "Could not reach the server. Check your connection and try again.",
     PASSWORD_TOO_SHORT: "Password must be at least 6 characters.",
     ROLE_NOT_IN_COMPANY: "The selected role doesn't belong to this company.",
     // Pre-production audit 2026-11-02

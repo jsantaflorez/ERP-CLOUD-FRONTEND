@@ -20,9 +20,13 @@ export async function loginRequest(username, password, companyId) {
     });
     return response.data;
   } catch (error) {
-    // Extracts backend error message or defaults to a generic failure message
-    const errorMessage = error.response?.data?.message || 'Server error during authentication';
-    throw new Error(errorMessage);
+    // The backend answers with a stable CODE in `message` (INVALID_CREDENTIALS,
+    // ACCOUNT_LOCKED, TOO_MANY_REQUESTS...); Login.jsx translates it to the
+    // active language. No response at all = the server could not be reached.
+    const code = error.response ? (error.response.data?.message || 'INVALID_CREDENTIALS') : 'NETWORK_ERROR';
+    const err = new Error(code);
+    err.code = code;
+    throw err;
   }
 }
 

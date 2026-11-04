@@ -6,6 +6,7 @@ import spain from "../logo/spain.png";
 import uk from "../logo/uk.png";
 import translations from "../translations";
 import { levelFromRoles } from "../utils/roleLevel";
+import { API_ERROR_LABELS } from "../constants/apiErrors";
 
 function Login({ onLogin, language, onLanguageChange }) {
   const [username, setUsername] = useState("");
@@ -29,6 +30,12 @@ function Login({ onLogin, language, onLanguageChange }) {
   const { login } = useAuth();
 
   const t = translations[language] || translations.es;
+
+  // FIX (2026-11-04): login errors used to show the backend's raw English
+  // text. The backend now sends a stable code; translate it to the active
+  // language, falling back to the generic "wrong username or password".
+  const authErrorMessage = (code) =>
+    (API_ERROR_LABELS[language] || API_ERROR_LABELS.es)[code] || t.invalidCredentials;
 
   /**
    * Looks up which companies the typed email can log into, once the
@@ -152,11 +159,11 @@ function Login({ onLogin, language, onLanguageChange }) {
         // Dashboard, and to display user info in the UI).
         onLogin(mappedUser);
       } else {
-        setError(result.message || t.invalidCredentials);
+        setError(authErrorMessage(result.message));
       }
     } catch (err) {
       // Captures backend exceptions or network failures safely
-      setError(err.message || t.invalidCredentials);
+      setError(authErrorMessage(err.code || err.message));
     } finally {
       setLoading(false);
     }
