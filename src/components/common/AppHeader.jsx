@@ -6,6 +6,7 @@ import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
 import Button from "../ui/Button";
 import { roleLabel, sortRoles } from "../../utils/roleLevel";
+import { useLogoutRequest } from "../../context/logoutRequest";
 
 // NEW (2026-10-28, Multiempresa Fase 2): the static tenant badge below
 // became a live company switcher. Deliberately self-contained -- it
@@ -44,6 +45,7 @@ const LABELS = {
     confirmButton: "Sí, cambiar de empresa",
     cancelButton: "Cancelar",
     activeUser: "Usuario",
+    logout: "Cerrar sesión",
     roleInCompany: "Rol en esta empresa",
     noRole: "Sin rol",
   },
@@ -59,6 +61,7 @@ const LABELS = {
     confirmButton: "Yes, switch company",
     cancelButton: "Cancel",
     activeUser: "User",
+    logout: "Log out",
     roleInCompany: "Role in this company",
     noRole: "No role",
   },
@@ -78,7 +81,7 @@ function initials(name) {
 // which Login fills and switchCompany() refreshes with the new company's
 // roles (persisted by tenantSession, so it also survives the reload that
 // follows a switch). Purely informative: the backend enforces permissions.
-function SessionUserBlock({ session, t, language }) {
+function SessionUserBlock({ session, t, language, onLogout }) {
   const name = session?.username || session?.email;
   if (!name) return null;
   const roles = sortRoles(session?.roles);
@@ -87,7 +90,8 @@ function SessionUserBlock({ session, t, language }) {
   const tooltip = [session?.email, allRoles && `${t.roleInCompany}: ${allRoles}`].filter(Boolean).join("\n");
 
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" title={tooltip}>
+    <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+      <div className="flex items-center gap-3" title={tooltip}>
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-white">
         {initials(name)}
       </span>
@@ -96,15 +100,34 @@ function SessionUserBlock({ session, t, language }) {
         <span className="max-w-[14rem] truncate text-sm font-bold text-slate-800">{name}</span>
         <span className="mt-0.5 w-fit rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
           {mainRole}
-          {roles.length > 1 && <span className="ml-1 font-semibold text-emerald-600">+{roles.length - 1}</span>}
+          {roles.length > 1 && <span className="ml-1 font-semibold text-emerald-700">+{roles.length - 1}</span>}
         </span>
       </div>
+      </div>
+
+      {/* UI 2026-11-04: "Cerrar sesión" junto al usuario, donde se busca
+          primero; usa el mismo handleLogout del menú (vía contexto), que
+          avisa si hay un comprobante sin guardar. */}
+      {onLogout && (
+        <button
+          type="button"
+          onClick={onLogout}
+          className="flex items-center gap-1.5 self-stretch border-l border-slate-200 pl-3 text-xs font-semibold text-slate-600 transition-colors hover:text-red-700"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fillRule="evenodd" d="M3 4.25A2.25 2.25 0 015.25 2h5.5A2.25 2.25 0 0113 4.25v2a.75.75 0 01-1.5 0v-2a.75.75 0 00-.75-.75h-5.5a.75.75 0 00-.75.75v11.5c0 .41.34.75.75.75h5.5a.75.75 0 00.75-.75v-2a.75.75 0 011.5 0v2A2.25 2.25 0 0110.75 18h-5.5A2.25 2.25 0 013 15.75V4.25z" clipRule="evenodd" />
+            <path fillRule="evenodd" d="M19 10a.75.75 0 00-.22-.53l-3-3a.75.75 0 10-1.06 1.06l1.72 1.72H7.75a.75.75 0 000 1.5h8.69l-1.72 1.72a.75.75 0 101.06 1.06l3-3A.75.75 0 0019 10z" clipRule="evenodd" />
+          </svg>
+          {t.logout}
+        </button>
+      )}
     </div>
   );
 }
 
 function AppHeader({ title, subtitle, actions, tenantId, language = "es" }) {
   const { session, switchCompany } = useAuth();
+  const requestLogout = useLogoutRequest();
   const [companies, setCompanies] = useState([]);
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState(null);
@@ -220,7 +243,7 @@ function AppHeader({ title, subtitle, actions, tenantId, language = "es" }) {
       {/* -- Bloque derecho: Banner de Compania (llamativo a proposito) + Acciones -- */}
       <div className="flex flex-wrap items-center justify-end gap-3">
 
-        <SessionUserBlock session={session} t={t} language={language} />
+        <SessionUserBlock session={session} t={t} language={language} onLogout={requestLogout} />
 
         {canSwitch ? (
           <div className="flex items-center gap-2 rounded-xl border-2 border-indigo-800 bg-indigo-700 px-4 py-2 shadow-md">

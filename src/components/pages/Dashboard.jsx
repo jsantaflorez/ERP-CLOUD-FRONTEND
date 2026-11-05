@@ -6,6 +6,7 @@ import translations from "../../translations";
 
 import UserManagementPage from "./UserManagementPage";
 import AppHeader from "../common/AppHeader";
+import { LogoutRequestContext } from "../../context/logoutRequest";
 import { roleLabel, sortRoles } from "../../utils/roleLevel";
 import DocumentTypePage from "./DocumentTypePage";
 import CostCenterPage from "./CostCenterPage";
@@ -139,16 +140,21 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
   const isAuthorizedManagement  = userLevel === "Administrator" || userLevel === "ADMIN" || (Number(userLevel) <= 2);
 
   return (
+    <LogoutRequestContext.Provider value={handleLogout}>
     <div className="flex min-h-screen bg-slate-50">
       {/* SIDEBAR NAVIGATION */}
-      <aside className="flex w-64 flex-col justify-between bg-slate-900 p-5 text-white">
-        <div>
+      {/* UI 2026-11-04: el menú queda fijo a la altura de la ventana (sticky +
+          h-screen). Solo la lista de opciones se desplaza, así "Cerrar sesión"
+          siempre está visible abajo, sin importar el largo de la página ni
+          cuántos submenús de Reportes estén abiertos. */}
+      <aside className="sticky top-0 flex h-screen w-64 shrink-0 flex-col bg-slate-900 p-5 text-white">
+        <div className="flex min-h-0 flex-1 flex-col">
           <div className="mb-4 flex justify-center">
             <img src={logo} alt="ERP Logo" className="h-16" />
           </div>
 
           <h2 className="text-center text-xl font-bold">{t.systemName}</h2>
-          <p className="mb-6 text-center text-sm text-slate-500">
+          <p className="mb-6 text-center text-sm text-slate-400">
             {t.systemSubtitle}
           </p>
 
@@ -170,7 +176,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
           </div>
 
           {/* NAVIGATION LINKS */}
-          <nav className="flex flex-col gap-3">
+          <nav className="-mr-2 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-2">
             <button
               onClick={() => changeView("dashboard")}
               className={`rounded-xl px-4 py-3 text-left transition-colors ${
@@ -323,13 +329,19 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
           </nav>
         </div>
 
-        {/* SESSION LOGOUT */}
-        <button
-          onClick={handleLogout}
-          className="rounded-xl bg-red-600 px-4 py-3 font-medium transition-colors hover:bg-red-700"
-        >
-          {t.logout}
-        </button>
+        {/* SESSION LOGOUT -- anclado al pie del menú, siempre visible. */}
+        <div className="mt-4 shrink-0 border-t border-slate-700 pt-4">
+          <button
+            onClick={handleLogout}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-700 px-4 py-3 font-medium transition-colors hover:bg-red-800"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fillRule="evenodd" d="M3 4.25A2.25 2.25 0 015.25 2h5.5A2.25 2.25 0 0113 4.25v2a.75.75 0 01-1.5 0v-2a.75.75 0 00-.75-.75h-5.5a.75.75 0 00-.75.75v11.5c0 .41.34.75.75.75h5.5a.75.75 0 00.75-.75v-2a.75.75 0 011.5 0v2A2.25 2.25 0 0110.75 18h-5.5A2.25 2.25 0 013 15.75V4.25z" clipRule="evenodd" />
+              <path fillRule="evenodd" d="M19 10a.75.75 0 00-.22-.53l-3-3a.75.75 0 10-1.06 1.06l1.72 1.72H7.75a.75.75 0 000 1.5h8.69l-1.72 1.72a.75.75 0 101.06 1.06l3-3A.75.75 0 0019 10z" clipRule="evenodd" />
+            </svg>
+            {t.logout}
+          </button>
+        </div>
       </aside>
 
       {/* CORE WORKSPACE CONTENT VIEWPORT */}
@@ -438,6 +450,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
         )}
       </main>
     </div>
+    </LogoutRequestContext.Provider>
   );
 }
 
