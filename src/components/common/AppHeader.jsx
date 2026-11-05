@@ -92,7 +92,7 @@ function SessionUserBlock({ session, t, language }) {
         {initials(name)}
       </span>
       <div className="flex min-w-0 flex-col leading-tight">
-        <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{t.activeUser}</span>
+        <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500">{t.activeUser}</span>
         <span className="max-w-[14rem] truncate text-sm font-bold text-slate-800">{name}</span>
         <span className="mt-0.5 w-fit rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
           {mainRole}
@@ -265,7 +265,7 @@ function AppHeader({ title, subtitle, actions, tenantId, language = "es" }) {
       </div>
 
       {switchError && (
-        <p className="absolute -bottom-5 right-6 text-xs text-red-500">{switchError}</p>
+        <p className="absolute -bottom-5 right-6 text-xs text-red-700">{switchError}</p>
       )}
 
       {/* NEW: confirmation modal -- gates every company switch behind an
@@ -286,7 +286,7 @@ function AppHeader({ title, subtitle, actions, tenantId, language = "es" }) {
             <div className="flex flex-col gap-4 px-6 py-5">
               <div className="flex flex-col gap-2 text-sm">
                 <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                     {t.confirmFrom}
                   </span>
                   <span className="font-semibold text-slate-600">{currentLabel}</span>

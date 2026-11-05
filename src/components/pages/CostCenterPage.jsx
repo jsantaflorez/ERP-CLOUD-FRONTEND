@@ -288,7 +288,7 @@ function CostCenterPage({ language = "es" }) {
     <div className="space-y-6 p-4">
       {toast && (
         <div className={`fixed bottom-6 right-6 z-[100] rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-xl ${
-          toast.type === "error" ? "bg-red-500" : "bg-emerald-500"
+          toast.type === "error" ? "bg-red-700" : "bg-emerald-700"
         }`}>
           {toast.msg}
         </div>
@@ -300,7 +300,7 @@ function CostCenterPage({ language = "es" }) {
         tenantId={activeTenantId}
         actions={
           <>
-            <span className="hidden text-[11px] text-slate-400 sm:inline">{t.newShortcutHint}</span>
+            <span className="hidden text-[11px] text-slate-500 sm:inline">{t.newShortcutHint}</span>
             <Button variant="primary" onClick={openCreatePanel} title={`${t.new} ${t.newShortcutHint}`}>
               + {t.new}
             </Button>
@@ -318,11 +318,11 @@ function CostCenterPage({ language = "es" }) {
 
       <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-x-auto">
         {loading ? (
-          <div className="flex items-center justify-center py-20 text-slate-400 text-sm">{t.loading}</div>
+          <div className="flex items-center justify-center py-20 text-slate-500 text-sm">{t.loading}</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
                 {[t.code, t.name, t.parent, t.level, t.active, t.allowsMovement, t.actions].map((h) => (
                   <th key={h} className="px-5 py-4">{h}</th>
                 ))}
@@ -330,13 +330,13 @@ function CostCenterPage({ language = "es" }) {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filteredRows.length === 0 ? (
-                <tr><td colSpan={7} className="py-16 text-center text-slate-400">{t.noResults}</td></tr>
+                <tr><td colSpan={7} className="py-16 text-center text-slate-500">{t.noResults}</td></tr>
               ) : (
                 filteredRows.map((r) => (
                   <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">
                     <td className="px-5 py-4 font-bold text-slate-700">{r.code}</td>
                     <td className="px-5 py-4 text-slate-600">{r.name}</td>
-                    <td className="px-5 py-4 text-slate-400 text-xs">
+                    <td className="px-5 py-4 text-slate-500 text-xs">
                       {r.parentId
                         ? rows.find((p) => p.id === r.parentId)?.name ?? "—"
                         : <span className="text-slate-300">Raíz</span>
@@ -397,7 +397,7 @@ function CostCenterPage({ language = "es" }) {
               <h2 className="text-xl font-black text-slate-800">
                 {editingIdRef.current ? t.edit : t.new} — {t.title}
               </h2>
-              <button onClick={closePanel} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+              <button onClick={closePanel} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
             </div>
 
             <form onSubmit={handleSave} className="flex-1 px-8 py-6 flex flex-col gap-5">
@@ -441,7 +441,7 @@ function CostCenterPage({ language = "es" }) {
                   which the backend will reject on the PARENT's own record. */}
               {form.parentId !== "" &&
                 rows.find((r) => String(r.id) === String(form.parentId))?.allowsMovement && (
-                  <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                     {t.parentAllowsMovementWarning}
                   </p>
                 )}
@@ -462,7 +462,7 @@ function CostCenterPage({ language = "es" }) {
                       toggle is disabled and explained here instead of
                       letting the user find out only after a failed save. */}
                   {editingIdRef.current != null && hasChildren(editingIdRef.current, rows) && (
-                    <p className="text-[11px] text-slate-400 max-w-[220px]">
+                    <p className="text-[11px] text-slate-500 max-w-[220px]">
                       {t.movementBlockedByChildren}
                     </p>
                   )}
@@ -493,9 +493,9 @@ const ccInputCls = (err) =>
 function CcField({ label, error, children }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</label>
+      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{label}</label>
       {children}
-      {error && <span className="text-[10px] text-red-500">{error}</span>}
+      {error && <span className="text-[10px] text-red-700">{error}</span>}
     </div>
   );
 }

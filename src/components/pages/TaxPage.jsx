@@ -466,7 +466,7 @@ function TaxPage({ language = "es" }) {
       {toast && (
         <div
           className={`fixed bottom-6 right-6 z-[100] rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-xl transition-all ${
-            toast.type === "error" ? "bg-red-500" : "bg-emerald-500"
+            toast.type === "error" ? "bg-red-700" : "bg-emerald-700"
           }`}
         >
           {toast.msg}
@@ -479,7 +479,7 @@ function TaxPage({ language = "es" }) {
         tenantId={activeTenantId}
         actions={
           <>
-            <span className="hidden text-[11px] text-slate-400 sm:inline">{t.newShortcutHint}</span>
+            <span className="hidden text-[11px] text-slate-500 sm:inline">{t.newShortcutHint}</span>
             <Button variant="primary" onClick={openCreatePanel} title={`${t.new} ${t.newShortcutHint}`}>
               + {t.new}
             </Button>
@@ -497,13 +497,13 @@ function TaxPage({ language = "es" }) {
 
       <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-x-auto">
         {loading ? (
-          <div className="flex items-center justify-center py-20 text-slate-400 text-sm">
+          <div className="flex items-center justify-center py-20 text-slate-500 text-sm">
             {t.loading}
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
                 {[t.code, t.name, t.category, t.type, t.rate, t.minimumBase, t.sign, t.account, t.active, t.requiresBase, t.actions].map((h) => (
                   <th key={h} className="px-5 py-4">{h}</th>
                 ))}
@@ -512,7 +512,7 @@ function TaxPage({ language = "es" }) {
             <tbody className="divide-y divide-gray-50">
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-16 text-center text-slate-400">
+                  <td colSpan={11} className="py-16 text-center text-slate-500">
                     {t.noResults}
                   </td>
                 </tr>
@@ -589,7 +589,7 @@ function TaxPage({ language = "es" }) {
               </h2>
               <button
                 onClick={closePanel}
-                className="text-slate-400 hover:text-slate-700 text-2xl leading-none"
+                className="text-slate-500 hover:text-slate-700 text-2xl leading-none"
               >
                 ×
               </button>
@@ -659,7 +659,7 @@ function TaxPage({ language = "es" }) {
                 />
                 {form.category && TYPE_SUGGESTIONS[form.category] && (
                   <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                    <span className="text-[10px] text-slate-400">{t.typeSuggestionsHint}</span>
+                    <span className="text-[10px] text-slate-500">{t.typeSuggestionsHint}</span>
                     {TYPE_SUGGESTIONS[form.category].map((suggestion) => (
                       <button
                         key={suggestion}
@@ -689,7 +689,7 @@ function TaxPage({ language = "es" }) {
                   <option value="C">C - {t.credit}</option>
                 </select>
                 {form.accountId && (
-                  <span className="text-[10px] text-slate-400">{t.signSuggestedHint}</span>
+                  <span className="text-[10px] text-slate-500">{t.signSuggestedHint}</span>
                 )}
               </Field>
 
@@ -705,7 +705,7 @@ function TaxPage({ language = "es" }) {
                     placeholder="Ej: 19 o 0.966"
                     className={`${inputCls(errors.rate)} font-mono pr-6`}
                   />
-                  <span className="pointer-events-none absolute right-1 bottom-3 text-sm text-slate-400">
+                  <span className="pointer-events-none absolute right-1 bottom-3 text-sm text-slate-500">
                     %
                   </span>
                 </div>
@@ -784,11 +784,11 @@ const inputCls = (err) =>
 function Field({ label, error, children }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
         {label}
       </label>
       {children}
-      {error && <span className="text-[10px] text-red-500">{error}</span>}
+      {error && <span className="text-[10px] text-red-700">{error}</span>}
     </div>
   );
 }

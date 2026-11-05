@@ -135,7 +135,7 @@ function CostCenterQuickCreateModal({ language = "es", rows, onCreated, onClose 
       <div className="relative w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
         <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between">
           <h2 className="text-lg font-black text-slate-800">{t.title}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
         </div>
 
         <form onSubmit={handleSave} className="px-6 py-5 flex flex-col gap-4">
@@ -183,7 +183,7 @@ function CostCenterQuickCreateModal({ language = "es", rows, onCreated, onClose 
               <CcToggle name="allowsMovement" checked={form.allowsMovement} onChange={handleChange} label={t.allowsMovement} color="blue" />
             </div>
             {!form.allowsMovement && (
-              <p className="text-[11px] text-amber-600">{t.postingHint}</p>
+              <p className="text-[11px] text-amber-700">{t.postingHint}</p>
             )}
           </div>
 
@@ -207,9 +207,9 @@ const ccInputCls = (err) =>
 function CcField({ label, error, children }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</label>
+      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{label}</label>
       {children}
-      {error && <span className="text-[10px] text-red-500">{error}</span>}
+      {error && <span className="text-[10px] text-red-700">{error}</span>}
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
+import Alert from "../ui/Alert";
+import { inputClass, table as tbl, card } from "../ui/tokens";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
@@ -263,7 +265,7 @@ function TrialBalancePage({ language = "es" }) {
         className="flex flex-wrap items-end gap-4 rounded-xl border border-gray-100 bg-white p-5 shadow-sm"
       >
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.asOfDate}
           </label>
           <input
@@ -271,7 +273,7 @@ function TrialBalancePage({ language = "es" }) {
             name="asOfDate"
             value={asOfDate}
             onChange={(e) => setAsOfDate(e.target.value)}
-            className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+            className={inputClass()}
           />
         </div>
 
@@ -281,16 +283,14 @@ function TrialBalancePage({ language = "es" }) {
       </form>
 
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {error}
-        </div>
+        <Alert tone="error">{error}</Alert>
       )}
 
       {report && (
         <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             {report.generatedAt || report.companyName ? (
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-500">
                 {report.companyName && <strong className="text-slate-500">{report.companyName}</strong>}
                 {report.companyName && report.generatedAt && " — "}
                 {report.generatedAt && `${t.generatedAt}: ${formatGeneratedAt(report.generatedAt)}`}
@@ -311,79 +311,65 @@ function TrialBalancePage({ language = "es" }) {
             )}
           </div>
 
-          <div
-            className={`rounded-xl border px-4 py-3 text-sm font-medium ${
-              report.balanced
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                : "border-red-200 bg-red-50 text-red-700"
-            }`}
-          >
+          <Alert tone={report.balanced ? "success" : "error"}>
             {report.balanced ? t.balanced : t.outOfBalance}
-          </div>
+          </Alert>
 
           {(!report.lines || report.lines.length === 0) && (
-            <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-slate-400 shadow-sm">
+            <div className={`${card} ${tbl.empty}`}>
               {t.noResults}
             </div>
           )}
 
           {report.lines?.length > 0 && (
-            <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                      <th className="px-4 py-3">{t.accountCode}</th>
-                      <th className="px-4 py-3">{t.accountName}</th>
-                      <th className="px-4 py-3 text-right">{t.totalDebit}</th>
-                      <th className="px-4 py-3 text-right">{t.totalCredit}</th>
-                      <th className="px-4 py-3 text-right">{t.netBalance}</th>
+            <div className={`${tbl.wrapper} max-h-[70vh] overflow-y-auto`}>
+                <table className={tbl.table}>
+                  <thead className={tbl.thead}>
+                    <tr>
+                      <th scope="col" className={tbl.th}>{t.accountCode}</th>
+                      <th scope="col" className={`${tbl.th} w-full`}>{t.accountName}</th>
+                      <th scope="col" className={tbl.thNum}>{t.totalDebit}</th>
+                      <th scope="col" className={tbl.thNum}>{t.totalCredit}</th>
+                      <th scope="col" className={tbl.thNum}>{t.netBalance}</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-50">
+                  <tbody className={tbl.tbody}>
                     {report.lines.map((line) => (
-                      <tr key={line.accountCode} className="hover:bg-slate-50/60">
-                        <td className="px-4 py-2.5 font-semibold text-slate-700">{line.accountCode}</td>
-                        <td className="px-4 py-2.5 text-slate-600">{line.accountName}</td>
-                        <td className="px-4 py-2.5 text-right text-slate-700">
-                          {formatAmount(line.totalDebit)}
-                        </td>
-                        <td className="px-4 py-2.5 text-right text-slate-700">
-                          {formatAmount(line.totalCredit)}
-                        </td>
-                        <td className="px-4 py-2.5 text-right font-semibold text-slate-800">
+                      <tr key={line.accountCode} className={tbl.row}>
+                        <td className={`${tbl.td} whitespace-nowrap font-semibold text-slate-900`}>{line.accountCode}</td>
+                        <td className={tbl.td}>{line.accountName}</td>
+                        <td className={tbl.tdNum}>{formatAmount(line.totalDebit)}</td>
+                        <td className={tbl.tdNum}>{formatAmount(line.totalCredit)}</td>
+                        <td className={`${tbl.tdNum} font-semibold ${Number(line.netBalance) < 0 ? "text-red-800" : "text-slate-900"}`}>
                           {formatAmount(line.netBalance)}
                         </td>
                       </tr>
                     ))}
                   </tbody>
-                  <tfoot>
-                    <tr className="border-t bg-slate-50 font-semibold text-slate-700">
-                      <td className="px-4 py-3" colSpan={2}>
-                        {t.totalsRow}
-                      </td>
-                      <td className="px-4 py-3 text-right">{formatAmount(report.totalDebit)}</td>
-                      <td className="px-4 py-3 text-right">{formatAmount(report.totalCredit)}</td>
-                      <td className="px-4 py-3" />
+                  <tfoot className={`${tbl.tfoot} sticky bottom-0`}>
+                    <tr>
+                      <td className={tbl.td} colSpan={2}>{t.totalsRow}</td>
+                      <td className={`${tbl.tdNum} font-bold`}>{formatAmount(report.totalDebit)}</td>
+                      <td className={`${tbl.tdNum} font-bold`}>{formatAmount(report.totalCredit)}</td>
+                      <td className={tbl.td} />
                     </tr>
                   </tfoot>
                 </table>
-              </div>
             </div>
           )}
 
           {summaryEntries.length > 0 && (
-            <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
-              <div className="border-b border-gray-100 bg-slate-50 px-5 py-3 text-[11px] font-black uppercase tracking-widest text-slate-400">
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <h3 className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
                 {t.summaryByClass}
-              </div>
+              </h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <tbody className="divide-y divide-gray-50">
                     {summaryEntries.map(([classCode, balance]) => (
-                      <tr key={classCode} className="hover:bg-slate-50/60">
-                        <td className="px-4 py-2.5 text-slate-600">{translateAccountClass(classCode, language)}</td>
-                        <td className="px-4 py-2.5 text-right font-semibold text-slate-800">
+                      <tr key={classCode} className={tbl.row}>
+                        <td className={tbl.td}>{translateAccountClass(classCode, language)}</td>
+                        <td className={`${tbl.tdNum} font-semibold`}>
                           {formatAmount(balance)}
                         </td>
                       </tr>

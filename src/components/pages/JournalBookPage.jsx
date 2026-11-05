@@ -420,7 +420,7 @@ function JournalBookPage({ language = "es" }) {
         className="flex flex-wrap items-end gap-4 rounded-xl border border-gray-100 bg-white p-5 shadow-sm"
       >
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.startDate}
           </label>
           <input
@@ -433,7 +433,7 @@ function JournalBookPage({ language = "es" }) {
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.endDate}
           </label>
           <input
@@ -446,7 +446,7 @@ function JournalBookPage({ language = "es" }) {
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.documentType}
           </label>
           <select
@@ -464,7 +464,7 @@ function JournalBookPage({ language = "es" }) {
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.status}
           </label>
           <select
@@ -492,7 +492,7 @@ function JournalBookPage({ language = "es" }) {
       {entries !== null && (
         <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-500">
               {activeTenantId && <strong className="text-slate-500">{activeTenantId}</strong>}
               {activeTenantId && " — "}
               {reportPeriodLabel()}
@@ -513,7 +513,7 @@ function JournalBookPage({ language = "es" }) {
           </div>
 
           {!hasData && (
-            <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-slate-400 shadow-sm">
+            <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-slate-500 shadow-sm">
               {hasRawData ? t.noResultsFiltered : t.noResults}
             </div>
           )}
@@ -534,7 +534,7 @@ function JournalBookPage({ language = "es" }) {
                           {entry.entryDate} · {documentTypeLabel(entry)}
                         </span>
                         {entry.description && (
-                          <span className="ml-2 text-sm text-slate-400">— {entry.description}</span>
+                          <span className="ml-2 text-sm text-slate-500">— {entry.description}</span>
                         )}
                       </div>
                     </div>
@@ -547,7 +547,7 @@ function JournalBookPage({ language = "es" }) {
 
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b text-left text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        <tr className="border-b text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">
                           <th className="px-3 py-2">{t.account}</th>
                           <th className="px-3 py-2">{t.thirdParty}</th>
                           <th className="px-3 py-2">{t.costCenter}</th>

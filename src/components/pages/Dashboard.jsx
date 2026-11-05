@@ -148,7 +148,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
           </div>
 
           <h2 className="text-center text-xl font-bold">{t.systemName}</h2>
-          <p className="mb-6 text-center text-sm text-slate-400">
+          <p className="mb-6 text-center text-sm text-slate-500">
             {t.systemSubtitle}
           </p>
 

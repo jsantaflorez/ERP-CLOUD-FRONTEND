@@ -214,7 +214,7 @@ function Login({ onLogin, language, onLanguageChange }) {
               ))}
             </select>
             {companiesChecked && !loadingCompanies && companies.length === 0 && (
-              <p className="text-xs text-amber-600">{t.noCompaniesForEmail}</p>
+              <p className="text-xs text-amber-700">{t.noCompaniesForEmail}</p>
             )}
           </div>
 
@@ -222,7 +222,7 @@ function Login({ onLogin, language, onLanguageChange }) {
             onChange={(e) => setPassword(e.target.value)}
             className="rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
           />
-          {error && <p className="text-sm text-red-500">{error}</p>}
+          {error && <p className="text-sm text-red-700">{error}</p>}
           <button type="submit" disabled={loading}
             className="rounded-xl bg-blue-600 px-4 py-3 font-medium text-white hover:bg-blue-700 disabled:opacity-60 transition-colors">
             {loading ? "..." : t.loginButton}

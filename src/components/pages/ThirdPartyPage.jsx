@@ -1057,7 +1057,7 @@ const loadCatalogs = async () => {
     <div className="space-y-6 p-4">
       {/* Toast Alert Banner */}
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-[100] rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-xl ${toast.type === "error" ? "bg-red-500" : "bg-emerald-500"}`}>
+        <div className={`fixed bottom-6 right-6 z-[100] rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-xl ${toast.type === "error" ? "bg-red-700" : "bg-emerald-700"}`}>
           {toast.msg}
         </div>
       )}
@@ -1069,7 +1069,7 @@ const loadCatalogs = async () => {
         tenantId={activeTenantId}
         actions={
           <>
-            <span className="hidden text-[11px] text-slate-400 sm:inline">{t.newShortcutHint}</span>
+            <span className="hidden text-[11px] text-slate-500 sm:inline">{t.newShortcutHint}</span>
             {rows.length > 0 && (
               <>
                 <Button variant="secondary" size="sm" loading={exporting} disabled={exporting} onClick={handleExportExcel}>
@@ -1109,7 +1109,7 @@ const loadCatalogs = async () => {
           for a readable chip row). */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{t.type}:</span>
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{t.type}:</span>
           <FilterChip active={personTypeFilter === "ALL"} onClick={() => setPersonTypeFilter("ALL")}>
             {t.filterAllOption}
           </FilterChip>
@@ -1122,7 +1122,7 @@ const loadCatalogs = async () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{t.docType}:</span>
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{t.docType}:</span>
           <select
             value={documentTypeFilter}
             onChange={(e) => setDocumentTypeFilter(e.target.value)}
@@ -1138,7 +1138,7 @@ const loadCatalogs = async () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{t.regime}:</span>
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{t.regime}:</span>
           <select
             value={taxRegimeFilter}
             onChange={(e) => setTaxRegimeFilter(e.target.value)}
@@ -1172,13 +1172,13 @@ const loadCatalogs = async () => {
       <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           {loading ? (
-            <div className="flex items-center justify-center py-20 text-slate-400 text-sm">
+            <div className="flex items-center justify-center py-20 text-slate-500 text-sm">
               {t.loading}
             </div>
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
                   <th className="px-5 py-4">{t.identity}</th>
                   <th className="px-5 py-4">{t.name}</th>
                   <th className="px-5 py-4">{t.type}</th>
@@ -1190,7 +1190,7 @@ const loadCatalogs = async () => {
               <tbody className="divide-y divide-gray-50">
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-16 text-center text-slate-400">{t.noResults}</td>
+                    <td colSpan={6} className="py-16 text-center text-slate-500">{t.noResults}</td>
                   </tr>
                 ) : (
                   rows.map((item) => (
@@ -1271,7 +1271,7 @@ const loadCatalogs = async () => {
               <h2 className="text-xl font-black text-slate-800">
                 {editingIdRef.current ? t.edit : t.new}
               </h2>
-              <button onClick={closePanel} className="text-slate-400 hover:text-slate-700 text-2xl">×</button>
+              <button onClick={closePanel} className="text-slate-500 hover:text-slate-700 text-2xl">×</button>
             </div>
 
             {/* Horizontal Segmented Navigation Tab Menu */}
@@ -1286,7 +1286,7 @@ const loadCatalogs = async () => {
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
                   className={`relative border-b-2 px-4 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${
-                    activeTab === tab.id ? "border-blue-500 text-blue-600" : "border-transparent text-slate-400 hover:text-slate-600"
+                    activeTab === tab.id ? "border-blue-500 text-blue-600" : "border-transparent text-slate-500 hover:text-slate-600"
                   }`}
                 >
                   {tab.label}
@@ -1454,7 +1454,7 @@ const loadCatalogs = async () => {
                                      ))}
                                    </select>
                                  </Field>
-                                 <p className="mt-1 text-[11px] text-slate-400">
+                                 <p className="mt-1 text-[11px] text-slate-500">
                                    {t.regimeHint} <strong>{form.personType === "JURIDICA" ? t.juridica : t.natural}</strong>
                                  </p>
                                </div>
@@ -1506,7 +1506,7 @@ const loadCatalogs = async () => {
           <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
             <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-black text-slate-800">{t.siewinModalTitle}</h2>
-              <button onClick={closeSiewinModal} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+              <button onClick={closeSiewinModal} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
             </div>
 
             <div className="px-6 py-5 space-y-4">
@@ -1534,7 +1534,7 @@ const loadCatalogs = async () => {
                         : "border-slate-200 bg-slate-50 hover:border-indigo-300"
                     }`}
                   >
-                    <svg className="mx-auto h-8 w-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="mx-auto h-8 w-8 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                     </svg>
                     <p className="mt-2 text-sm font-semibold text-slate-600">
@@ -1626,7 +1626,7 @@ const loadCatalogs = async () => {
 
             <div className="bg-white border-b border-slate-100 px-8 py-4 flex items-center justify-between">
               <h2 className="text-xl font-black text-slate-800">{t.viewTitle}</h2>
-              <button onClick={closeViewPanel} className="text-slate-400 hover:text-slate-700 text-2xl">×</button>
+              <button onClick={closeViewPanel} className="text-slate-500 hover:text-slate-700 text-2xl">×</button>
             </div>
 
             <div className="flex border-b border-slate-100 bg-slate-50 px-8 overflow-x-auto whitespace-nowrap">
@@ -1640,7 +1640,7 @@ const loadCatalogs = async () => {
                   type="button"
                   onClick={() => setViewTab(tab.id)}
                   className={`border-b-2 px-4 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${
-                    viewTab === tab.id ? "border-blue-500 text-blue-600" : "border-transparent text-slate-400 hover:text-slate-600"
+                    viewTab === tab.id ? "border-blue-500 text-blue-600" : "border-transparent text-slate-500 hover:text-slate-600"
                   }`}
                 >
                   {tab.label}
@@ -1753,9 +1753,9 @@ const inputCls = (err) =>
 function Field({ label, error, children }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</label>
+      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{label}</label>
       {children}
-      {error && <span className="text-[10px] text-red-500">{error}</span>}
+      {error && <span className="text-[10px] text-red-700">{error}</span>}
     </div>
   );
 }
@@ -1764,7 +1764,7 @@ function Field({ label, error, children }) {
 function DataRow({ label, value, t }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</label>
+      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{label}</label>
       <div className="border-b-2 border-gray-100 p-3 text-sm text-slate-700 min-h-[42px]">
         {value ? value : <span className="text-slate-300 italic">{t.notProvided}</span>}
       </div>

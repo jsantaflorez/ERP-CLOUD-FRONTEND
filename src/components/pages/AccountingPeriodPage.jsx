@@ -596,7 +596,7 @@ function AccountingPeriodPage({ language = "es" }) {
     <div className="space-y-6 p-4">
       {toast && (
         <div className={`fixed bottom-6 right-6 z-[100] rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-xl transition-all ${
-          toast.type === "error" ? "bg-red-500" : "bg-emerald-500"
+          toast.type === "error" ? "bg-red-700" : "bg-emerald-700"
         }`}>
           {toast.msg}
         </div>
@@ -621,17 +621,17 @@ function AccountingPeriodPage({ language = "es" }) {
         }
       />
 
-      <p className="text-xs text-slate-400">{t.hint}</p>
+      <p className="text-xs text-slate-500">{t.hint}</p>
 
       <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-x-auto">
         {loading ? (
-          <div className="flex items-center justify-center py-20 text-slate-400 text-sm">
+          <div className="flex items-center justify-center py-20 text-slate-500 text-sm">
             {t.loading}
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
                 {[t.period, t.status, t.yearSeal, t.closingVoucher, t.closedBy, t.closedAt, t.closingNotes, t.reopenedBy, t.reopenedAt, t.reopeningNotes, t.actions].map((h) => (
                   <th key={h} className="px-5 py-4 whitespace-nowrap">{h}</th>
                 ))}
@@ -640,7 +640,7 @@ function AccountingPeriodPage({ language = "es" }) {
             <tbody className="divide-y divide-gray-50">
               {sortedPeriods.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-16 text-center text-slate-400">{t.noResults}</td>
+                  <td colSpan={11} className="py-16 text-center text-slate-500">{t.noResults}</td>
                 </tr>
               ) : (
                 periodsByYear.map(({ year, rows }) => {
@@ -697,13 +697,13 @@ function AccountingPeriodPage({ language = "es" }) {
                       )}
                     </td>
                     <td className="px-5 py-4 text-slate-600 whitespace-nowrap">{p.closedBy || "—"}</td>
-                    <td className="px-5 py-4 text-slate-400 whitespace-nowrap">{formatDateTime(p.closedAt)}</td>
-                    <td className="px-5 py-4 text-xs text-slate-400 max-w-[160px] truncate" title={p.closingNotes || ""}>
+                    <td className="px-5 py-4 text-slate-500 whitespace-nowrap">{formatDateTime(p.closedAt)}</td>
+                    <td className="px-5 py-4 text-xs text-slate-500 max-w-[160px] truncate" title={p.closingNotes || ""}>
                       {p.closingNotes?.trim() ? p.closingNotes : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-5 py-4 text-slate-600 whitespace-nowrap">{p.reopenedBy || "—"}</td>
-                    <td className="px-5 py-4 text-slate-400 whitespace-nowrap">{formatDateTime(p.reopenedAt)}</td>
-                    <td className="px-5 py-4 text-xs text-slate-400 max-w-[160px] truncate" title={p.reopeningNotes || ""}>
+                    <td className="px-5 py-4 text-slate-500 whitespace-nowrap">{formatDateTime(p.reopenedAt)}</td>
+                    <td className="px-5 py-4 text-xs text-slate-500 max-w-[160px] truncate" title={p.reopeningNotes || ""}>
                       {p.reopeningNotes?.trim() ? p.reopeningNotes : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-5 py-4">
@@ -747,7 +747,7 @@ function AccountingPeriodPage({ language = "es" }) {
           <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl flex flex-col">
             <div className="border-b border-slate-100 px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-black text-slate-800">{t.closeMonthTitle}</h2>
-              <button onClick={closeCloseMonthPanel} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+              <button onClick={closeCloseMonthPanel} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
             </div>
 
             <form onSubmit={submitCloseMonth} className="px-6 py-5 flex flex-col gap-4">
@@ -798,11 +798,11 @@ function AccountingPeriodPage({ language = "es" }) {
           <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-y-auto">
             <div className="border-b border-slate-100 px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-black text-slate-800">{t.closeYearTitle}</h2>
-              <button onClick={closeCloseYearPanel} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+              <button onClick={closeCloseYearPanel} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
             </div>
 
             <form onSubmit={submitCloseYear} className="px-6 py-5 flex flex-col gap-4">
-              <p className="text-xs text-amber-600">{t.closeYearHint}</p>
+              <p className="text-xs text-amber-700">{t.closeYearHint}</p>
 
               <Field label={t.year} error={closeYearErrors.year}>
                 <input type="number" name="year" value={closeYearForm.year} onChange={handleCloseYearChange}
@@ -810,7 +810,7 @@ function AccountingPeriodPage({ language = "es" }) {
               </Field>
 
               {closingOptions.equityAccounts.length === 0 && (
-                <p className="text-xs text-red-500">{t.noEquityAccounts}</p>
+                <p className="text-xs text-red-700">{t.noEquityAccounts}</p>
               )}
 
               <Field label={t.gainAccount} error={closeYearErrors.gainAccountId}>
@@ -861,12 +861,12 @@ function AccountingPeriodPage({ language = "es" }) {
               <h2 className="text-lg font-black text-slate-800">
                 {reopenTarget.kind === "year" ? t.reopenYearTitle : t.reopenMonthTitle}
               </h2>
-              <button onClick={closeReopenPanel} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+              <button onClick={closeReopenPanel} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
             </div>
 
             <form onSubmit={submitReopen} className="px-6 py-5 flex flex-col gap-4">
               <div className="rounded-xl bg-slate-50 px-4 py-3">
-                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">
                   {t.period}
                 </div>
                 <div className="text-sm font-mono font-bold text-slate-800">
@@ -875,7 +875,7 @@ function AccountingPeriodPage({ language = "es" }) {
               </div>
 
               {reopenTarget.kind === "year" && (
-                <p className="text-xs text-amber-600">{t.reopenYearHint}</p>
+                <p className="text-xs text-amber-700">{t.reopenYearHint}</p>
               )}
 
               <Field label={t.notes} error={reopenError}>
@@ -907,12 +907,12 @@ function AccountingPeriodPage({ language = "es" }) {
           <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl flex flex-col">
             <div className="border-b border-slate-100 px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-black text-slate-800">{t.closeMonthTitle}</h2>
-              <button onClick={closeCloseRowPanel} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+              <button onClick={closeCloseRowPanel} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
             </div>
 
             <form onSubmit={submitCloseRow} className="px-6 py-5 flex flex-col gap-4">
               <div className="rounded-xl bg-slate-50 px-4 py-3">
-                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">
                   {t.period}
                 </div>
                 <div className="text-sm font-mono font-bold text-slate-800">
@@ -947,14 +947,14 @@ function AccountingPeriodPage({ language = "es" }) {
           <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl flex flex-col">
             <div className="border-b border-slate-100 px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-black text-slate-800">{t.closingDefaultsTitle}</h2>
-              <button onClick={closeClosingDefaultsPanel} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+              <button onClick={closeClosingDefaultsPanel} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
             </div>
 
             {loadingClosingDefaults ? (
-              <div className="px-6 py-10 text-center text-sm text-slate-400">{t.loadingClosingDefaults}</div>
+              <div className="px-6 py-10 text-center text-sm text-slate-500">{t.loadingClosingDefaults}</div>
             ) : (
               <form onSubmit={submitClosingDefaults} className="px-6 py-5 flex flex-col gap-4">
-                <p className="text-xs text-slate-400">{t.closingDefaultsHint}</p>
+                <p className="text-xs text-slate-500">{t.closingDefaultsHint}</p>
 
                 <Field label={t.gainAccount} error={closingDefaultsErrors.defaultGainAccountId}>
                   <select name="defaultGainAccountId" value={closingDefaultsForm.defaultGainAccountId}
@@ -1007,9 +1007,9 @@ const inputCls = (err) =>
 function Field({ label, error, children }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</label>
+      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{label}</label>
       {children}
-      {error && <span className="text-[10px] text-red-500">{error}</span>}
+      {error && <span className="text-[10px] text-red-700">{error}</span>}
     </div>
   );
 }

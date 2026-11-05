@@ -517,7 +517,7 @@ function VoucherTypeSummaryPage({ language = "es" }) {
         className="flex flex-wrap items-end gap-4 rounded-xl border border-gray-100 bg-white p-5 shadow-sm"
       >
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.startDate}
           </label>
           <input
@@ -529,7 +529,7 @@ function VoucherTypeSummaryPage({ language = "es" }) {
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.endDate}
           </label>
           <input
@@ -541,7 +541,7 @@ function VoucherTypeSummaryPage({ language = "es" }) {
         </div>
 
         <div className="flex min-w-[260px] flex-col gap-1">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.documentType}
           </label>
           <select
@@ -582,7 +582,7 @@ function VoucherTypeSummaryPage({ language = "es" }) {
       {entries !== null && (
         <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-500">
               {activeTenantId && <strong className="text-slate-500">{activeTenantId}</strong>}
               {activeTenantId && " — "}
               {reportPeriodLabel()}
@@ -601,7 +601,7 @@ function VoucherTypeSummaryPage({ language = "es" }) {
           </div>
 
           {!hasData && (
-            <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-slate-400 shadow-sm">
+            <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-slate-500 shadow-sm">
               {t.noResults}
             </div>
           )}
@@ -616,7 +616,7 @@ function VoucherTypeSummaryPage({ language = "es" }) {
                   <span className="font-bold text-slate-700">{g.code}</span>{" "}
                   <span className="text-slate-600">{g.name}</span>
                   {g.prefix && (
-                    <span className="ml-2 text-xs text-slate-400">
+                    <span className="ml-2 text-xs text-slate-500">
                       ({t.prefixLabel}: {g.prefix})
                     </span>
                   )}
@@ -632,7 +632,7 @@ function VoucherTypeSummaryPage({ language = "es" }) {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
                       <th className="px-4 py-3">{t.date}</th>
                       <th className="px-4 py-3">{t.document}</th>
                       <th className="px-4 py-3">{t.thirdParty}</th>
@@ -685,14 +685,14 @@ function VoucherTypeSummaryPage({ language = "es" }) {
           {hasData && (
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
               <div className="border-b border-gray-100 bg-slate-50 px-5 py-4">
-                <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">
+                <span className="text-[11px] font-black uppercase tracking-widest text-slate-500">
                   {t.summaryTitle}
                 </span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
                       <th className="px-4 py-3">{t.summaryCode}</th>
                       <th className="px-4 py-3">{t.summaryName}</th>
                       <th className="px-4 py-3 text-right">{t.documentCount}</th>

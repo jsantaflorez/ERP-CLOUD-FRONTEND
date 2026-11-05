@@ -1554,7 +1554,7 @@ function ChartOfAccountsPage({ language = "es" }) {
       {toast && (
         <div
           className={`fixed bottom-6 right-6 z-[100] rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-xl transition-all ${
-            toast.type === "error" ? "bg-red-500" : "bg-emerald-500"
+            toast.type === "error" ? "bg-red-700" : "bg-emerald-700"
           }`}
         >
           {toast.msg}
@@ -1848,7 +1848,7 @@ function ChartOfAccountsPage({ language = "es" }) {
                 back up to click "Nuevo" every time is tedious. Insert opens
                 the create panel from anywhere on the page -- see the
                 keydown effect below. Shown here so it's discoverable. */}
-            <span className="hidden text-[11px] text-slate-400 sm:inline">{t.newShortcutHint}</span>
+            <span className="hidden text-[11px] text-slate-500 sm:inline">{t.newShortcutHint}</span>
             {rows.length > 0 && (
               <>
                 <Button variant="secondary" size="sm" onClick={handleExportExcel}>
@@ -1882,7 +1882,7 @@ function ChartOfAccountsPage({ language = "es" }) {
           very rows a filter is meant to surface). */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">{t.nature}</span>
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t.nature}</span>
           <div className="flex gap-1">
             <FilterChip active={natureFilter === "ALL"} onClick={() => setNatureFilter("ALL")}>
               {t.filterAll}
@@ -1899,7 +1899,7 @@ function ChartOfAccountsPage({ language = "es" }) {
         <div className="hidden h-5 w-px bg-gray-200 sm:block" />
 
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">{t.filterAccountTypeLabel}</span>
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t.filterAccountTypeLabel}</span>
           <div className="flex gap-1">
             <FilterChip active={accountTypeFilter === "ALL"} onClick={() => setAccountTypeFilter("ALL")}>
               {t.filterAll}
@@ -1924,7 +1924,7 @@ function ChartOfAccountsPage({ language = "es" }) {
         <div className="hidden h-5 w-px bg-gray-200 sm:block" />
 
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">{t.filterRequirementsLabel}</span>
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t.filterRequirementsLabel}</span>
           <div className="flex gap-1">
             <FilterChip active={requireThirdPartyOnly} onClick={() => setRequireThirdPartyOnly((v) => !v)}>
               {t.requiresThirdParty}
@@ -1938,7 +1938,7 @@ function ChartOfAccountsPage({ language = "es" }) {
         {hasActiveQuickFilter && (
           <button
             type="button"
-            className="ml-auto text-xs font-medium text-slate-400 underline hover:text-slate-600"
+            className="ml-auto text-xs font-medium text-slate-500 underline hover:text-slate-600"
             onClick={() => {
               setNatureFilter("ALL");
               setAccountTypeFilter("ALL");
@@ -2009,13 +2009,13 @@ function ChartOfAccountsPage({ language = "es" }) {
 
       <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-x-auto">
         {loading ? (
-          <div className="flex items-center justify-center py-20 text-slate-400 text-sm">
+          <div className="flex items-center justify-center py-20 text-slate-500 text-sm">
             {t.loading}
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
                 <th className="px-5 py-4">{t.code}</th>
                 <th className="px-5 py-4">{t.name}</th>
                 <th className="px-5 py-4">{t.level}</th>
@@ -2034,7 +2034,7 @@ function ChartOfAccountsPage({ language = "es" }) {
             <tbody className="divide-y divide-gray-50">
               {visibleRows.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-16 text-center text-slate-400">
+                  <td colSpan={12} className="py-16 text-center text-slate-500">
                     {t.noResults}
                   </td>
                 </tr>
@@ -2192,7 +2192,7 @@ function ChartOfAccountsPage({ language = "es" }) {
               </h2>
               <button
                 onClick={closePanel}
-                className="text-slate-400 hover:text-slate-700 text-2xl leading-none"
+                className="text-slate-500 hover:text-slate-700 text-2xl leading-none"
               >
                 ×
               </button>
@@ -2219,14 +2219,14 @@ function ChartOfAccountsPage({ language = "es" }) {
                   className={`${inputCls(errors.code)} ${editingIdRef.current ? "opacity-60 cursor-not-allowed" : ""}`}
                 />
                 {editingIdRef.current && (
-                  <span className="text-[10px] text-amber-600">{t.codeLockedHint}</span>
+                  <span className="text-[10px] text-amber-700">{t.codeLockedHint}</span>
                 )}
                 {/* NEW: proactive hint (create mode only, no error showing
                     yet) — tells the user the expected digit count for the
                     selected parent BEFORE they submit and hit
                     getCodeStructureErrorCode's rejection. */}
                 {!editingIdRef.current && !errors.code && (
-                  <span className="text-[10px] text-slate-400">
+                  <span className="text-[10px] text-slate-500">
                     {t.expectedCodeLengthHint} {getExpectedCodeLength(form.parentId, rows) ?? "—"} {t.expectedCodeLengthHintDigits}
                   </span>
                 )}
@@ -2294,7 +2294,7 @@ function ChartOfAccountsPage({ language = "es" }) {
                     all my accounts?"). */}
                 {!editingIdRef.current && form.code.trim() && (
                   parentCandidates.length < availableParents.length ? (
-                    <span className="text-[10px] text-slate-400">{t.parentFilteredHint}</span>
+                    <span className="text-[10px] text-slate-500">{t.parentFilteredHint}</span>
                   ) : null
                 )}
                 {!editingIdRef.current &&
@@ -2311,7 +2311,7 @@ function ChartOfAccountsPage({ language = "es" }) {
                   PARENT's own record. */}
               {form.parentId !== "" &&
                 rows.find((r) => String(r.id) === String(form.parentId))?.postingAccount && (
-                  <p className="md:col-span-2 text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <p className="md:col-span-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                     {t.parentIsPostingWarning}
                   </p>
                 )}
@@ -2340,7 +2340,7 @@ function ChartOfAccountsPage({ language = "es" }) {
                   ))}
                 </select>
                 {form.parentId && (
-                  <span className="text-[10px] text-amber-600">{t.classInheritedHint}</span>
+                  <span className="text-[10px] text-amber-700">{t.classInheritedHint}</span>
                 )}
               </Field>
 
@@ -2362,7 +2362,7 @@ function ChartOfAccountsPage({ language = "es" }) {
                   <option value="C">C - {t.credit}</option>
                 </select>
                 {form.accountClass && (
-                  <span className="text-[10px] text-slate-400">{t.natureSuggestedHint}</span>
+                  <span className="text-[10px] text-slate-500">{t.natureSuggestedHint}</span>
                 )}
               </Field>
 
@@ -2397,7 +2397,7 @@ function ChartOfAccountsPage({ language = "es" }) {
                     ))}
                 </select>
                 {form.accountClass && !loadingMetadata && (
-                  <p className="mt-1 text-[11px] text-slate-400">
+                  <p className="mt-1 text-[11px] text-slate-500">
                     {t.categoryHint}{" "}
                     <strong>
                       {getMetadataLabel(accountClasses, form.accountClass, language)}
@@ -2433,7 +2433,7 @@ function ChartOfAccountsPage({ language = "es" }) {
                       </option>
                     ))}
                   </select>
-                  <span className="text-[10px] text-amber-600">{t.financialStatementAutoHint}</span>
+                  <span className="text-[10px] text-amber-700">{t.financialStatementAutoHint}</span>
                 </Field>
               </div>
 
@@ -2459,7 +2459,7 @@ function ChartOfAccountsPage({ language = "es" }) {
                       the toggle is disabled and explained here instead of
                       letting the user find out only after a failed save. */}
                   {editingAccountHasChildren && (
-                    <p className="text-[11px] text-slate-400 max-w-[220px]">
+                    <p className="text-[11px] text-slate-500 max-w-[220px]">
                       {t.postingBlockedByChildren}
                     </p>
                   )}
@@ -2495,7 +2495,7 @@ function ChartOfAccountsPage({ language = "es" }) {
                     label={t.keepCreatingLabel}
                     color="emerald"
                   />
-                  <p className="text-[10px] text-slate-400">{t.keepCreatingHint}</p>
+                  <p className="text-[10px] text-slate-500">{t.keepCreatingHint}</p>
                 </div>
               )}
 
@@ -2521,11 +2521,11 @@ const inputCls = (err) =>
 function Field({ label, error, children }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
         {label}
       </label>
       {children}
-      {error && <span className="text-[10px] text-red-500">{error}</span>}
+      {error && <span className="text-[10px] text-red-700">{error}</span>}
     </div>
   );
 }

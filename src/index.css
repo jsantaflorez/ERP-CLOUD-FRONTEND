@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* UI review 2026-11-04 — tokens propios. border-field: borde de campos
+   con 3.27:1 sobre blanco (WCAG 1.4.11; el gray-200 anterior daba 1.24:1). */
+@theme {
+  --color-field: #848fa2;
+}
+
 html, body, #root {
   height: 100%;
 }
@@ -8,10 +14,34 @@ body {
   margin: 0;
   font-family: Inter, Geist, Arial, sans-serif;
   background-color: #f8fafc;
+  color: #0f172a;
+}
+
+@layer base {
+  /* Cifras tabulares en columnas numéricas (las alineadas a la derecha) y
+     campos numéricos: los dígitos ocupan el mismo ancho y débito/crédito
+     alinean. No se aplica a toda la tabla porque en Inter el "tnum" también
+     ensancha guiones y separadores ("CE-000231", "2026-10-31"). */
+  td.text-right, th.text-right, input[type="number"] {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Foco visible global (WCAG 2.4.7). Va fuera de @layer a propósito: así
+   gana sobre las 72 clases "outline-none" que había en las vistas sin
+   tener que tocarlas una por una. Solo aparece con teclado en botones. */
+:focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 2px;
+}
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-offset: 0;
 }
 
 .input {
-  @apply w-full rounded-xl border border-gray-300 px-4 py-2.5 outline-none focus:border-blue-500;
+  @apply w-full rounded-lg border border-field bg-white px-3 py-2 text-sm focus:border-blue-700;
 }
 
 @keyframes slide {
@@ -25,4 +55,11 @@ body {
 
 .animate-slide {
   animation: slide 0.25s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

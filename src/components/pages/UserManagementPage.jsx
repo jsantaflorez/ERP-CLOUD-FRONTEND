@@ -394,7 +394,7 @@ function UserManagementPage({ language = "es" }) {
     <div className="space-y-6 p-4">
       {toast && (
         <div className={`fixed bottom-6 right-6 z-[100] rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-xl transition-all ${
-          toast.type === "error" ? "bg-red-500" : "bg-emerald-500"
+          toast.type === "error" ? "bg-red-700" : "bg-emerald-700"
         }`}>
           {toast.msg}
         </div>
@@ -432,7 +432,7 @@ function UserManagementPage({ language = "es" }) {
       <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">
+            <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
               {[t.firstName, t.email, t.rolesInCompany, t.accountGlobalLabel, t.actions].map((h) => (
                 <th key={h} className="px-5 py-4">{h}</th>
               ))}
@@ -440,14 +440,14 @@ function UserManagementPage({ language = "es" }) {
           </thead>
           <tbody className="divide-y divide-gray-50">
             {loading ? (
-              <tr><td colSpan={5} className="py-16 text-center text-slate-400">...</td></tr>
+              <tr><td colSpan={5} className="py-16 text-center text-slate-500">...</td></tr>
             ) : filteredRows.length === 0 ? (
-              <tr><td colSpan={5} className="py-16 text-center text-slate-400">{t.noResults}</td></tr>
+              <tr><td colSpan={5} className="py-16 text-center text-slate-500">{t.noResults}</td></tr>
             ) : (
               filteredRows.map((item) => (
                 <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
                   <td className="px-5 py-4 font-bold text-slate-700">{item.fullName}</td>
-                  <td className="px-5 py-4 text-slate-400 text-xs">{item.email}</td>
+                  <td className="px-5 py-4 text-slate-500 text-xs">{item.email}</td>
                   <td className="px-5 py-4">
                     <div className="flex flex-wrap gap-1.5">
                       {item.roles.length === 0 ? (
@@ -490,7 +490,7 @@ function UserManagementPage({ language = "es" }) {
               <h2 className="text-xl font-black text-slate-800">
                 {editingUser ? t.edit : t.new}
               </h2>
-              <button onClick={closePanel} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+              <button onClick={closePanel} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
             </div>
 
             <div className="flex-1 px-8 py-6 flex flex-col gap-5">
@@ -501,7 +501,7 @@ function UserManagementPage({ language = "es" }) {
               )}
 
               {!editingUser && (
-                <p className="text-[11px] text-slate-400">{t.newUserHint}</p>
+                <p className="text-[11px] text-slate-500">{t.newUserHint}</p>
               )}
 
               <form onSubmit={editingUser ? handleUpdateName : handleCreateSubmit} className="flex flex-col gap-5">
@@ -512,7 +512,7 @@ function UserManagementPage({ language = "es" }) {
                 </UField>
 
                 {!editingUser && emailLookup.checking && (
-                  <p className="text-[11px] text-slate-400">{t.checkingEmail}</p>
+                  <p className="text-[11px] text-slate-500">{t.checkingEmail}</p>
                 )}
                 {!editingUser && emailLookup.checked && emailLookup.exists && (
                   <p className="text-[11px] text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
@@ -550,9 +550,9 @@ function UserManagementPage({ language = "es" }) {
 
                 {!editingUser && (
                   <div className="flex flex-col gap-2">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t.rolesInCompany}</span>
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.rolesInCompany}</span>
                     {rolesCatalog.length === 0 ? (
-                      <p className="text-xs text-slate-400">{t.noRolesAvailable}</p>
+                      <p className="text-xs text-slate-500">{t.noRolesAvailable}</p>
                     ) : (
                       rolesCatalog.map((role) => (
                         <label key={role.id} className="flex items-center gap-2 text-sm text-slate-600">
@@ -562,7 +562,7 @@ function UserManagementPage({ language = "es" }) {
                         </label>
                       ))
                     )}
-                    {errors.roles && <span className="text-[10px] text-red-500">{errors.roles}</span>}
+                    {errors.roles && <span className="text-[10px] text-red-700">{errors.roles}</span>}
                   </div>
                 )}
 
@@ -579,10 +579,10 @@ function UserManagementPage({ language = "es" }) {
               {editingUser && (
                 <>
                   <div className="border-t border-slate-100 pt-5 flex flex-col gap-2">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t.rolesInCompany}</span>
-                    <p className="text-[11px] text-slate-400">{t.manageInThisPanel}</p>
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.rolesInCompany}</span>
+                    <p className="text-[11px] text-slate-500">{t.manageInThisPanel}</p>
                     {rolesCatalog.length === 0 ? (
-                      <p className="text-xs text-slate-400">{t.noRolesAvailable}</p>
+                      <p className="text-xs text-slate-500">{t.noRolesAvailable}</p>
                     ) : (
                       rolesCatalog.map((role) => {
                         const checked = editingUser.roles.some((r) => r.roleId === role.id);
@@ -605,7 +605,7 @@ function UserManagementPage({ language = "es" }) {
                     </button>
 
                     <button onClick={() => setToggleTarget(editingUser)}
-                      className={`text-left font-semibold text-xs ${editingUser.active ? "text-red-500 hover:text-red-700" : "text-emerald-600 hover:text-emerald-800"}`}>
+                      className={`text-left font-semibold text-xs ${editingUser.active ? "text-red-700 hover:text-red-700" : "text-emerald-600 hover:text-emerald-800"}`}>
                       {editingUser.active ? t.deactivate : t.activate}
                     </button>
 
@@ -627,7 +627,7 @@ function UserManagementPage({ language = "es" }) {
           <div className="absolute inset-0 bg-slate-900/20" onClick={closePwdPanel} />
           <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-8">
             <h2 className="text-lg font-black text-slate-800 mb-1">{t.changePassword}</h2>
-            <p className="text-xs text-slate-400 mb-6">{pwdPanel.email}</p>
+            <p className="text-xs text-slate-500 mb-6">{pwdPanel.email}</p>
 
             {pwdErrors.form && (
               <p className="mb-4 text-[12px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
@@ -697,9 +697,9 @@ const uInputCls = (err) =>
 function UField({ label, error, children }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</label>
+      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{label}</label>
       {children}
-      {error && <span className="text-[10px] text-red-500">{error}</span>}
+      {error && <span className="text-[10px] text-red-700">{error}</span>}
     </div>
   );
 }

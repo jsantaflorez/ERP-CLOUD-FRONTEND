@@ -309,7 +309,7 @@ function IncomeStatementPage({ language = "es" }) {
         className="flex flex-wrap items-end gap-4 rounded-xl border border-gray-100 bg-white p-5 shadow-sm"
       >
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.startDate}
           </label>
           <input
@@ -321,7 +321,7 @@ function IncomeStatementPage({ language = "es" }) {
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.endDate}
           </label>
           <input
@@ -347,7 +347,7 @@ function IncomeStatementPage({ language = "es" }) {
         <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             {report.generatedAt || report.companyName ? (
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-500">
                 {report.companyName && <strong className="text-slate-500">{report.companyName}</strong>}
                 {report.companyName && report.generatedAt && " — "}
                 {report.generatedAt && `${t.generatedAt}: ${formatGeneratedAt(report.generatedAt)}`}
@@ -369,20 +369,20 @@ function IncomeStatementPage({ language = "es" }) {
           </div>
 
           {!hasAnyLines && (
-            <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-slate-400 shadow-sm">
+            <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-slate-500 shadow-sm">
               {t.noResults}
             </div>
           )}
 
           {sections.map((section) => (
             <div key={section.key} className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
-              <div className="border-b border-gray-100 bg-slate-50 px-5 py-3 text-[11px] font-black uppercase tracking-widest text-slate-400">
+              <div className="border-b border-gray-100 bg-slate-50 px-5 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500">
                 {section.label}
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
                       <th className="px-4 py-3">{t.accountCode}</th>
                       <th className="px-4 py-3">{t.accountName}</th>
                       <th className="px-4 py-3 text-right">{t.amount}</th>

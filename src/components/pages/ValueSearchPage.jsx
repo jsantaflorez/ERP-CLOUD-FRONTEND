@@ -468,7 +468,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
         className="flex flex-wrap items-end gap-4 rounded-xl border border-gray-100 bg-white p-5 shadow-sm"
       >
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.startDate}
           </label>
           <input
@@ -480,7 +480,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.endDate}
           </label>
           <input
@@ -492,7 +492,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
         </div>
 
         <div className="flex min-w-[220px] flex-col gap-1">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.documentType}
           </label>
           <select
@@ -510,7 +510,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
         </div>
 
         <div className="flex min-w-[200px] flex-col gap-1">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.operator}
           </label>
           <select
@@ -527,7 +527,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
 
         {operator !== "RANGE" && (
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
               {t.value}
             </label>
             <input
@@ -543,7 +543,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
         {operator === "RANGE" && (
           <>
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                 {t.rangeMode}
               </label>
               <select
@@ -559,7 +559,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
             {rangeMode === "BETWEEN" ? (
               <>
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                     {t.valueA}
                   </label>
                   <input
@@ -571,7 +571,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
                   />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                     {t.valueB}
                   </label>
                   <input
@@ -586,7 +586,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
             ) : (
               <>
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                     {t.centerValue}
                   </label>
                   <input
@@ -598,7 +598,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
                   />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                     {t.margin}
                   </label>
                   <input
@@ -611,7 +611,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
                   />
                 </div>
                 {marginPreview && (
-                  <span className="pb-2 text-[11px] text-slate-400">
+                  <span className="pb-2 text-[11px] text-slate-500">
                     {t.marginHint(marginPreview.min, marginPreview.max)}
                   </span>
                 )}
@@ -644,7 +644,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
       {hasSearched && (
         <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-500">
               {activeTenantId && <strong className="text-slate-500">{activeTenantId}</strong>}
               {activeTenantId && " — "}
               {reportPeriodLabel()}
@@ -663,7 +663,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
           </div>
 
           {!hasData && (
-            <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-slate-400 shadow-sm">
+            <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-slate-500 shadow-sm">
               {t.noResults}
             </div>
           )}
@@ -673,7 +673,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
                       <th className="px-4 py-3">{t.date}</th>
                       <th className="px-4 py-3">{t.document}</th>
                       <th className="px-4 py-3">{t.documentTypeCol}</th>
@@ -708,7 +708,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
                         <td className="px-4 py-2.5 text-slate-500">{r.item.description || "—"}</td>
                         <td className="px-4 py-2.5 text-right font-semibold text-slate-800">
                           {money(r.amount)}{" "}
-                          <span className="text-[10px] font-normal text-slate-400">({r.side})</span>
+                          <span className="text-[10px] font-normal text-slate-500">({r.side})</span>
                         </td>
                         <td className="px-4 py-2.5 text-right">
                           <Button

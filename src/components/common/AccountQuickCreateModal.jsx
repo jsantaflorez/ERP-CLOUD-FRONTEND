@@ -415,7 +415,7 @@ function AccountQuickCreateModal({ language = "es", rows, onCreated, onClose }) 
       <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
         <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between">
           <h2 className="text-lg font-black text-slate-800">{t.title}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
         </div>
 
         <form onSubmit={handleSave} className="px-6 py-5 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -436,7 +436,7 @@ function AccountQuickCreateModal({ language = "es", rows, onCreated, onClose }) 
               autoFocus
             />
             {!errors.code && (
-              <span className="text-[10px] text-slate-400">
+              <span className="text-[10px] text-slate-500">
                 {t.expectedCodeLengthHint} {getExpectedCodeLength(form.parentId, rows) ?? "—"} {t.expectedCodeLengthHintDigits}
               </span>
             )}
@@ -487,7 +487,7 @@ function AccountQuickCreateModal({ language = "es", rows, onCreated, onClose }) 
 
           {form.parentId !== "" &&
             rows.find((r) => String(r.id) === String(form.parentId))?.postingAccount && (
-              <p className="md:col-span-2 text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              <p className="md:col-span-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                 {t.parentIsPostingWarning}
               </p>
             )}
@@ -507,7 +507,7 @@ function AccountQuickCreateModal({ language = "es", rows, onCreated, onClose }) 
                 </option>
               ))}
             </select>
-            {form.parentId && <span className="text-[10px] text-amber-600">{t.classInheritedHint}</span>}
+            {form.parentId && <span className="text-[10px] text-amber-700">{t.classInheritedHint}</span>}
           </AqField>
 
           <AqField label={t.nature} error={errors.nature}>
@@ -515,7 +515,7 @@ function AccountQuickCreateModal({ language = "es", rows, onCreated, onClose }) 
               <option value="D">D - {t.debit}</option>
               <option value="C">C - {t.credit}</option>
             </select>
-            {form.accountClass && <span className="text-[10px] text-slate-400">{t.natureSuggestedHint}</span>}
+            {form.accountClass && <span className="text-[10px] text-slate-500">{t.natureSuggestedHint}</span>}
           </AqField>
 
           <div className="md:col-span-2">
@@ -557,7 +557,7 @@ function AccountQuickCreateModal({ language = "es", rows, onCreated, onClose }) 
                   </option>
                 ))}
               </select>
-              <span className="text-[10px] text-amber-600">{t.financialStatementAutoHint}</span>
+              <span className="text-[10px] text-amber-700">{t.financialStatementAutoHint}</span>
             </AqField>
           </div>
 
@@ -569,7 +569,7 @@ function AccountQuickCreateModal({ language = "es", rows, onCreated, onClose }) 
               <AqToggle name="requiresCostCenter" checked={form.requiresCostCenter} onChange={handleChange} label={t.requiresCostCenter} color="blue" />
             </div>
             {!form.postingAccount && (
-              <p className="text-[11px] text-amber-600">{t.postingHint}</p>
+              <p className="text-[11px] text-amber-700">{t.postingHint}</p>
             )}
           </div>
 
@@ -593,9 +593,9 @@ const aqInputCls = (err) =>
 function AqField({ label, error, children }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</label>
+      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{label}</label>
       {children}
-      {error && <span className="text-[10px] text-red-500">{error}</span>}
+      {error && <span className="text-[10px] text-red-700">{error}</span>}
     </div>
   );
 }

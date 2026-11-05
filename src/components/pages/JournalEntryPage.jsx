@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
+import Field from "../ui/Field";
+import Modal from "../ui/Modal";
+import Toast from "../ui/Toast";
+import StatusBadge from "../ui/StatusBadge";
+import LoadingState from "../ui/LoadingState";
+import Alert from "../ui/Alert";
+import { inputClass, table as tbl } from "../ui/tokens";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
@@ -1226,15 +1233,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
 
   return (
     <div className="space-y-6 p-4">
-      {toast && (
-        <div
-          className={`fixed bottom-6 right-6 z-[100] rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-xl ${
-            toast.type === "error" ? "bg-red-500" : "bg-emerald-500"
-          }`}
-        >
-          {toast.msg}
-        </div>
-      )}
+      <Toast toast={toast} />
 
       <AppHeader
         title={t.title}
@@ -1247,7 +1246,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
                   scrolling back up to click "+ Nuevo Comprobante" every time is
                   tedious. Insert opens the form from anywhere on the page --
                   see the keydown effect near openNewEntry(). */}
-              <span className="hidden text-[11px] text-slate-400 sm:inline">{t.newShortcutHint}</span>
+              <span className="hidden text-[11px] text-slate-500 sm:inline">{t.newShortcutHint}</span>
               <Button variant="primary" onClick={openNewEntry} title={`${t.newEntry} ${t.newShortcutHint}`}>{t.newEntry}</Button>
             </>
           ) : (
@@ -1376,17 +1375,17 @@ function JeListView({
           />
         </div>
         <div className="flex flex-wrap gap-2">
-          <label className="flex flex-col text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          <label className="flex flex-col text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.from}
             <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
               className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500" />
           </label>
-          <label className="flex flex-col text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          <label className="flex flex-col text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.to}
             <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
               className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500" />
           </label>
-          <label className="flex flex-col text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          <label className="flex flex-col text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.documentType}
             <select value={documentTypeId} onChange={(e) => setDocumentTypeId(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && onSearch()}
@@ -1410,21 +1409,25 @@ function JeListView({
         </Button>
       </div>
 
-      <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-x-auto">
+      <div className={tbl.wrapper}>
         {loading ? (
-          <div className="flex items-center justify-center py-20 text-slate-400 text-sm">{t.loading}</div>
+          <LoadingState label={t.loading} />
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                {[t.docNumber, t.documentType, t.date, t.description, t.totalDebit, t.totalCredit, t.status, ""].map((h, i) => (
-                  <th key={`${h}-${i}`} className="px-5 py-4">{h}</th>
-                ))}
+          <table className={tbl.table}>
+            <thead className={tbl.thead}>
+              <tr>
+                <th scope="col" className={tbl.th}>{t.docNumber}</th>
+                <th scope="col" className={tbl.th}>{t.documentType}</th>
+                <th scope="col" className={tbl.th}>{t.date}</th>
+                <th scope="col" className={tbl.th}>{t.description}</th>
+                <th scope="col" className={tbl.thNum}>{t.totalDebit}</th>
+                <th scope="col" className={tbl.thNum}>{t.totalCredit}</th>
+                <th scope="col" className={tbl.thActions}><span className="sr-only">{t.actions || "Acciones"}</span></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className={tbl.tbody}>
               {entries.length === 0 ? (
-                <tr><td colSpan={8} className="py-16 text-center text-slate-400">{t.noResults}</td></tr>
+                <tr><td colSpan={7} className={tbl.empty}>{t.noResults}</td></tr>
               ) : (
                 entries.map((entry) => {
                   const totalDebit = (entry.items || []).reduce((s, i) => s + (i.debit || 0), 0);
@@ -1434,27 +1437,28 @@ function JeListView({
                   const entryDocType = documentTypes.find((d) => String(d.id) === String(entry.documentTypeId));
                   const isClosingEntry = entryDocType?.code === CLOSING_DOC_TYPE_CODE;
                   return (
-                    <tr key={entry.id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="px-5 py-4 font-bold text-slate-700">{entry.documentNumber}</td>
-                      <td className="px-5 py-4 text-slate-600">{documentTypeLabel(entry)}</td>
-                      <td className="px-5 py-4 text-slate-600">{entry.entryDate}</td>
-                      <td className="px-5 py-4 text-slate-600">{entry.description}</td>
-                      <td className="px-5 py-4 text-right text-slate-600">{money(totalDebit)}</td>
-                      <td className="px-5 py-4 text-right text-slate-600">{money(totalCredit)}</td>
-                      <td className="px-5 py-4">
-                        {entry.annulled ? (
-                          <span className="rounded-full bg-red-100 px-3 py-1 text-[10px] font-bold uppercase text-red-700">
-                            {t.annulled}
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-green-100 px-3 py-1 text-[10px] font-bold uppercase text-green-700">
-                            {t.active}
-                          </span>
+                    <tr key={entry.id} className={`${tbl.row} ${entry.annulled ? "text-slate-500" : ""}`}>
+                      {/* UI review 2026-11-04: la columna Estado se quitó; casi todo
+                          está Activo, así que solo se marca la excepción (Anulado)
+                          junto al número, con insignia de texto + símbolo. */}
+                      <td className={`${tbl.td} whitespace-nowrap`}>
+                        <span className={`font-semibold ${entry.annulled ? "text-slate-500 line-through decoration-slate-400" : "text-slate-900"}`}>
+                          {entry.documentNumber}
+                        </span>
+                        {entry.annulled && (
+                          <div className="mt-0.5"><StatusBadge tone="danger">{t.annulled}</StatusBadge></div>
                         )}
                       </td>
-                      <td className="px-5 py-4">
-                        <div className="flex gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => onViewEntry(entry)}>{t.view}</Button>
+                      <td className={`${tbl.td} min-w-[10rem]`}>{documentTypeLabel(entry)}</td>
+                      <td className={`${tbl.td} whitespace-nowrap`}>{entry.entryDate}</td>
+                      <td className={`${tbl.td} min-w-[11rem]`} title={entry.description || ""}>
+                        <span className="line-clamp-2">{entry.description}</span>
+                      </td>
+                      <td className={tbl.tdNum}>{money(totalDebit)}</td>
+                      <td className={tbl.tdNum}>{money(totalCredit)}</td>
+                      <td className={`${tbl.tdActions} group-hover:bg-slate-50`}>
+                        <div className="flex justify-end gap-0.5">
+                          <Button variant="ghost" size="xs" onClick={() => onViewEntry(entry)}>{t.view}</Button>
                           {/* An annulled entry is immutable (backend rejects
                               both PUT and PATCH .../annul on it), so neither
                               action is offered once it's annulled. */}
@@ -1462,15 +1466,14 @@ function JeListView({
                             <>
                               {!isClosingEntry && (
                                 <>
-                                  <Button variant="ghost" size="sm" onClick={() => onEditEntry(entry)}>{t.edit}</Button>
+                                  <Button variant="ghost" size="xs" onClick={() => onEditEntry(entry)}>{t.edit}</Button>
                                   {/* NEW (2026-10-22, user request): hidden for a closing
                                       entry for the same reason Editar is -- it's a
                                       system-generated entry, not a template to reuse. */}
-                                  <Button variant="ghost" size="sm" onClick={() => onDuplicateEntry(entry)}>{t.duplicate}</Button>
+                                  <Button variant="ghost" size="xs" onClick={() => onDuplicateEntry(entry)}>{t.duplicate}</Button>
                                 </>
                               )}
-                              <Button variant="ghost" size="sm" onClick={() => onAnnulEntry(entry)}
-                                className="text-red-500 hover:text-red-700">{t.annul}</Button>
+                              <Button variant="dangerGhost" size="xs" onClick={() => onAnnulEntry(entry)}>{t.annul}</Button>
                             </>
                           )}
                         </div>
@@ -1664,7 +1667,7 @@ function JeFormView({
 
   if (loadingEntry) {
     return (
-      <div className="rounded-xl border border-gray-100 bg-white p-16 text-center text-sm text-slate-400 shadow-sm">
+      <div className="rounded-xl border border-gray-100 bg-white p-16 text-center text-sm text-slate-500 shadow-sm">
         {t.loadingEntry}
       </div>
     );
@@ -1674,7 +1677,7 @@ function JeFormView({
     <>
     <form ref={formRef} onSubmit={onSubmit} onKeyDown={handleFormKeyDown} className="space-y-6">
       {isEditing && (
-        <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">{t.editingTitle}</h3>
+        <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">{t.editingTitle}</h3>
       )}
 
       {/* NEW (2026-10-22, user-reported UX issue): previously this entry
@@ -1726,9 +1729,9 @@ function JeFormView({
               ))}
             </select>
             {isEditing ? (
-              <span className="text-[10px] text-amber-600">{t.documentTypeLocked}</span>
+              <span className="text-[10px] text-amber-700">{t.documentTypeLocked}</span>
             ) : selectedDocType ? (
-              <span className="text-[11px] text-slate-400">
+              <span className="text-[11px] text-slate-500">
                 {t.documentTypeHint}: {selectedDocType.nextNumberPreview}
               </span>
             ) : null}
@@ -1743,7 +1746,7 @@ function JeFormView({
 
       <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">{t.items}</h3>
+          <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">{t.items}</h3>
           <Button type="button" variant="secondary" size="sm" onClick={onAddLine}>{t.addLine}</Button>
         </div>
 
@@ -1760,7 +1763,7 @@ function JeFormView({
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b text-left text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              <tr className="border-b text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">
                 <th className="px-3 py-2 min-w-[220px]">{t.account}</th>
                 <th className="px-3 py-2 min-w-[180px]">{t.thirdParty}</th>
                 <th className="px-3 py-2 min-w-[180px]">{t.costCenter}</th>
@@ -1814,12 +1817,12 @@ function JeFormView({
                         />
                         <button type="button" onClick={() => setAccountModalIndex(index)}
                           title={t.newAccountQuick} tabIndex={-1}
-                          className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 text-slate-400 hover:text-blue-600 hover:border-blue-300 text-lg leading-none">
+                          className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 text-lg leading-none">
                           +
                         </button>
                       </div>
-                      {lineErr.accountId && <p className="text-[10px] text-red-500 mt-1">{lineErr.accountId}</p>}
-                      {lineErr.amount && <p className="text-[10px] text-red-500 mt-1">{lineErr.amount}</p>}
+                      {lineErr.accountId && <p className="text-[10px] text-red-700 mt-1">{lineErr.accountId}</p>}
+                      {lineErr.amount && <p className="text-[10px] text-red-700 mt-1">{lineErr.amount}</p>}
                     </td>
                     <td className="px-3 py-2 align-top">
                       {acc?.requiresThirdParty ? (
@@ -1837,11 +1840,11 @@ function JeFormView({
                             />
                             <button type="button" onClick={() => setThirdPartyModalIndex(index)}
                               title={t.newThirdPartyQuick} tabIndex={-1}
-                              className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 text-slate-400 hover:text-blue-600 hover:border-blue-300 text-lg leading-none">
+                              className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 text-lg leading-none">
                               +
                             </button>
                           </div>
-                          {lineErr.thirdPartyId && <p className="text-[10px] text-red-500 mt-1">{lineErr.thirdPartyId}</p>}
+                          {lineErr.thirdPartyId && <p className="text-[10px] text-red-700 mt-1">{lineErr.thirdPartyId}</p>}
                           {!item.thirdPartyId && prevThirdParty && (
                             <button type="button" tabIndex={-1}
                               onClick={() => {
@@ -1874,11 +1877,11 @@ function JeFormView({
                             </select>
                             <button type="button" onClick={() => setCostCenterModalIndex(index)}
                               title={t.newCostCenterQuick} tabIndex={-1}
-                              className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 text-slate-400 hover:text-blue-600 hover:border-blue-300 text-lg leading-none">
+                              className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 text-lg leading-none">
                               +
                             </button>
                           </div>
-                          {lineErr.costCenterId && <p className="text-[10px] text-red-500 mt-1">{lineErr.costCenterId}</p>}
+                          {lineErr.costCenterId && <p className="text-[10px] text-red-700 mt-1">{lineErr.costCenterId}</p>}
                           {!item.costCenterId && prevCostCenter && (
                             <button type="button" tabIndex={-1}
                               onClick={() => {
@@ -1903,8 +1906,8 @@ function JeFormView({
                             onChange={(e) => onItemChange(index, "taxBase", e.target.value)}
                             onKeyDown={(e) => handleFieldKeyDown(e, index, "taxBase")}
                             className={jeInputCls(lineErr.taxBase)} placeholder="0.00" />
-                          <p className="text-[10px] text-slate-400 mt-1">{tax.code} · {tax.rate}%</p>
-                          {lineErr.taxBase && <p className="text-[10px] text-red-500 mt-1">{lineErr.taxBase}</p>}
+                          <p className="text-[10px] text-slate-500 mt-1">{tax.code} · {tax.rate}%</p>
+                          {lineErr.taxBase && <p className="text-[10px] text-red-700 mt-1">{lineErr.taxBase}</p>}
                         </>
                       ) : (
                         <span className="text-[11px] text-slate-300">—</span>
@@ -1961,7 +1964,7 @@ function JeFormView({
                     <td className="px-3 py-2 align-top">
                       <button type="button" onClick={() => onRemoveLine(index)}
                         title={`${t.removeLine} (Alt+Delete)`}
-                        className="text-slate-400 hover:text-red-500 text-lg leading-none"
+                        className="text-slate-500 hover:text-red-500 text-lg leading-none"
                         tabIndex={-1}
                         disabled={form.items.length <= 1}>
                         ×
@@ -1974,15 +1977,22 @@ function JeFormView({
           </table>
         </div>
 
-        <div className={`flex flex-wrap items-center justify-end gap-6 rounded-xl px-5 py-3 text-sm font-semibold ${
-          totals.isBalanced ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
-        }`}>
+        <div
+          role="status"
+          aria-live="polite"
+          className={`flex flex-wrap items-center justify-end gap-6 rounded-lg border px-4 py-2.5 text-sm font-semibold tabular-nums ${
+            totals.isBalanced ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-red-300 bg-red-50 text-red-800"
+          }`}
+        >
           <span>{t.totalDebitLabel} {money(totals.totalDebit)}</span>
           <span>{t.totalCreditLabel} {money(totals.totalCredit)}</span>
           <span>{t.difference} {money(totals.difference)}</span>
-          <span className="uppercase tracking-wider">{totals.isBalanced ? t.balanced : t.unbalanced}</span>
+          <span className="inline-flex items-center gap-1">
+            <span aria-hidden="true">{totals.isBalanced ? "✓" : "⚠"}</span>
+            {totals.isBalanced ? t.balanced : t.unbalanced}
+          </span>
         </div>
-        {errors.balance && <p className="text-xs text-red-500 text-right">{errors.balance}</p>}
+        {errors.balance && <Alert tone="error">{errors.balance}</Alert>}
       </div>
       </fieldset>
 
@@ -1991,7 +2001,7 @@ function JeFormView({
           {saving ? t.saving : t.save}
         </Button>
         <Button type="button" variant="secondary" size="lg" onClick={onCancel}>{t.cancel}</Button>
-        <span className="text-[11px] text-slate-400">{t.saveShortcutHint}</span>
+        <span className="text-[11px] text-slate-500">{t.saveShortcutHint}</span>
       </div>
     </form>
 
@@ -2153,64 +2163,62 @@ function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/20" onClick={onClose} />
-      <div className="relative w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
-        <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-8 py-5 flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-black text-slate-800">{t.detailTitle} — {entry.documentNumber}</h2>
-            <p className="text-sm text-slate-500">{entry.entryDate} · {entry.description}</p>
-          </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
-        </div>
-
-        <div className="px-8 py-6">
-          {entry.annulled && (
-            <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-              <b>{t.annulled}</b>{entry.annulmentReason ? `: ${entry.annulmentReason}` : ""}
-            </div>
-          )}
-
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                <th className="px-3 py-2">{t.account}</th>
-                <th className="px-3 py-2">{t.description}</th>
-                <th className="px-3 py-2">{t.thirdParty}</th>
-                <th className="px-3 py-2">{t.costCenter}</th>
-                <th className="px-3 py-2 text-right">{t.debit}</th>
-                <th className="px-3 py-2 text-right">{t.credit}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {(entry.items || []).map((item) => (
-                <tr key={item.id}>
-                  <td className="px-3 py-2 text-slate-700">{item.accountCode} - {item.accountName}</td>
-                  <td className="px-3 py-2 text-slate-500 text-xs" title={item.description || ""}>{truncateDetail(item.description)}</td>
-                  <td className="px-3 py-2 text-slate-500 text-xs">{item.thirdPartyName || "—"}</td>
-                  <td className="px-3 py-2 text-slate-500 text-xs">{item.costCenterName || "—"}</td>
-                  <td className="px-3 py-2 text-right text-slate-700">{money(item.debit)}</td>
-                  <td className="px-3 py-2 text-right text-slate-700">{money(item.credit)}</td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t font-bold text-slate-700">
-                <td className="px-3 py-2" colSpan={4}>Total</td>
-                <td className="px-3 py-2 text-right">{money(totalDebit)}</td>
-                <td className="px-3 py-2 text-right">{money(totalCredit)}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-
-        <div className="px-8 pb-6 flex gap-3">
-          <Button variant="primary" onClick={handlePrintPdf}>{t.printPdf}</Button>
+    <Modal
+      size="lg"
+      title={`${t.detailTitle} — ${entry.documentNumber}`}
+      subtitle={`${entry.entryDate}${entry.description ? ` · ${entry.description}` : ""}`}
+      onClose={onClose}
+      closeLabel={t.close}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>{t.close}</Button>
           <Button variant="secondary" onClick={handleExportExcel}>{t.exportExcel}</Button>
-          <Button variant="secondary" onClick={onClose}>{t.close}</Button>
-        </div>
+          <Button variant="primary" onClick={handlePrintPdf}>{t.printPdf}</Button>
+        </>
+      }
+    >
+      {entry.annulled && (
+        <Alert tone="error" className="mb-4" title={t.annulled}>
+          {entry.annulmentReason || null}
+        </Alert>
+      )}
+
+      <div className="overflow-x-auto">
+        <table className={tbl.table}>
+          <thead className={tbl.thead}>
+            <tr>
+              <th scope="col" className={tbl.th}>{t.account}</th>
+              <th scope="col" className={tbl.th}>{t.description}</th>
+              <th scope="col" className={tbl.th}>{t.thirdParty}</th>
+              <th scope="col" className={tbl.th}>{t.costCenter}</th>
+              <th scope="col" className={tbl.thNum}>{t.debit}</th>
+              <th scope="col" className={tbl.thNum}>{t.credit}</th>
+            </tr>
+          </thead>
+          <tbody className={tbl.tbody}>
+            {(entry.items || []).map((item) => (
+              <tr key={item.id}>
+                <td className={tbl.td}>
+                  <span className="font-semibold text-slate-900">{item.accountCode}</span> {item.accountName}
+                </td>
+                <td className={`${tbl.td} text-xs`} title={item.description || ""}>{truncateDetail(item.description)}</td>
+                <td className={`${tbl.td} text-xs`}>{item.thirdPartyName || "—"}</td>
+                <td className={`${tbl.td} text-xs`}>{item.costCenterName || "—"}</td>
+                <td className={tbl.tdNum}>{money(item.debit)}</td>
+                <td className={tbl.tdNum}>{money(item.credit)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className={tbl.tfoot}>
+            <tr>
+              <td className={tbl.td} colSpan={4}>Total</td>
+              <td className={`${tbl.tdNum} font-bold`}>{money(totalDebit)}</td>
+              <td className={`${tbl.tdNum} font-bold`}>{money(totalCredit)}</td>
+            </tr>
+          </tfoot>
+        </table>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -2220,14 +2228,23 @@ function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose }) {
 
 function JeAnnulModal({ t, entry, reason, setReason, error, annulling, onConfirm, onCancel }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/20" onClick={onCancel} />
-      <div className="relative w-full max-w-lg rounded-2xl bg-white shadow-2xl">
-        <div className="px-8 py-6 space-y-4">
-          <div>
-            <h2 className="text-xl font-black text-slate-800">{t.annulTitle} — {entry.documentNumber}</h2>
-            <p className="mt-2 text-sm text-slate-500">{t.annulBody}</p>
-          </div>
+    <Modal
+      title={`${t.annulTitle} — ${entry.documentNumber}`}
+      onClose={onCancel}
+      dismissible={!annulling}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onCancel} disabled={annulling}>
+            {t.annulCancel}
+          </Button>
+          <Button variant="dangerSolid" loading={annulling} onClick={onConfirm}>
+            {t.annulConfirm}
+          </Button>
+        </>
+      }
+    >
+        <div className="space-y-4">
+          <Alert tone="warning">{t.annulBody}</Alert>
 
           <JeField label={t.annulReasonLabel} error={error}>
             <textarea
@@ -2240,18 +2257,8 @@ function JeAnnulModal({ t, entry, reason, setReason, error, annulling, onConfirm
               autoFocus
             />
           </JeField>
-
-          <div className="flex gap-3 pt-2">
-            <Button variant="danger" loading={annulling} onClick={onConfirm}>
-              {t.annulConfirm}
-            </Button>
-            <Button variant="secondary" onClick={onCancel} disabled={annulling}>
-              {t.annulCancel}
-            </Button>
-          </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -2264,14 +2271,23 @@ function JeAnnulModal({ t, entry, reason, setReason, error, annulling, onConfirm
 // open so the user can pick another date.
 function JeDuplicateModal({ t, entry, date, setDate, description, setDescription, duplicating, onConfirm, onCancel }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/20" onClick={onCancel} />
-      <div className="relative w-full max-w-lg rounded-2xl bg-white shadow-2xl">
-        <div className="px-8 py-6 space-y-4">
-          <div>
-            <h2 className="text-xl font-black text-slate-800">{t.duplicateTitle} — {entry.documentNumber}</h2>
-            <p className="mt-2 text-sm text-slate-500">{t.duplicateBody}</p>
-          </div>
+    <Modal
+      title={`${t.duplicateTitle} — ${entry.documentNumber}`}
+      subtitle={t.duplicateBody}
+      onClose={onCancel}
+      dismissible={!duplicating}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onCancel} disabled={duplicating}>
+            {t.duplicateCancel}
+          </Button>
+          <Button variant="primary" loading={duplicating} onClick={onConfirm}>
+            {t.duplicateConfirm}
+          </Button>
+        </>
+      }
+    >
+        <div className="space-y-4">
 
           <JeField label={t.duplicateDateLabel}>
             <input
@@ -2298,20 +2314,10 @@ function JeDuplicateModal({ t, entry, date, setDate, description, setDescription
               className={jeInputCls()}
               maxLength={255}
             />
-            <p className="mt-1 text-xs text-slate-400">{t.duplicateDescriptionHint}</p>
+            <p className="mt-1 text-xs text-slate-500">{t.duplicateDescriptionHint}</p>
           </JeField>
-
-          <div className="flex gap-3 pt-2">
-            <Button variant="primary" loading={duplicating} onClick={onConfirm}>
-              {t.duplicateConfirm}
-            </Button>
-            <Button variant="secondary" onClick={onCancel} disabled={duplicating}>
-              {t.duplicateCancel}
-            </Button>
-          </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -2319,8 +2325,8 @@ function JeDuplicateModal({ t, entry, date, setDate, description, setDescription
 // Local helpers
 // ============================================================
 
-const jeInputCls = (err) =>
-  `w-full rounded-lg border ${err ? "border-red-400" : "border-gray-200"} px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors bg-white`;
+// UI review 2026-11-04: delega en el estilo base compartido (tokens.js).
+const jeInputCls = (err) => inputClass(Boolean(err));
 
 // NEW (2026-10-13, user request): the account picker used to be a plain
 // <select>, which only jumps to an option by typing from the START of
@@ -2457,7 +2463,7 @@ function AccountComboBox({ accounts, value, onChange, onSelected, registerRef, e
       {open && (
         <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
           {filtered.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-slate-400">{noResultsLabel}</div>
+            <div className="px-3 py-2 text-xs text-slate-500">{noResultsLabel}</div>
           ) : (
             filtered.map((a, idx) => (
               <div
@@ -2574,7 +2580,7 @@ function ThirdPartyComboBox({ thirdParties, value, onChange, onSelected, registe
       {open && (
         <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
           {filtered.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-slate-400">{noResultsLabel}</div>
+            <div className="px-3 py-2 text-xs text-slate-500">{noResultsLabel}</div>
           ) : (
             filtered.map((tp, idx) => (
               <div
@@ -2592,14 +2598,11 @@ function ThirdPartyComboBox({ thirdParties, value, onChange, onSelected, registe
   );
 }
 
+// UI review 2026-11-04: envoltorio del Field compartido (etiqueta enlazada,
+// aria-invalid y error con ícono). Se conserva el nombre para no tocar
+// todos los usos de la página.
 function JeField({ label, error, children }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</label>
-      {children}
-      {error && <span className="text-[10px] text-red-500">{error}</span>}
-    </div>
-  );
+  return <Field label={label} error={error}>{children}</Field>;
 }
 
 export default JournalEntryPage;

@@ -369,7 +369,7 @@ function DocumentTypePage({ language = "es" }) {
     <div className="space-y-6 p-4">
       {toast && (
         <div className={`fixed bottom-6 right-6 z-[100] rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-xl transition-all ${
-          toast.type === "error" ? "bg-red-500" : "bg-emerald-500"
+          toast.type === "error" ? "bg-red-700" : "bg-emerald-700"
         }`}>
           {toast.msg}
         </div>
@@ -381,7 +381,7 @@ function DocumentTypePage({ language = "es" }) {
         tenantId={activeTenantId}
         actions={
           <>
-            <span className="hidden text-[11px] text-slate-400 sm:inline">{t.newShortcutHint}</span>
+            <span className="hidden text-[11px] text-slate-500 sm:inline">{t.newShortcutHint}</span>
             <Button variant="primary" onClick={openCreatePanel} title={`${t.new} ${t.newShortcutHint}`}>
               + {t.new}
             </Button>
@@ -399,13 +399,13 @@ function DocumentTypePage({ language = "es" }) {
 
       <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-x-auto">
         {loading ? (
-          <div className="flex items-center justify-center py-20 text-slate-400 text-sm">
+          <div className="flex items-center justify-center py-20 text-slate-500 text-sm">
             {t.loading}
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
                 {[t.code, t.name, t.prefix, t.consecutive, t.resolution, t.active, t.accounting, t.actions].map((h) => (
                   <th key={h} className="px-5 py-4">{h}</th>
                 ))}
@@ -414,16 +414,16 @@ function DocumentTypePage({ language = "es" }) {
             <tbody className="divide-y divide-gray-50">
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-16 text-center text-slate-400">{t.noResults}</td>
+                  <td colSpan={8} className="py-16 text-center text-slate-500">{t.noResults}</td>
                 </tr>
               ) : (
                 filteredRows.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
                     <td className="px-5 py-4 font-bold text-slate-700">{item.code}</td>
                     <td className="px-5 py-4 text-slate-600">{item.name}</td>
-                    <td className="px-5 py-4 text-slate-400">{item.prefix || "—"}</td>
+                    <td className="px-5 py-4 text-slate-500">{item.prefix || "—"}</td>
                     <td className="px-5 py-4 font-mono text-blue-600">{item.currentConsecutive}</td>
-                    <td className="px-5 py-4 text-xs text-slate-400 max-w-[160px] truncate"
+                    <td className="px-5 py-4 text-xs text-slate-500 max-w-[160px] truncate"
                         title={item.legalResolution || ""}>
                       {item.legalResolution?.trim()
                         ? item.legalResolution
@@ -477,7 +477,7 @@ function DocumentTypePage({ language = "es" }) {
               <h2 className="text-xl font-black text-slate-800">
                 {editingId ? t.edit : t.new} — {t.title}
               </h2>
-              <button onClick={closePanel} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+              <button onClick={closePanel} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
             </div>
 
             <form onSubmit={handleSave} className="flex-1 px-8 py-6 grid grid-cols-1 gap-5 md:grid-cols-2">
@@ -514,7 +514,7 @@ function DocumentTypePage({ language = "es" }) {
                   min="0" readOnly={!!editingId}
                   className={`${inputCls(errors.currentConsecutive)} font-mono ${editingId ? "opacity-60 cursor-not-allowed" : ""}`} />
                 {editingId && (
-                  <span className="text-[10px] text-amber-600">{t.consecutiveLockedHint}</span>
+                  <span className="text-[10px] text-amber-700">{t.consecutiveLockedHint}</span>
                 )}
               </Field>
 
@@ -558,12 +558,12 @@ function DocumentTypePage({ language = "es" }) {
           <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl flex flex-col">
             <div className="border-b border-slate-100 px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-black text-slate-800">{t.adjustConsecutiveTitle}</h2>
-              <button onClick={closeAdjustPanel} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+              <button onClick={closeAdjustPanel} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
             </div>
 
             <form onSubmit={handleAdjustConsecutive} className="px-6 py-5 flex flex-col gap-4">
               <div className="rounded-xl bg-slate-50 px-4 py-3">
-                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">
                   {adjustingItem.code} — {adjustingItem.name}
                 </div>
                 <div className="text-sm text-slate-600">
@@ -575,7 +575,7 @@ function DocumentTypePage({ language = "es" }) {
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                   {t.newConsecutiveLabel}
                 </label>
                 <input
@@ -587,7 +587,7 @@ function DocumentTypePage({ language = "es" }) {
                   autoFocus
                 />
                 {consecutiveError && (
-                  <span className="text-[10px] text-red-500">{consecutiveError}</span>
+                  <span className="text-[10px] text-red-700">{consecutiveError}</span>
                 )}
               </div>
 
@@ -614,9 +614,9 @@ const inputCls = (err) =>
 function Field({ label, error, children }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</label>
+      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{label}</label>
       {children}
-      {error && <span className="text-[10px] text-red-500">{error}</span>}
+      {error && <span className="text-[10px] text-red-700">{error}</span>}
     </div>
   );
 }

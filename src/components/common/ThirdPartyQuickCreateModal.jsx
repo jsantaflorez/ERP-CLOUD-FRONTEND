@@ -254,7 +254,7 @@ function ThirdPartyQuickCreateModal({ language = "es", onCreated, onClose }) {
       <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
         <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between">
           <h2 className="text-lg font-black text-slate-800">{t.title}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
         </div>
 
         <form onSubmit={handleSave} className="px-6 py-5 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -373,13 +373,13 @@ function ThirdPartyQuickCreateModal({ language = "es", onCreated, onClose }) {
                   </option>
                 ))}
               </select>
-              <span className="text-[10px] text-slate-400">
+              <span className="text-[10px] text-slate-500">
                 {t.regimeHint} {form.personType === "JURIDICA" ? t.juridica : t.natural}
               </span>
             </TpField>
           </div>
 
-          <p className="md:col-span-2 text-[10px] text-slate-400">{t.completeLaterHint}</p>
+          <p className="md:col-span-2 text-[10px] text-slate-500">{t.completeLaterHint}</p>
 
           <div className="md:col-span-2 flex gap-3 pt-2">
             <Button type="submit" variant="primary" fullWidth loading={saving}>
@@ -401,9 +401,9 @@ const tpInputCls = (err) =>
 function TpField({ label, error, children }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</label>
+      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{label}</label>
       {children}
-      {error && <span className="text-[10px] text-red-500">{error}</span>}
+      {error && <span className="text-[10px] text-red-700">{error}</span>}
     </div>
   );
 }
