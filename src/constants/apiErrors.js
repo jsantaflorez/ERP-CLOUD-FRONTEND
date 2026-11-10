@@ -115,6 +115,18 @@ export const API_ERROR_LABELS = {
     // lists instead, same pattern as the PUC importer. This label is just
     // the fallback for any other place that error code might surface.
     SIEWIN_THIRD_PARTY_INTEGRITY_GAP: "El archivo de terceros SIEWIN tiene problemas de datos que impiden la importacion. Revisa el detalle mostrado en el formulario.",
+    // Certificados de Retencion (2026-11-07): validaciones del
+    // backend en WithholdingCertificateService/LegalDocumentTemplateService.
+    TAX_TYPE_REQUIRED: "Selecciona un tipo de impuesto.",
+    THIRD_PARTY_REQUIRED: "Selecciona un tercero.",
+    THIRD_PARTY_NOT_FOUND: "No se encontro el tercero seleccionado.",
+    NO_RETENTION_MOVEMENTS: "No hay movimientos de retencion para los filtros seleccionados.",
+    INVALID_TAX_YEAR: "El ano gravable no es valido.",
+    UNKNOWN_TEMPLATE_KEY: "La plantilla solicitada no existe.",
+    // Datos de la Empresa (2026-11-09): validaciones del backend en
+    // CompanyService.updateSignatureSettings().
+    INVALID_LOGO_FORMAT: "El logo debe ser una imagen valida (PNG o JPG).",
+    LOGO_TOO_LARGE: "La imagen del logo pesa demasiado.",
   },
   en: {
     DUPLICATE_VALUE: "A record with this value already exists. Check the code or identifier.",
@@ -209,6 +221,18 @@ export const API_ERROR_LABELS = {
     // SIEWIN legacy Third Party importer (2026-11-01). Same fallback-only
     // note as SIEWIN_IMPORT_INTEGRITY_GAP above.
     SIEWIN_THIRD_PARTY_INTEGRITY_GAP: "The SIEWIN third-party file has data problems that prevent importing. Review the detail shown in the form.",
+    // Withholding Certificates (2026-11-07): backend validations in
+    // WithholdingCertificateService/LegalDocumentTemplateService.
+    TAX_TYPE_REQUIRED: "Select a tax type.",
+    THIRD_PARTY_REQUIRED: "Select a third party.",
+    THIRD_PARTY_NOT_FOUND: "The selected third party could not be found.",
+    NO_RETENTION_MOVEMENTS: "No withholding movements found for the selected filters.",
+    INVALID_TAX_YEAR: "The tax year is not valid.",
+    UNKNOWN_TEMPLATE_KEY: "The requested template does not exist.",
+    // Company Data (2026-11-09): backend validations in
+    // CompanyService.updateSignatureSettings().
+    INVALID_LOGO_FORMAT: "The logo must be a valid image (PNG or JPG).",
+    LOGO_TOO_LARGE: "The logo image is too large.",
   },
 };
 

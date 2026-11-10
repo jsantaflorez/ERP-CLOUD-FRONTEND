@@ -27,6 +27,11 @@ import AccountingPeriodPage from "./AccountingPeriodPage";
 import TaxDetailPage from "./TaxDetailPage";
 import IncompleteMovementsPage from "./IncompleteMovementsPage";
 import ValueSearchPage from "./ValueSearchPage";
+// Certificados de Retencion (2026-11-07) -- see
+// claude/propuesta-certificados-retencion-2026-11-07.md.
+import WithholdingCertificatePage from "./WithholdingCertificatePage";
+import LegalDocumentTemplatesPage from "./LegalDocumentTemplatesPage";
+import CompanySettingsPage from "./CompanySettingsPage";
 
 // UX IMPROVEMENT (2026-10-17, user request): with 9 reports in one flat
 // list, the "Reportes" submenu had gotten long enough that finding one
@@ -69,7 +74,10 @@ const REPORT_GROUPS = [
   {
     key: "fiscal",
     labelKey: "navReportsFiscal",
-    views: [{ view: "taxDetail", labelKey: "navTaxDetail" }],
+    views: [
+      { view: "taxDetail", labelKey: "navTaxDetail" },
+      { view: "withholdingCertificate", labelKey: "navWithholdingCertificate" },
+    ],
   },
 ];
 const REPORT_VIEWS = REPORT_GROUPS.flatMap((group) => group.views.map((v) => v.view));
@@ -317,6 +325,24 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
                 </button>
 
                 <button
+                  onClick={() => changeView("legalTemplates")}
+                  className={`rounded-xl px-4 py-3 text-left transition-colors ${
+                    activeView === "legalTemplates" ? "bg-blue-600" : "bg-slate-800 hover:bg-slate-700"
+                  }`}
+                >
+                  {t.navLegalTemplates}
+                </button>
+
+                <button
+                  onClick={() => changeView("companySettings")}
+                  className={`rounded-xl px-4 py-3 text-left transition-colors ${
+                    activeView === "companySettings" ? "bg-blue-600" : "bg-slate-800 hover:bg-slate-700"
+                  }`}
+                >
+                  {t.navCompanySettings}
+                </button>
+
+                <button
                   onClick={() => changeView("users")}
                   className={`rounded-xl px-4 py-3 text-left transition-colors ${
                     activeView === "users" ? "bg-blue-600" : "bg-slate-800 hover:bg-slate-700"
@@ -433,6 +459,10 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
           <TaxDetailPage language={language} />
         )}
 
+        {activeView === "withholdingCertificate" && (
+          <WithholdingCertificatePage language={language} />
+        )}
+
         {activeView === "incompleteMovements" && (
           <IncompleteMovementsPage language={language} onEditEntry={handleEditEntryFromReport} />
         )}
@@ -443,6 +473,14 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
 
         {activeView === "accountingPeriod" && (
           <AccountingPeriodPage language={language} />
+        )}
+
+        {activeView === "legalTemplates" && (
+          <LegalDocumentTemplatesPage language={language} />
+        )}
+
+        {activeView === "companySettings" && (
+          <CompanySettingsPage language={language} />
         )}
 
         {activeView === "users" && (
