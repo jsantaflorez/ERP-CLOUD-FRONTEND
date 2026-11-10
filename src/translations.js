@@ -44,6 +44,10 @@ const translations = {
     navLegalTemplates: "Plantillas Legales",
     navCompanySettings: "Datos de la Empresa",
     navUsers: "Usuarios",
+    navMainMenu: "Menú principal",
+    navSectionOperations: "Operación",
+    navSectionCatalogs: "Catálogos",
+    navSectionAdmin: "Administración",
     unsavedChangesWarning: "Hay cambios sin guardar en el comprobante. ¿Desea salir de todos modos? Se perderán los datos digitados.",
   },
 
@@ -92,6 +96,10 @@ const translations = {
     navLegalTemplates: "Legal Templates",
     navCompanySettings: "Company Data",
     navUsers: "Users",
+    navMainMenu: "Main menu",
+    navSectionOperations: "Operations",
+    navSectionCatalogs: "Catalogs",
+    navSectionAdmin: "Administration",
     unsavedChangesWarning: "This entry has unsaved changes. Leave anyway? The data you typed will be lost.",
   },
 };

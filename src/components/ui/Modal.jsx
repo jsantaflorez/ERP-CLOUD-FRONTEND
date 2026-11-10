@@ -8,7 +8,7 @@ import { IconClose } from "./Icons";
 const SIZES = { sm: "max-w-md", md: "max-w-lg", lg: "max-w-3xl", xl: "max-w-5xl" };
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-function Modal({ title, subtitle, onClose, size = "md", footer, children, closeLabel = "Cerrar", dismissible = true }) {
+function Modal({ title, subtitle, onClose, size = "md", footer, children, closeLabel = "Cerrar", dismissible = true, layer = "z-50" }) {
   const titleId = useId();
   const panelRef = useRef(null);
   // onClose suele llegar como función en línea; se guarda en una ref para
@@ -44,7 +44,7 @@ function Modal({ title, subtitle, onClose, size = "md", footer, children, closeL
   }, [dismissible]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className={`fixed inset-0 ${layer} flex items-center justify-center p-4`}>
       <div className="absolute inset-0 bg-slate-900/40" onClick={dismissible ? onClose : undefined} aria-hidden="true" />
       <div
         ref={panelRef}
@@ -90,6 +90,8 @@ Modal.propTypes = {
   children: PropTypes.node,
   closeLabel: PropTypes.string,
   dismissible: PropTypes.bool,
+  // Capa: la ventana de atajos (F1) va por encima de paneles y modales.
+  layer: PropTypes.string,
 };
 
 export default Modal;

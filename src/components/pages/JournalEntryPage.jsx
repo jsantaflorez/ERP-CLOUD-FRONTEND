@@ -8,6 +8,10 @@ import StatusBadge from "../ui/StatusBadge";
 import LoadingState from "../ui/LoadingState";
 import Alert from "../ui/Alert";
 import { inputClass, table as tbl } from "../ui/tokens";
+import { ROW_KBD, rowNavKeyDown, focusFirstRow, useSearchShortcut, focusFirstInvalidSoon, hintsFor } from "../ui/keyboard";
+import { KeyboardHints, ExportMenu, ShortcutKbd } from "../ui/tableKit";
+import AmountInput from "../ui/AmountInput";
+import { formatMoney } from "../../utils/amountFormat";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
@@ -57,11 +61,10 @@ const toNumber = (value) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const money = (n) =>
-  (Number.isFinite(n) ? n : 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+// UI 2026-11-10: mismo formato que los campos de monto (AmountInput):
+// "1.234.567,89". Antes dependía del idioma del navegador, así que lo
+// digitado y los totales podían verse con puntuación distinta.
+const money = (n) => formatMoney(n);
 
 // NEW (2026-10-24): the voucher's Ver/Imprimir view shows each line's own
 // detalle, but there's no room for the full text next to account/tercero/CC
@@ -106,6 +109,8 @@ const effectiveAmounts = (item, tax) => {
 // only) "x" button. Now any line matching this check is silently
 // skipped by validation and left out of the save payload (see
 // validate() and handleSave() below) -- the user can just ignore it.
+const PAGE_SIZE_OPTIONS = [25, 50, 100];
+
 const isBlankItem = (item) =>
   !item.accountId &&
   !item.thirdPartyId &&
@@ -137,7 +142,7 @@ const fieldOrderForRow = (item, acc, tax) => {
   return order;
 };
 
-function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenEntryIdHandled }) {
+function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenEntryIdHandled, newEntryRequest, onNewEntryRequestHandled }) {
   const [view, setView] = useState("list"); // "list" | "form"
 
   // List/search state
@@ -145,6 +150,21 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  // UI 2026-11-10: antes se veían 10 comprobantes por página. Ahora 50 por
+  // defecto (25 / 50 / 100 a elección, recordado en este navegador) y la
+  // tabla tiene scroll propio con encabezado fijo.
+  const [pageSize, setPageSize] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem("erp_je_page_size"));
+      return PAGE_SIZE_OPTIONS.includes(saved) ? saved : 50;
+    } catch { return 50; }
+  });
+  const [totalElements, setTotalElements] = useState(null);
+  const changePageSize = (size) => {
+    setPageSize(size);
+    try { localStorage.setItem("erp_je_page_size", String(size)); } catch { /* sin almacenamiento */ }
+    loadEntries(0, size);
+  };
   const [searchTerm, setSearchTerm] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -243,7 +263,8 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       annulled: "Anulado", active: "Activo", view: "Ver",
       noResults: "No hay asientos registrados",
       loading: "Cargando asientos...",
-      page: "Página", of: "de", prev: "Anterior", next: "Siguiente",
+      alreadyInEntry: "Ya hay un comprobante abierto. Guárdelo (Ctrl+Enter) o cancélelo (Esc) antes de iniciar otro.",
+      page: "Página", of: "de", prev: "Anterior", next: "Siguiente", exportLabel: "Exportar", perPage: "Por página", showing: "Mostrando", entriesLabel: "comprobantes",
       entryDate: "Fecha del Asiento", documentType: "Tipo de Documento",
       selectDocumentType: "Seleccione un tipo de documento",
       generalDescription: "Descripción General",
@@ -252,7 +273,6 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       repeatPreviousThirdParty: "Repetir tercero anterior",
       repeatPreviousCostCenter: "Repetir centro de costo anterior",
       repeatPreviousDescription: "Repetir descripción anterior",
-      keyboardShortcutsHint: "TAB / ENTER avanza al siguiente campo · ↑ / ↓ navegan las sugerencias de Cuenta y Tercero · ENTER en la última línea crea una nueva (si queda vacía, se ignora sola al guardar) · ALT + DELETE elimina la línea actual · CTRL + ENTER guarda el comprobante · F9 autocuadra la partida doble",
       account: "Cuenta", selectAccount: "Buscar por código o nombre...", noAccountMatches: "Sin resultados",
       noThirdPartyMatches: "Sin resultados",
       newAccountQuick: "Crear nueva cuenta",
@@ -264,7 +284,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       totalDebitLabel: "Total Débitos:", totalCreditLabel: "Total Créditos:",
       difference: "Diferencia:", balanced: "Balanceado", unbalanced: "Descuadrado",
       save: "Guardar Asiento", cancel: "Cancelar", saving: "Guardando...",
-      saveShortcutHint: "Ctrl+Enter: Guardar · F9: Auto-cuadrar",
+      saveShortcutHint: "Ctrl+Enter: Guardar · F9: Auto-cuadrar · Esc: Cancelar",
       unsavedChangesWarning: "Hay cambios sin guardar en este comprobante. ¿Desea salir de todos modos? Se perderán los datos digitados.",
       loadingCatalogs: "Cargando catálogos...",
       errorConn: "Error de conexión con el servidor.",
@@ -333,7 +353,8 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       annulled: "Annulled", active: "Active", view: "View",
       noResults: "No journal entries yet",
       loading: "Loading entries...",
-      page: "Page", of: "of", prev: "Previous", next: "Next",
+      alreadyInEntry: "An entry is already open. Save it (Ctrl+Enter) or cancel it (Esc) before starting another.",
+      page: "Page", of: "of", prev: "Previous", next: "Next", exportLabel: "Export", perPage: "Per page", showing: "Showing", entriesLabel: "entries",
       entryDate: "Entry Date", documentType: "Document Type",
       selectDocumentType: "Select a document type",
       generalDescription: "General Description",
@@ -342,7 +363,6 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       repeatPreviousThirdParty: "Repeat previous third party",
       repeatPreviousCostCenter: "Repeat previous cost center",
       repeatPreviousDescription: "Repeat previous description",
-      keyboardShortcutsHint: "TAB / ENTER moves to the next field · ↑ / ↓ navigate Account and Third Party suggestions · ENTER on the last line creates a new one (left blank, it's ignored on save) · ALT + DELETE removes the current line · CTRL + ENTER saves the entry · F9 auto-balances the double entry",
       account: "Account", selectAccount: "Search by code or name...", noAccountMatches: "No matches",
       noThirdPartyMatches: "No matches",
       newAccountQuick: "Create new account",
@@ -354,7 +374,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       totalDebitLabel: "Total Debits:", totalCreditLabel: "Total Credits:",
       difference: "Difference:", balanced: "Balanced", unbalanced: "Unbalanced",
       save: "Save Entry", cancel: "Cancel", saving: "Saving...",
-      saveShortcutHint: "Ctrl+Enter: Save · F9: Auto-balance",
+      saveShortcutHint: "Ctrl+Enter: Save · F9: Auto-balance · Esc: Cancel",
       unsavedChangesWarning: "This entry has unsaved changes. Leave anyway? The data you typed will be lost.",
       loadingCatalogs: "Loading catalogs...",
       errorConn: "Server connection error.",
@@ -425,12 +445,12 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
     return params;
   };
 
-  const loadEntries = async (page = 0) => {
+  const loadEntries = async (page = 0, size = pageSize) => {
     setLoading(true);
     try {
       const params = buildFilterParams();
       params.set("page", String(page));
-      params.set("size", "10");
+      params.set("size", String(size));
       params.set("sort", "entryDate,desc");
 
       const response = await api.get(`/v1/journal-entries?${params.toString()}`);
@@ -438,6 +458,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       setEntries(Array.isArray(pageData?.content) ? pageData.content : []);
       setTotalPages(pageData?.totalPages ?? 1);
       setCurrentPage(pageData?.number ?? 0);
+      setTotalElements(Number.isFinite(pageData?.totalElements) ? pageData.totalElements : null);
     } catch (error) {
       showToast(getApiErrorMessage(error, language, t.errorConn), "error");
     } finally {
@@ -755,7 +776,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   // -- it must never interrupt an entry already being captured or edited.
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key !== "Insert" || view !== "list") return;
+      if (e.key !== "Insert" || document.querySelector('[aria-modal="true"]') || view !== "list") return;
       e.preventDefault();
       openNewEntry();
     };
@@ -885,6 +906,18 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
     onOpenEntryIdHandled?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openEntryId]);
+
+  // UI 2026-11-10: atajo global F8 (Dashboard) = "nuevo comprobante desde
+  // cualquier pantalla". Mismo patrón que openEntryId: Dashboard pide,
+  // esta página atiende y avisa. NUNCA reemplaza un comprobante que ya se
+  // está capturando o editando: en ese caso solo informa.
+  useEffect(() => {
+    if (!newEntryRequest) return;
+    if (view === "list") openNewEntry();
+    else showToast(t.alreadyInEntry, "error");
+    onNewEntryRequestHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newEntryRequest]);
 
   // NEW (2026-10-01): "unsaved changes" safety net (see pendientes.md) --
   // a general-purpose backstop alongside the account/cost-center "+"
@@ -1246,8 +1279,10 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
                   scrolling back up to click "+ Nuevo Comprobante" every time is
                   tedious. Insert opens the form from anywhere on the page --
                   see the keydown effect near openNewEntry(). */}
-              <span className="hidden text-[11px] text-slate-500 sm:inline">{t.newShortcutHint}</span>
-              <Button variant="primary" onClick={openNewEntry} title={`${t.newEntry} ${t.newShortcutHint}`}>{t.newEntry}</Button>
+              <Button variant="primary" onClick={openNewEntry} title={`${t.newEntry} ${t.newShortcutHint} · F8`} aria-keyshortcuts="Insert F8">
+                {t.newEntry}
+                <ShortcutKbd>Ins</ShortcutKbd>
+              </Button>
             </>
           ) : (
             <Button variant="secondary" onClick={requestLeaveForm}>{t.backToList}</Button>
@@ -1269,6 +1304,9 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
           onSearch={() => loadEntries(0)}
           currentPage={currentPage}
           totalPages={totalPages}
+          totalElements={totalElements}
+          pageSize={pageSize}
+          onPageSizeChange={changePageSize}
           onPageChange={(p) => loadEntries(p)}
           onViewEntry={setViewingEntry}
           onEditEntry={openEditEntry}
@@ -1358,18 +1396,29 @@ function JeListView({
   t, entries, loading,
   searchTerm, setSearchTerm, startDate, setStartDate, endDate, setEndDate, onSearch,
   documentTypeId, setDocumentTypeId, documentTypes, documentTypeLabel,
-  currentPage, totalPages, onPageChange, onViewEntry, onEditEntry, onAnnulEntry, onDuplicateEntry,
+  currentPage, totalPages, totalElements, pageSize, onPageSizeChange,
+  onPageChange, onViewEntry, onEditEntry, onAnnulEntry, onDuplicateEntry,
   exporting, onExportExcel, onExportPdf,
 }) {
+  // UI 2026-11-10: "/" o F3 llevan a la búsqueda; ↓ baja a la tabla, donde
+  // ↑/↓ recorren comprobantes, Enter edita (o ve, si no es editable) y
+  // Supr abre la anulación (con su confirmación). Ver ui/keyboard.js.
+  const searchRef = useRef(null);
+  useSearchShortcut(searchRef);
   return (
     <>
       <div className="flex flex-col gap-3 md:flex-row md:items-end">
         <div className="flex-1">
           <input
+            ref={searchRef}
             type="text"
+            data-kbd-search=""
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && onSearch()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onSearch();
+              else if (e.key === "ArrowDown" && focusFirstRow(e.currentTarget)) e.preventDefault();
+            }}
             placeholder={t.search}
             className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none shadow-sm focus:border-blue-500 transition-all"
           />
@@ -1397,19 +1446,20 @@ function JeListView({
             </select>
           </label>
           <Button variant="primary" onClick={onSearch} className="self-end">{t.searchButton}</Button>
+          {/* UI 2026-11-10: Exportar en la misma fila de los filtros (antes
+              ocupaba una fila propia encima de la tabla). */}
+          <div className="self-end">
+            <ExportMenu
+              label={exporting ? t.exporting : t.exportLabel}
+              onExcel={onExportExcel}
+              onPdf={onExportPdf}
+              disabled={exporting}
+            />
+          </div>
         </div>
       </div>
 
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button variant="secondary" size="sm" disabled={exporting} onClick={onExportExcel}>
-          {exporting ? t.exporting : t.exportExcel}
-        </Button>
-        <Button variant="secondary" size="sm" disabled={exporting} onClick={onExportPdf}>
-          {exporting ? t.exporting : t.exportPdf}
-        </Button>
-      </div>
-
-      <div className={tbl.wrapper}>
+      <div className={`${tbl.wrapper} max-h-[calc(100vh-16rem)] min-h-[16rem] overflow-y-auto`}>
         {loading ? (
           <LoadingState label={t.loading} />
         ) : (
@@ -1425,7 +1475,7 @@ function JeListView({
                 <th scope="col" className={tbl.thActions}><span className="sr-only">{t.actions || "Acciones"}</span></th>
               </tr>
             </thead>
-            <tbody className={tbl.tbody}>
+            <tbody className={tbl.tbody} onKeyDown={rowNavKeyDown}>
               {entries.length === 0 ? (
                 <tr><td colSpan={7} className={tbl.empty}>{t.noResults}</td></tr>
               ) : (
@@ -1437,28 +1487,31 @@ function JeListView({
                   const entryDocType = documentTypes.find((d) => String(d.id) === String(entry.documentTypeId));
                   const isClosingEntry = entryDocType?.code === CLOSING_DOC_TYPE_CODE;
                   return (
-                    <tr key={entry.id} className={`${tbl.row} ${entry.annulled ? "text-slate-500" : ""}`}>
+                    <tr key={entry.id} {...ROW_KBD} className={`${tbl.row} focus:outline-none focus-visible:bg-blue-50 focus-visible:shadow-[inset_3px_0_0_#1d4ed8] ${entry.annulled ? "text-slate-500" : ""}`}>
                       {/* UI review 2026-11-04: la columna Estado se quitó; casi todo
                           está Activo, así que solo se marca la excepción (Anulado)
                           junto al número, con insignia de texto + símbolo. */}
-                      <td className={`${tbl.td} whitespace-nowrap`}>
-                        <span className={`font-semibold ${entry.annulled ? "text-slate-500 line-through decoration-slate-400" : "text-slate-900"}`}>
+                      {/* UI 2026-11-10: una sola línea por comprobante (antes la
+                          insignia "Anulado" y la descripción en 2 líneas
+                          duplicaban la altura de la fila). */}
+                      <td className={`${tbl.td} !align-middle whitespace-nowrap`}>
+                        <span className={`font-semibold tabular-nums ${entry.annulled ? "text-slate-500 line-through decoration-slate-400" : "text-slate-900"}`}>
                           {entry.documentNumber}
                         </span>
                         {entry.annulled && (
-                          <div className="mt-0.5"><StatusBadge tone="danger">{t.annulled}</StatusBadge></div>
+                          <span className="ml-2 align-middle"><StatusBadge tone="danger">{t.annulled}</StatusBadge></span>
                         )}
                       </td>
-                      <td className={`${tbl.td} min-w-[10rem]`}>{documentTypeLabel(entry)}</td>
-                      <td className={`${tbl.td} whitespace-nowrap`}>{entry.entryDate}</td>
-                      <td className={`${tbl.td} min-w-[11rem]`} title={entry.description || ""}>
-                        <span className="line-clamp-2">{entry.description}</span>
+                      <td className={`${tbl.td} !align-middle max-w-[12rem] truncate`} title={documentTypeLabel(entry)}>{documentTypeLabel(entry)}</td>
+                      <td className={`${tbl.td} !align-middle whitespace-nowrap tabular-nums`}>{entry.entryDate}</td>
+                      <td className={`${tbl.td} !align-middle w-full max-w-0 truncate`} title={entry.description || ""}>
+                        {entry.description}
                       </td>
-                      <td className={tbl.tdNum}>{money(totalDebit)}</td>
-                      <td className={tbl.tdNum}>{money(totalCredit)}</td>
-                      <td className={`${tbl.tdActions} group-hover:bg-slate-50`}>
+                      <td className={`${tbl.tdNum} !align-middle`}>{money(totalDebit)}</td>
+                      <td className={`${tbl.tdNum} !align-middle`}>{money(totalCredit)}</td>
+                      <td className={`${tbl.tdActions} !align-middle group-hover:bg-slate-50`}>
                         <div className="flex justify-end gap-0.5">
-                          <Button variant="ghost" size="xs" onClick={() => onViewEntry(entry)}>{t.view}</Button>
+                          <Button variant="ghost" size="xs" onClick={() => onViewEntry(entry)} data-row-primary={entry.annulled || isClosingEntry ? "" : undefined}>{t.view}</Button>
                           {/* An annulled entry is immutable (backend rejects
                               both PUT and PATCH .../annul on it), so neither
                               action is offered once it's annulled. */}
@@ -1466,14 +1519,14 @@ function JeListView({
                             <>
                               {!isClosingEntry && (
                                 <>
-                                  <Button variant="ghost" size="xs" onClick={() => onEditEntry(entry)}>{t.edit}</Button>
+                                  <Button variant="ghost" size="xs" onClick={() => onEditEntry(entry)} data-row-primary="">{t.edit}</Button>
                                   {/* NEW (2026-10-22, user request): hidden for a closing
                                       entry for the same reason Editar is -- it's a
                                       system-generated entry, not a template to reuse. */}
                                   <Button variant="ghost" size="xs" onClick={() => onDuplicateEntry(entry)}>{t.duplicate}</Button>
                                 </>
                               )}
-                              <Button variant="dangerGhost" size="xs" onClick={() => onAnnulEntry(entry)}>{t.annul}</Button>
+                              <Button variant="dangerGhost" size="xs" onClick={() => onAnnulEntry(entry)} data-row-delete="" title={`${t.annul} (Supr)`}>{t.annul}</Button>
                             </>
                           )}
                         </div>
@@ -1487,15 +1540,40 @@ function JeListView({
         )}
       </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-4 text-sm text-slate-500">
-          <Button variant="secondary" size="sm" disabled={currentPage <= 0}
-            onClick={() => onPageChange(currentPage - 1)}>{t.prev}</Button>
-          <span>{t.page} {currentPage + 1} {t.of} {totalPages}</span>
-          <Button variant="secondary" size="sm" disabled={currentPage >= totalPages - 1}
-            onClick={() => onPageChange(currentPage + 1)}>{t.next}</Button>
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+        <span>
+          {totalElements != null && entries.length > 0 ? (
+            <>
+              {t.showing}{" "}
+              <span className="font-semibold tabular-nums text-slate-800">
+                {currentPage * pageSize + 1}–{currentPage * pageSize + entries.length}
+              </span>{" "}
+              {t.of} <span className="font-semibold tabular-nums text-slate-800">{totalElements}</span> {t.entriesLabel}
+            </>
+          ) : null}
+        </span>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-xs text-slate-600">
+            {t.perPage}
+            <select
+              value={pageSize}
+              onChange={(e) => onPageSizeChange(Number(e.target.value))}
+              className="rounded-lg border border-field bg-white px-2 py-1 text-xs text-slate-800 focus:border-blue-700"
+            >
+              {PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+          {totalPages > 1 && (
+            <>
+              <Button variant="secondary" size="sm" disabled={currentPage <= 0}
+                onClick={() => onPageChange(currentPage - 1)}>{t.prev}</Button>
+              <span className="tabular-nums">{t.page} {currentPage + 1} {t.of} {totalPages}</span>
+              <Button variant="secondary" size="sm" disabled={currentPage >= totalPages - 1}
+                onClick={() => onPageChange(currentPage + 1)}>{t.next}</Button>
+            </>
+          )}
         </div>
-      )}
+      </div>
     </>
   );
 }
@@ -1543,7 +1621,27 @@ function JeFormView({
   // Same idea, for F9 auto-balance when it has to create the line it's
   // about to fill (see handleAutoBalance).
   const pendingAutoBalanceRef = useRef(null);
+  // Campo que debe recibir el foco en cuanto se pinte (ver advanceFocusAfter).
+  const pendingFieldFocusRef = useRef(null);
+  useEffect(() => {
+    const key = pendingFieldFocusRef.current;
+    if (!key) return;
+    const el = fieldRefs.current[key];
+    if (el) {
+      pendingFieldFocusRef.current = null;
+      el.focus();
+    }
+  });
   const formRef = useRef(null);
+  // UI 2026-11-10: si Guardar falla por validación, el foco salta al primer
+  // campo con error (antes quedaba en el botón y había que buscarlo).
+  useEffect(() => {
+    const el = formRef.current;
+    if (!el) return undefined;
+    const onSubmitCapture = () => focusFirstInvalidSoon(el);
+    el.addEventListener("submit", onSubmitCapture, true);
+    return () => el.removeEventListener("submit", onSubmitCapture, true);
+  }, [loadingEntry]);
 
   useEffect(() => {
     if (pendingAutoBalanceRef.current) {
@@ -1576,10 +1674,22 @@ function JeFormView({
     const pos = order.indexOf(fieldKey);
     const nextKey = pos >= 0 ? order[pos + 1] : undefined;
     if (nextKey) {
-      fieldRefs.current[`${index}:${nextKey}`]?.focus();
+      const el = fieldRefs.current[`${index}:${nextKey}`];
+      if (el) el.focus();
+      // UI 2026-11-10: la cuenta recién elegida exige Tercero/Centro de
+      // costo/Base, pero esos campos se pintan en el render siguiente: se
+      // enfocan apenas existan (antes el foco se quedaba en Cuenta).
+      else pendingFieldFocusRef.current = `${index}:${nextKey}`;
       return;
     }
     if (index === form.items.length - 1) {
+      // UI 2026-11-10: si la última línea está vacía, el comprobante ya
+      // terminó: en vez de crear otra línea vacía, el foco va a Guardar
+      // (Enter ahí guarda). Así Enter/Tab nunca "encierran" al digitador.
+      if (isBlankItem(item)) {
+        formRef.current?.querySelector('button[type="submit"]:not([disabled])')?.focus();
+        return;
+      }
       pendingFocusRef.current = { index: form.items.length, key: "account" };
       onAddLine();
     } else {
@@ -1587,10 +1697,39 @@ function JeFormView({
     }
   };
 
+  // UI 2026-11-10: Shift+Tab / Shift+Enter -- el mismo orden de
+  // fieldOrderForRow, hacia atrás: campo anterior de la línea, último campo
+  // de la línea anterior, o la Descripción del encabezado desde la línea 1.
+  const retreatFocusBefore = (index, fieldKey) => {
+    const item = form.items[index];
+    if (!item) return;
+    const acc = accountById(item.accountId);
+    const order = fieldOrderForRow(item, acc, acc ? taxByAccountId[acc.id] : undefined);
+    const pos = order.indexOf(fieldKey);
+    if (pos > 0) {
+      fieldRefs.current[`${index}:${order[pos - 1]}`]?.focus();
+      return;
+    }
+    if (index > 0) {
+      const prev = form.items[index - 1];
+      const prevAcc = accountById(prev.accountId);
+      const prevOrder = fieldOrderForRow(prev, prevAcc, prevAcc ? taxByAccountId[prevAcc.id] : undefined);
+      fieldRefs.current[`${index - 1}:${prevOrder[prevOrder.length - 1]}`]?.focus();
+      return;
+    }
+    const header = ["description", "documentTypeId", "entryDate"].map((k) => headerRefs.current[k]).find((el) => el && !el.disabled);
+    header?.focus();
+  };
+
+  // UI 2026-11-10: Tab se comporta IGUAL que Enter dentro de la grilla
+  // (antes seguía el orden del DOM: pasaba por botones, no tomaba la cuenta
+  // escrita y en la última línea saltaba a Guardar). Shift = hacia atrás.
   const handleFieldKeyDown = (e, index, fieldKey) => {
-    if (e.key !== "Enter") return;
+    if (e.key !== "Enter" && e.key !== "Tab") return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     e.preventDefault();
-    advanceFocusAfter(index, fieldKey);
+    if (e.shiftKey) retreatFocusBefore(index, fieldKey);
+    else advanceFocusAfter(index, fieldKey);
   };
 
   // NEW (2026-10-20, user request): a line created by mistake (most often
@@ -1603,11 +1742,62 @@ function JeFormView({
   // individual field's own key handling). A fully blank line no longer
   // even needs this -- see isBlankItem -- but a partially-filled line the
   // user wants to discard outright still does.
+  // Which line field (account/thirdParty/costCenter/...) holds the focus.
+  const focusedFieldKey = (index, el) => {
+    const prefix = `${index}:`;
+    const hit = Object.entries(fieldRefs.current).find(([k, v]) => k.startsWith(prefix) && v === el);
+    return hit ? hit[0].slice(prefix.length) : null;
+  };
+
   const handleRowKeyDown = (e, index) => {
     if (periodClosed) return;
-    if (!e.altKey || e.key !== "Delete") return;
+    if (e.altKey && e.key === "Delete") {
+      e.preventDefault();
+      if (form.items.length > 1) onRemoveLine(index);
+      return;
+    }
+
+    // UI 2026-11-10: F2 = crear rápido lo que pide el campo actual (cuenta,
+    // tercero o centro de costo) sin ir al botón "+" con el mouse. Al cerrar
+    // el modal el foco vuelve al mismo campo.
+    if (e.key === "F2") {
+      const key = focusedFieldKey(index, e.target);
+      const opener = { account: setAccountModalIndex, thirdParty: setThirdPartyModalIndex, costCenter: setCostCenterModalIndex }[key];
+      if (opener) { e.preventDefault(); opener(index); }
+      return;
+    }
+
+    // UI 2026-11-10: F4 = repetir en este campo el valor de la línea anterior
+    // (lo que hacían los botones "↺ Repetir", que solo servían con mouse).
+    if (e.key === "F4" && index > 0) {
+      const key = focusedFieldKey(index, e.target);
+      const field = { account: "accountId", thirdParty: "thirdPartyId", costCenter: "costCenterId", description: "description" }[key];
+      const value = field ? form.items[index - 1]?.[field] : null;
+      if (!value) return;
+      e.preventDefault();
+      onItemChange(index, field, value);
+      if (field === "description") return; // queda para seguir escribiendo
+      requestAnimationFrame(() => advanceFocusAfter(index, key, field === "accountId" ? accountById(value) || null : undefined));
+    }
+  };
+
+  // UI 2026-11-10: Enter en el encabezado avanza Fecha -> Tipo -> Descripción
+  // -> Cuenta de la primera línea (antes Enter en un campo del encabezado
+  // enviaba el formulario sin querer).
+  const headerRefs = useRef({});
+  const HEADER_ORDER = ["entryDate", "documentTypeId", "description"];
+  // Tab = Enter también aquí: en Fecha, Tab ya no recorre día/mes/año (el
+  // campo fecha del navegador lo hace por defecto); para moverse dentro de
+  // la fecha basta escribirla (ddmmaaaa) o usar ← →.
+  const handleHeaderKeyDown = (e, key) => {
+    if ((e.key !== "Enter" && e.key !== "Tab") || e.ctrlKey || e.metaKey || e.altKey) return;
+    const step = e.shiftKey ? -1 : 1;
+    let i = HEADER_ORDER.indexOf(key) + step;
+    while (i >= 0 && i < HEADER_ORDER.length && headerRefs.current[HEADER_ORDER[i]]?.disabled) i += step;
+    if (i < 0) return; // Shift+Tab desde Fecha: sale del formulario normalmente
     e.preventDefault();
-    if (form.items.length > 1) onRemoveLine(index);
+    if (i < HEADER_ORDER.length) headerRefs.current[HEADER_ORDER[i]]?.focus();
+    else fieldRefs.current["0:account"]?.focus();
   };
 
   const handleAccountSelected = (index, account) => {
@@ -1655,10 +1845,18 @@ function JeFormView({
     // periodClosed, so these two shortcuts can't reach a field to act on
     // anyway -- bailing out here first just skips the no-op work and
     // avoids Ctrl+Enter triggering a doomed submit attempt.
-    if (periodClosed) return;
-    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+    if (periodClosed) {
+      if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && (e.key === "Enter" || e.key === "s" || e.key === "S")) {
       e.preventDefault();
       formRef.current?.requestSubmit();
+    } else if (e.key === "Escape" && !e.defaultPrevented) {
+      // UI 2026-11-10: Esc = Cancelar (pide confirmación si hay cambios).
+      // Una lista de sugerencias abierta consume su propio Esc primero.
+      e.preventDefault();
+      onCancel();
     } else if (e.key === "F9") {
       e.preventDefault();
       handleAutoBalance();
@@ -1675,7 +1873,7 @@ function JeFormView({
 
   return (
     <>
-    <form ref={formRef} onSubmit={onSubmit} onKeyDown={handleFormKeyDown} className="space-y-6">
+    <form ref={formRef} data-kbd-context="journal" onSubmit={onSubmit} onKeyDown={handleFormKeyDown} className="space-y-6">
       {isEditing && (
         <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">{t.editingTitle}</h3>
       )}
@@ -1711,6 +1909,9 @@ function JeFormView({
         <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
           <JeField label={t.entryDate} error={errors.entryDate}>
             <input type="date" name="entryDate" value={form.entryDate} onChange={onHeaderChange}
+              ref={(el) => { headerRefs.current.entryDate = el; }}
+              onKeyDown={(e) => handleHeaderKeyDown(e, "entryDate")}
+              autoFocus={!periodClosed}
               className={jeInputCls(errors.entryDate)} />
           </JeField>
 
@@ -1721,6 +1922,8 @@ function JeFormView({
               Codigo field. */}
           <JeField label={t.documentType} error={errors.documentTypeId}>
             <select name="documentTypeId" value={form.documentTypeId} onChange={onHeaderChange}
+              ref={(el) => { headerRefs.current.documentTypeId = el; }}
+              onKeyDown={(e) => handleHeaderKeyDown(e, "documentTypeId")}
               className={`${jeInputCls(errors.documentTypeId)} ${isEditing ? "opacity-60 cursor-not-allowed" : ""}`}
               disabled={loadingCatalogs || isEditing}>
               <option value="">{loadingCatalogs ? t.loadingCatalogs : t.selectDocumentType}</option>
@@ -1739,6 +1942,8 @@ function JeFormView({
 
           <JeField label={t.generalDescription}>
             <input type="text" name="description" value={form.description} onChange={onHeaderChange}
+              ref={(el) => { headerRefs.current.description = el; }}
+              onKeyDown={(e) => handleHeaderKeyDown(e, "description")}
               className={jeInputCls()} maxLength={255} />
           </JeField>
         </div>
@@ -1747,7 +1952,7 @@ function JeFormView({
       <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">{t.items}</h3>
-          <Button type="button" variant="secondary" size="sm" onClick={onAddLine}>{t.addLine}</Button>
+          <Button type="button" variant="secondary" size="sm" onClick={onAddLine} tabIndex={-1}>{t.addLine}</Button>
         </div>
 
         {/* NEW (2026-10-20, user request): the Tab/Enter/arrow-key/Ctrl+Enter/
@@ -1756,9 +1961,9 @@ function JeFormView({
             to miss entirely. This single banner lists every shortcut in one
             place, always visible, right where the grid a user would use
             them on starts. */}
-        <p className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
-          ⌨️ {t.keyboardShortcutsHint}
-        </p>
+        {/* UI 2026-11-10: la leyenda sale del registro único de atajos
+            (ui/keyboard.js -> SHORTCUTS "journal"); F1 abre la lista completa. */}
+        <KeyboardHints items={hintsFor("journal", language)} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2" />
 
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -1767,9 +1972,11 @@ function JeFormView({
                 <th className="px-3 py-2 min-w-[220px]">{t.account}</th>
                 <th className="px-3 py-2 min-w-[180px]">{t.thirdParty}</th>
                 <th className="px-3 py-2 min-w-[180px]">{t.costCenter}</th>
-                <th className="px-3 py-2 w-28">{t.taxBase}</th>
-                <th className="px-3 py-2 w-32">{t.debit}</th>
-                <th className="px-3 py-2 w-32">{t.credit}</th>
+                {/* UI 2026-11-10: montos con separadores ("1.234.567.890,00")
+                    necesitan ~10rem para no cortarse; alineados a la derecha. */}
+                <th className="px-3 py-2 min-w-[9rem] text-right">{t.taxBase}</th>
+                <th className="px-3 py-2 min-w-[10rem] text-right">{t.debit}</th>
+                <th className="px-3 py-2 min-w-[10rem] text-right">{t.credit}</th>
                 <th className="px-3 py-2 min-w-[160px]">{t.lineDescription}</th>
                 <th className="px-3 py-2 w-16"></th>
               </tr>
@@ -1810,13 +2017,14 @@ function JeFormView({
                           value={item.accountId}
                           onChange={(id) => onItemChange(index, "accountId", id)}
                           onSelected={(account) => handleAccountSelected(index, account)}
+                          onRetreat={() => retreatFocusBefore(index, "account")}
                           registerRef={registerFieldRef(index, "account")}
                           error={lineErr.accountId}
                           placeholder={t.selectAccount}
                           noResultsLabel={t.noAccountMatches}
                         />
                         <button type="button" onClick={() => setAccountModalIndex(index)}
-                          title={t.newAccountQuick} tabIndex={-1}
+                          title={`${t.newAccountQuick} (F2)`} tabIndex={-1}
                           className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 text-lg leading-none">
                           +
                         </button>
@@ -1833,13 +2041,14 @@ function JeFormView({
                               value={item.thirdPartyId}
                               onChange={(id) => onItemChange(index, "thirdPartyId", id)}
                               onSelected={() => handleThirdPartySelected(index)}
+                              onRetreat={() => retreatFocusBefore(index, "thirdParty")}
                               registerRef={registerFieldRef(index, "thirdParty")}
                               error={lineErr.thirdPartyId}
                               placeholder={t.selectThirdParty}
                               noResultsLabel={t.noThirdPartyMatches}
                             />
                             <button type="button" onClick={() => setThirdPartyModalIndex(index)}
-                              title={t.newThirdPartyQuick} tabIndex={-1}
+                              title={`${t.newThirdPartyQuick} (F2)`} tabIndex={-1}
                               className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 text-lg leading-none">
                               +
                             </button>
@@ -1851,7 +2060,7 @@ function JeFormView({
                                 onItemChange(index, "thirdPartyId", String(prevThirdParty.id));
                                 fieldRefs.current[`${index}:thirdParty`]?.focus();
                               }}
-                              title={prevThirdParty.legalDisplayName}
+                              title={`${prevThirdParty.legalDisplayName} (F4)`}
                               className="mt-1 inline-block rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-left text-[11px] font-semibold text-blue-600 hover:bg-blue-100">
                               ↺ {t.repeatPreviousThirdParty}
                             </button>
@@ -1876,7 +2085,7 @@ function JeFormView({
                               ))}
                             </select>
                             <button type="button" onClick={() => setCostCenterModalIndex(index)}
-                              title={t.newCostCenterQuick} tabIndex={-1}
+                              title={`${t.newCostCenterQuick} (F2)`} tabIndex={-1}
                               className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 text-lg leading-none">
                               +
                             </button>
@@ -1888,7 +2097,7 @@ function JeFormView({
                                 onItemChange(index, "costCenterId", String(prevCostCenter.id));
                                 fieldRefs.current[`${index}:costCenter`]?.focus();
                               }}
-                              title={`${prevCostCenter.code} - ${prevCostCenter.name}`}
+                              title={`${prevCostCenter.code} - ${prevCostCenter.name} (F4)`}
                               className="mt-1 inline-block rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-left text-[11px] font-semibold text-blue-600 hover:bg-blue-100">
                               ↺ {t.repeatPreviousCostCenter}
                             </button>
@@ -1901,11 +2110,11 @@ function JeFormView({
                     <td className="px-3 py-2 align-top">
                       {tax ? (
                         <>
-                          <input type="number" min="0" step="0.01" value={item.taxBase}
+                          <AmountInput value={item.taxBase}
                             ref={registerFieldRef(index, "taxBase")}
-                            onChange={(e) => onItemChange(index, "taxBase", e.target.value)}
+                            onChange={(v) => onItemChange(index, "taxBase", v)}
                             onKeyDown={(e) => handleFieldKeyDown(e, index, "taxBase")}
-                            className={jeInputCls(lineErr.taxBase)} placeholder="0.00" />
+                            className={jeInputCls(lineErr.taxBase)} />
                           <p className="text-[10px] text-slate-500 mt-1">{tax.code} · {tax.rate}%</p>
                           {lineErr.taxBase && <p className="text-[10px] text-red-700 mt-1">{lineErr.taxBase}</p>}
                         </>
@@ -1918,14 +2127,14 @@ function JeFormView({
                         <input type="text" readOnly
                           value={money(effectiveAmounts(item, tax).debit)}
                           title={t.taxComputedHint}
-                          className={`${jeInputCls()} bg-slate-50 text-slate-500 cursor-not-allowed`} />
+                          className={`${jeInputCls()} bg-slate-50 text-right tabular-nums text-slate-500 cursor-not-allowed`} />
                       ) : (
-                        <input type="number" min="0" step="0.01" value={item.debit}
+                        <AmountInput value={item.debit}
                           ref={registerFieldRef(index, "debit")}
-                          onChange={(e) => onItemChange(index, "debit", e.target.value)}
+                          onChange={(v) => onItemChange(index, "debit", v)}
                           onKeyDown={(e) => handleFieldKeyDown(e, index, "debit")}
                           disabled={toNumber(item.credit) > 0}
-                          className={jeInputCls()} placeholder="0.00" />
+                          className={jeInputCls()} />
                       )}
                     </td>
                     <td className="px-3 py-2 align-top">
@@ -1933,14 +2142,14 @@ function JeFormView({
                         <input type="text" readOnly
                           value={money(effectiveAmounts(item, tax).credit)}
                           title={t.taxComputedHint}
-                          className={`${jeInputCls()} bg-slate-50 text-slate-500 cursor-not-allowed`} />
+                          className={`${jeInputCls()} bg-slate-50 text-right tabular-nums text-slate-500 cursor-not-allowed`} />
                       ) : (
-                        <input type="number" min="0" step="0.01" value={item.credit}
+                        <AmountInput value={item.credit}
                           ref={registerFieldRef(index, "credit")}
-                          onChange={(e) => onItemChange(index, "credit", e.target.value)}
+                          onChange={(v) => onItemChange(index, "credit", v)}
                           onKeyDown={(e) => handleFieldKeyDown(e, index, "credit")}
                           disabled={toNumber(item.debit) > 0}
-                          className={jeInputCls()} placeholder="0.00" />
+                          className={jeInputCls()} />
                       )}
                     </td>
                     <td className="px-3 py-2 align-top">
@@ -1955,7 +2164,7 @@ function JeFormView({
                             onItemChange(index, "description", prevDescription);
                             fieldRefs.current[`${index}:description`]?.focus();
                           }}
-                          title={prevDescription}
+                          title={`${prevDescription} (F4)`}
                           className="mt-1 inline-block rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-left text-[11px] font-semibold text-blue-600 hover:bg-blue-100">
                           ↺ {t.repeatPreviousDescription}
                         </button>
@@ -2346,7 +2555,7 @@ const jeInputCls = (err) => inputClass(Boolean(err));
 // with query, name starts with query, code contains query, name
 // contains query) and tied-broken by code, so "51" surfaces
 // code-starting matches like "5105" first.
-function AccountComboBox({ accounts, value, onChange, onSelected, registerRef, error, placeholder, noResultsLabel }) {
+function AccountComboBox({ accounts, value, onChange, onSelected, onRetreat, registerRef, error, placeholder, noResultsLabel }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
@@ -2429,20 +2638,52 @@ function AccountComboBox({ accounts, value, onChange, onSelected, registerRef, e
   };
 
   const handleKeyDown = (e) => {
-    if (!open) return;
+    const isAdvanceKey = (e.key === "Enter" || e.key === "Tab") && !e.ctrlKey && !e.metaKey && !e.altKey;
+    // UI 2026-11-10: Shift+Tab / Shift+Enter = campo anterior (mismo orden
+    // que Enter, hacia atrás).
+    if (isAdvanceKey && e.shiftKey) {
+      e.preventDefault();
+      setOpen(false);
+      setQuery("");
+      onRetreat?.();
+      return;
+    }
+    // Con la lista CERRADA (tras Esc), Enter/Tab avanzan con el valor que
+    // ya tenía (sin enviar el formulario); ↓ vuelve a abrir las sugerencias.
+    if (!open) {
+      if (isAdvanceKey) {
+        e.preventDefault();
+        onSelected?.(selected || null);
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        handleFocus();
+      }
+      return;
+    }
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setHighlight((h) => Math.min(h + 1, filtered.length - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setHighlight((h) => Math.max(h - 1, 0));
-    } else if (e.key === "Enter") {
+    } else if (isAdvanceKey) {
+      // Tab = Enter: toma la sugerencia resaltada y avanza (antes Tab salía
+      // del campo SIN tomar lo escrito). Con el campo vacío no elige nada
+      // (antes Enter vacío tomaba la primera cuenta de toda la lista).
       e.preventDefault();
-      if (filtered[highlight]) commitSelection(filtered[highlight]);
+      if (query.trim() && filtered[highlight]) commitSelection(filtered[highlight]);
+      else {
+        setOpen(false);
+        setQuery("");
+        onSelected?.(selected || null);
+      }
     } else if (e.key === "Escape") {
+      // Cierra solo la lista y CONSERVA el foco (antes hacía blur y el
+      // contador quedaba "en ninguna parte", obligado a usar el mouse).
+      // preventDefault evita que el mismo Esc cancele el comprobante.
+      e.preventDefault();
       setOpen(false);
       setQuery("");
-      inputRef.current?.blur();
     }
   };
 
@@ -2487,7 +2728,7 @@ function AccountComboBox({ accounts, value, onChange, onSelected, registerRef, e
 // refocus) applied to Tercero -- the native <select> it replaces had the
 // exact same "only matches from the start of the visible text" problem
 // AccountComboBox was built to fix on 2026-10-13.
-function ThirdPartyComboBox({ thirdParties, value, onChange, onSelected, registerRef, error, placeholder, noResultsLabel }) {
+function ThirdPartyComboBox({ thirdParties, value, onChange, onSelected, onRetreat, registerRef, error, placeholder, noResultsLabel }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
@@ -2546,20 +2787,52 @@ function ThirdPartyComboBox({ thirdParties, value, onChange, onSelected, registe
   };
 
   const handleKeyDown = (e) => {
-    if (!open) return;
+    const isAdvanceKey = (e.key === "Enter" || e.key === "Tab") && !e.ctrlKey && !e.metaKey && !e.altKey;
+    // UI 2026-11-10: Shift+Tab / Shift+Enter = campo anterior (mismo orden
+    // que Enter, hacia atrás).
+    if (isAdvanceKey && e.shiftKey) {
+      e.preventDefault();
+      setOpen(false);
+      setQuery("");
+      onRetreat?.();
+      return;
+    }
+    // Con la lista CERRADA (tras Esc), Enter/Tab avanzan con el valor que
+    // ya tenía (sin enviar el formulario); ↓ vuelve a abrir las sugerencias.
+    if (!open) {
+      if (isAdvanceKey) {
+        e.preventDefault();
+        onSelected?.(selected || null);
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        handleFocus();
+      }
+      return;
+    }
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setHighlight((h) => Math.min(h + 1, filtered.length - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setHighlight((h) => Math.max(h - 1, 0));
-    } else if (e.key === "Enter") {
+    } else if (isAdvanceKey) {
+      // Tab = Enter: toma la sugerencia resaltada y avanza (antes Tab salía
+      // del campo SIN tomar lo escrito). Con el campo vacío no elige nada
+      // (antes Enter vacío tomaba la primera cuenta de toda la lista).
       e.preventDefault();
-      if (filtered[highlight]) commitSelection(filtered[highlight]);
+      if (query.trim() && filtered[highlight]) commitSelection(filtered[highlight]);
+      else {
+        setOpen(false);
+        setQuery("");
+        onSelected?.(selected || null);
+      }
     } else if (e.key === "Escape") {
+      // Cierra solo la lista y CONSERVA el foco (antes hacía blur y el
+      // contador quedaba "en ninguna parte", obligado a usar el mouse).
+      // preventDefault evita que el mismo Esc cancele el comprobante.
+      e.preventDefault();
       setOpen(false);
       setQuery("");
-      inputRef.current?.blur();
     }
   };
 

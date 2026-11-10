@@ -48,6 +48,8 @@ const LABELS = {
     logout: "Cerrar sesión",
     roleInCompany: "Rol en esta empresa",
     noRole: "Sin rol",
+    shortcuts: "Atajos",
+    shortcutsTitle: "Atajos de teclado (F1)",
   },
   en: {
     switching: "Switching company...",
@@ -64,6 +66,8 @@ const LABELS = {
     logout: "Log out",
     roleInCompany: "Role in this company",
     noRole: "No role",
+    shortcuts: "Shortcuts",
+    shortcutsTitle: "Keyboard shortcuts (F1)",
   },
 };
 
@@ -240,16 +244,36 @@ function AppHeader({ title, subtitle, actions, tenantId, language = "es" }) {
         </div>
       </div>
 
-      {/* -- Bloque derecho: Banner de Compania (llamativo a proposito) + Acciones -- */}
+      {/* -- Bloque derecho: Banner de Compania + Acciones --
+          UI 2026-11-10: el banner pasa de índigo sólido a índigo claro. Sigue
+          siendo inconfundible (tinte propio, punto verde, nombre en negrita,
+          indigo-950 sobre indigo-50 ~ 16:1) pero ya no compite con "+ Nuevo",
+          que debe ser el único bloque de color sólido del área de trabajo.
+          La confirmación del cambio de empresa (2026-10-29) no cambia. */}
       <div className="flex flex-wrap items-center justify-end gap-3">
+
+        {/* UI 2026-11-10: abre la ventana de atajos (la escucha Dashboard). */}
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent("kbd:help"))}
+          title={t.shortcutsTitle}
+          aria-keyshortcuts="F1"
+          className="flex items-center gap-1.5 self-stretch rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fillRule="evenodd" d="M2 5.75A1.75 1.75 0 013.75 4h12.5c.97 0 1.75.78 1.75 1.75v8.5A1.75 1.75 0 0116.25 16H3.75A1.75 1.75 0 012 14.25v-8.5zM5 7.5a.75.75 0 000 1.5h.01a.75.75 0 000-1.5H5zm2.75.75A.75.75 0 018.5 7.5h.01a.75.75 0 010 1.5H8.5a.75.75 0 01-.75-.75zM12 7.5a.75.75 0 000 1.5h.01a.75.75 0 000-1.5H12zm2.75.75a.75.75 0 01.75-.75h.01a.75.75 0 010 1.5h-.01a.75.75 0 01-.75-.75zM5 10.5a.75.75 0 000 1.5h.01a.75.75 0 000-1.5H5zm9.5 0a.75.75 0 000 1.5h.01a.75.75 0 000-1.5h-.01zM7.75 13a.75.75 0 000 1.5h4.5a.75.75 0 000-1.5h-4.5zm.75-2.5a.75.75 0 000 1.5h3a.75.75 0 000-1.5h-3z" clipRule="evenodd" />
+          </svg>
+          {t.shortcuts}
+          <kbd className="rounded border border-slate-300 px-1 font-sans text-[10px] font-medium text-slate-500">F1</kbd>
+        </button>
 
         <SessionUserBlock session={session} t={t} language={language} onLogout={requestLogout} />
 
         {canSwitch ? (
-          <div className="flex items-center gap-2 rounded-xl border-2 border-indigo-800 bg-indigo-700 px-4 py-2 shadow-md">
-            <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
+          <div className="flex items-center gap-2.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20" aria-hidden="true" />
             <div className="flex flex-col leading-tight">
-              <span className="text-[9px] font-bold uppercase tracking-widest text-indigo-200">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700">
                 {t.activeCompany}
               </span>
               <select
@@ -257,7 +281,8 @@ function AppHeader({ title, subtitle, actions, tenantId, language = "es" }) {
                 onChange={handlePick}
                 disabled={switching}
                 title={switching ? t.switching : undefined}
-                className="cursor-pointer bg-transparent text-sm font-black text-white outline-none disabled:opacity-60 [&>option]:text-slate-800"
+                aria-label={t.activeCompany}
+                className="cursor-pointer bg-transparent pr-1 text-sm font-bold text-indigo-950 disabled:opacity-60 [&>option]:text-slate-800"
               >
                 {companies.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -269,13 +294,13 @@ function AppHeader({ title, subtitle, actions, tenantId, language = "es" }) {
           </div>
         ) : (
           staticCompanyLabel && (
-            <div className="flex items-center gap-2 rounded-xl border-2 border-indigo-800 bg-indigo-700 px-4 py-2 shadow-md">
-              <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
+            <div className="flex items-center gap-2.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20" aria-hidden="true" />
               <div className="flex flex-col leading-tight">
-                <span className="text-[9px] font-bold uppercase tracking-widest text-indigo-200">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700">
                   {t.activeCompany}
                 </span>
-                <span className="text-sm font-black text-white">{staticCompanyLabel}</span>
+                <span className="text-sm font-bold text-indigo-950">{staticCompanyLabel}</span>
               </div>
             </div>
           )

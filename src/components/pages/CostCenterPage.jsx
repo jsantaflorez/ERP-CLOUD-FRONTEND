@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
+import {
+  CARD, TABLE_WRAP, THEAD, THEAD_ROW, TH, TH_ACTIONS, TBODY, TR, TD, TD_ACTIONS,
+  InactiveTag, FlagCell, RowActions, ShortcutKbd, Toolbar, SearchInput,
+  KeyboardHints,
+} from "../ui/tableKit";
+import { useFormKeyboard, ROW_KBD, rowNavKeyDown, FORM_HINTS, DISCARD_MESSAGE } from "../ui/keyboard";
 import api from "../../services/api"; // Centralized Axios instance configured for multi-tenancy
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
@@ -156,7 +162,7 @@ function CostCenterPage({ language = "es" }) {
   // interrupts an in-progress create/edit.
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key !== "Insert" || open) return;
+      if (e.key !== "Insert" || document.querySelector('[aria-modal="true"]') || open) return;
       e.preventDefault();
       openCreatePanel();
     };
@@ -284,6 +290,17 @@ function CostCenterPage({ language = "es" }) {
     }
   };
 
+  // UI 2026-11-10: panel 100% teclado (Enter = siguiente campo, Ctrl+Enter
+  // guarda, Esc cierra con aviso si hay cambios). Ver ui/keyboard.js.
+  const panelRef = useRef(null);
+  useFormKeyboard({
+    active: open,
+    containerRef: panelRef,
+    onClose: closePanel,
+    getSnapshot: () => JSON.stringify(form),
+    discardMessage: DISCARD_MESSAGE[language],
+  });
+
   return (
     <div className="space-y-6 p-4">
       {toast && (
@@ -300,84 +317,75 @@ function CostCenterPage({ language = "es" }) {
         tenantId={activeTenantId}
         actions={
           <>
-            <span className="hidden text-[11px] text-slate-500 sm:inline">{t.newShortcutHint}</span>
-            <Button variant="primary" onClick={openCreatePanel} title={`${t.new} ${t.newShortcutHint}`}>
+            <Button
+              variant="primary"
+              onClick={openCreatePanel}
+              title={`${t.new} ${t.newShortcutHint}`}
+              aria-keyshortcuts="Insert"
+            >
               + {t.new}
+              <ShortcutKbd>Ins</ShortcutKbd>
             </Button>
           </>
         }
       />
 
-      <input
-        type="text"
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-        placeholder={t.search}
-        className="w-full md:max-w-md rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none shadow-sm focus:border-blue-500 transition-all"
-      />
+      <Toolbar>
+        <SearchInput value={searchTerm} onChange={setSearchTerm} placeholder={t.search} />
+      </Toolbar>
 
-      <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-x-auto">
+      <div className={`${CARD} ${TABLE_WRAP}`}>
         {loading ? (
           <div className="flex items-center justify-center py-20 text-slate-500 text-sm">{t.loading}</div>
         ) : (
           <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                {[t.code, t.name, t.parent, t.level, t.active, t.allowsMovement, t.actions].map((h) => (
-                  <th key={h} className="px-5 py-4">{h}</th>
-                ))}
+            {/* UI 2026-11-10: tabla compacta; jerarquía por sangría del nombre
+                (Nivel queda como tooltip del código), "Activo" solo como
+                etiqueta en los inactivos y "Movimiento" como ✓ / —. */}
+            <thead className={THEAD}>
+              <tr className={THEAD_ROW}>
+                <th className={TH}>{t.code}</th>
+                <th className={TH}>{t.name}</th>
+                <th className={TH}>{t.parent}</th>
+                <th className={`${TH} text-center`}>{t.allowsMovement}</th>
+                <th className={TH_ACTIONS}><span className="sr-only">{t.actions}</span></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className={TBODY} onKeyDown={rowNavKeyDown}>
               {filteredRows.length === 0 ? (
-                <tr><td colSpan={7} className="py-16 text-center text-slate-500">{t.noResults}</td></tr>
+                <tr><td colSpan={5} className="py-16 text-center text-slate-500">{t.noResults}</td></tr>
               ) : (
                 filteredRows.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="px-5 py-4 font-bold text-slate-700">{r.code}</td>
-                    <td className="px-5 py-4 text-slate-600">{r.name}</td>
-                    <td className="px-5 py-4 text-slate-500 text-xs">
+                  <tr key={r.id} className={TR} {...ROW_KBD}>
+                    <td className={`${TD} whitespace-nowrap tabular-nums ${r.allowsMovement ? "text-slate-700" : "font-semibold text-slate-900"}`} title={`${t.level} ${r.level ?? "—"}`}>
+                      {r.code}
+                    </td>
+                    <td className={TD}>
+                      <span
+                        className={`inline-block ${!r.active ? "text-slate-500" : r.allowsMovement ? "text-slate-700" : "font-semibold text-slate-900"}`}
+                        style={{ paddingLeft: `${((r.level || 1) - 1) * 16}px` }}
+                      >
+                        {r.name}
+                      </span>
+                      {!r.active && <InactiveTag>{t.inactive}</InactiveTag>}
+                    </td>
+                    <td className={`${TD} text-slate-600`}>
                       {r.parentId
                         ? rows.find((p) => p.id === r.parentId)?.name ?? "—"
-                        : <span className="text-slate-300">Raíz</span>
-                      }
+                        : <span className="text-slate-400">—</span>}
                     </td>
-                    <td className="px-5 py-4 text-center">
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-500">
-                        {r.level ?? "—"}
-                      </span>
+                    <td className={`${TD} text-center`}>
+                      <FlagCell on={Boolean(r.allowsMovement)} label={t.allowsMovement} />
                     </td>
-                    <td className="px-5 py-4">
-                      <span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase ${
-                        r.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
-                      }`}>
-                        {r.active ? t.active : t.inactive}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase ${
-                        r.allowsMovement ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500"
-                      }`}>
-                        {r.allowsMovement ? t.allowsMovement : t.noMovement}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => openEditPanel(r)}>
-                          {t.edit}
-                        </Button>
-                        {/* FIX: was always "Desactivar" regardless of r.active,
-                            leaving no way to reactivate an inactive center. */}
-                        {r.active ? (
-                          <Button variant="danger" size="sm" onClick={() => handleDeactivate(r.id)}>
-                            {t.deactivate}
-                          </Button>
-                        ) : (
-                          <Button variant="secondary" size="sm" onClick={() => handleActivate(r.id)}>
-                            {t.activate}
-                          </Button>
-                        )}
-                      </div>
+                    <td className={TD_ACTIONS}>
+                      <RowActions
+                        labels={t}
+                        itemLabel={r.code}
+                        active={r.active}
+                        onEdit={() => openEditPanel(r)}
+                        onDeactivate={() => handleDeactivate(r.id)}
+                        onActivate={() => handleActivate(r.id)}
+                      />
                     </td>
                   </tr>
                 ))
@@ -391,13 +399,16 @@ function CostCenterPage({ language = "es" }) {
       {open && (
         <div className="fixed inset-0 z-50 flex items-start justify-end">
           <div className="absolute inset-0 bg-slate-900/20" onClick={closePanel} />
-          <div className="relative h-full w-full max-w-md bg-white shadow-2xl overflow-y-auto flex flex-col">
+          <div ref={panelRef} role="dialog" aria-modal="true" aria-label={t.title} className="relative h-full w-full max-w-md bg-white shadow-2xl overflow-y-auto flex flex-col">
 
             <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-8 py-5 flex items-center justify-between">
-              <h2 className="text-xl font-black text-slate-800">
+              <div className="min-w-0">
+                <h2 className="text-xl font-black text-slate-800">
                 {editingIdRef.current ? t.edit : t.new} — {t.title}
               </h2>
-              <button onClick={closePanel} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
+                <KeyboardHints items={FORM_HINTS[language] || FORM_HINTS.es} className="mt-1" />
+              </div>
+              <button type="button" aria-label="Esc" title="Esc" onClick={closePanel} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
             </div>
 
             <form onSubmit={handleSave} className="flex-1 px-8 py-6 flex flex-col gap-5">
@@ -505,8 +516,8 @@ function CcToggle({ name, checked, onChange, label, color = "blue", disabled = f
   return (
     <label className={`flex items-center gap-3 select-none ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
       <div className="relative">
-        <input type="checkbox" name={name} checked={checked} onChange={onChange} disabled={disabled} className="sr-only" />
-        <div className={`w-11 h-6 rounded-full transition-colors ${checked ? colors[color] : "bg-slate-200"}`} />
+        <input type="checkbox" name={name} checked={checked} onChange={onChange} disabled={disabled} className="peer sr-only" />
+        <div className={`w-11 h-6 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-blue-700 peer-focus-visible:ring-offset-2 ${checked ? colors[color] : "bg-slate-200"}`} />
         <div className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${checked ? "translate-x-5" : ""}`} />
       </div>
       <span className="text-sm font-medium text-slate-600">{label}</span>

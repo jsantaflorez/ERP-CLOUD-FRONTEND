@@ -4,6 +4,12 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
+import MenuButton from "../ui/MenuButton";
+import {
+  FilterChip, FlagCell, TH as COA_TH, TD as COA_TD,
+  KeyboardHints,
+} from "../ui/tableKit";
+import { useFormKeyboard, ROW_KBD, rowNavKeyDown, FORM_HINTS, DISCARD_MESSAGE, focusFirstRow, useSearchShortcut } from "../ui/keyboard";
 import api from "../../services/api"; // Centralized Axios instance with multi-tenancy context
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage, API_ERROR_LABELS } from "../../constants/apiErrors";
@@ -54,26 +60,7 @@ const getMetadataLabel = (list, value, language) => {
   return language === "es" ? match.displayNameEs : match.displayName;
 };
 
-// NEW (2026-10-31, user request): compact toggle pill for the Plan de
-// Cuentas quick-filter bar (Naturaleza / Tipo de Cuenta / Requerimientos).
-// Button.jsx's own variants are all sized for primary actions, too
-// visually heavy for a row of several small on/off filters.
-function FilterChip({ active, onClick, title, children }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-        active
-          ? "border-blue-500 bg-blue-500 text-white"
-          : "border-gray-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-600"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
+// FilterChip / FlagCell: ver ui/tableKit.jsx (UI 2026-11-10).
 
 // Mirrors ChartOfAccountService.validateCodeStructure exactly (PUC —
 // Colombian Chart of Accounts structure rules), so the user sees a
@@ -400,6 +387,14 @@ function ChartOfAccountsPage({ language = "es" }) {
       requiresCostCenter: "Requiere C. Costo",
       noRequiresThirdParty: "Sin Tercero",
       noRequiresCostCenter: "Sin C. Costo",
+      // UI 2026-11-10: encabezados cortos de la tabla (el texto completo va en el tooltip)
+      colPosting: "Movimiento",
+      colThirdParty: "Tercero",
+      colCostCenter: "C. Costo",
+      inactiveBadge: "Inactiva",
+      yes: "Sí",
+      no: "No",
+      exportLabel: "Exportar",
       // NEW (2026-11-01, user request): export the full PUC to Excel/PDF,
       // same pattern as the "Reportes" screens (reportExport.js) -- always
       // the whole catalog regardless of active search/filters, per the
@@ -528,6 +523,13 @@ function ChartOfAccountsPage({ language = "es" }) {
       requiresCostCenter: "Requires Cost Center",
       noRequiresThirdParty: "No Third Party",
       noRequiresCostCenter: "No Cost Center",
+      colPosting: "Posting",
+      colThirdParty: "Third party",
+      colCostCenter: "Cost center",
+      inactiveBadge: "Inactive",
+      yes: "Yes",
+      no: "No",
+      exportLabel: "Export",
       exportExcel: "Export Excel",
       exportPdf: "Export PDF",
       generatedAt: "Generated",
@@ -921,6 +923,7 @@ function ChartOfAccountsPage({ language = "es" }) {
           r.name?.toLowerCase().includes(term) ||
           r.accountCategory?.toLowerCase().includes(term) ||
           r.accountCategoryDisplay?.toLowerCase().includes(term) ||
+          getMetadataLabel(accountCategories, r.accountCategory, language)?.toLowerCase().includes(term) ||
           r.accountClass?.toLowerCase().includes(term);
         if (!matchesSearch) return false;
       }
@@ -931,7 +934,15 @@ function ChartOfAccountsPage({ language = "es" }) {
       if (requireCostCenterOnly && !r.requiresCostCenter) return false;
       return true;
     });
-  }, [rows, searchTerm, natureFilter, accountTypeFilter, requireThirdPartyOnly, requireCostCenterOnly]);
+  }, [rows, searchTerm, natureFilter, accountTypeFilter, requireThirdPartyOnly, requireCostCenterOnly, accountCategories, language]);
+
+  // UI 2026-11-10: códigos que tienen subcuentas, calculado una vez. La
+  // tabla lo consulta 3 veces por fila; hasChildren() recorría todo el
+  // plan en cada consulta (O(n²) con cientos de cuentas).
+  const parentCodeSet = useMemo(
+    () => new Set(rows.map((r) => r.parentCode).filter(Boolean)),
+    [rows]
+  );
 
   // Lookup by code, used to walk up the parentCode chain when deciding
   // whether a row is hidden by a collapsed ancestor (see visibleRows).
@@ -1042,7 +1053,7 @@ function ChartOfAccountsPage({ language = "es" }) {
   // (it would otherwise wipe out whatever was already typed).
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key !== "Insert" || open) return;
+      if (e.key !== "Insert" || document.querySelector('[aria-modal="true"]') || open) return;
       e.preventDefault();
       openCreatePanel();
     };
@@ -1451,15 +1462,18 @@ function ChartOfAccountsPage({ language = "es" }) {
   const resolveAccountClassLabel = (item) =>
     getMetadataLabel(accountClasses, item.accountClass, language) || item.accountClass || "";
 
+  // UI 2026-11-10: metadata localizada primero; accountCategoryDisplay /
+  // financialStatementDisplay llegan en inglés ("Current Assets", "Balance
+  // Sheet") y se mostraban así en la interfaz en español.
   const resolveAccountCategoryLabel = (item) =>
-    item.accountCategoryDisplay ||
     getMetadataLabel(accountCategories, item.accountCategory, language) ||
+    item.accountCategoryDisplay ||
     item.accountCategory ||
     "";
 
   const resolveFinancialStatementLabel = (item) =>
-    item.financialStatementDisplay ||
     getMetadataLabel(financialStatements, item.financialStatement, language) ||
+    item.financialStatementDisplay ||
     item.financialStatement ||
     "";
 
@@ -1548,6 +1562,20 @@ function ChartOfAccountsPage({ language = "es" }) {
 
     doc.save(`${exportFileStem()}.pdf`);
   };
+
+  // UI 2026-11-10: panel 100% teclado (Enter = siguiente campo, Ctrl+Enter
+  // guarda, Esc cierra con aviso si hay cambios). Ver ui/keyboard.js.
+  const panelRef = useRef(null);
+  // "/" o F3 = búsqueda (ver ui/keyboard.js).
+  const searchRef = useRef(null);
+  useSearchShortcut(searchRef);
+  useFormKeyboard({
+    active: open,
+    containerRef: panelRef,
+    onClose: closePanel,
+    getSnapshot: () => JSON.stringify(form),
+    discardMessage: DISCARD_MESSAGE[language],
+  });
 
   return (
     <div className="space-y-6 p-4">
@@ -1848,39 +1876,56 @@ function ChartOfAccountsPage({ language = "es" }) {
                 back up to click "Nuevo" every time is tedious. Insert opens
                 the create panel from anywhere on the page -- see the
                 keydown effect below. Shown here so it's discoverable. */}
-            <span className="hidden text-[11px] text-slate-500 sm:inline">{t.newShortcutHint}</span>
             {rows.length > 0 && (
-              <>
-                <Button variant="secondary" size="sm" onClick={handleExportExcel}>
-                  {t.exportExcel}
-                </Button>
-                <Button variant="secondary" size="sm" onClick={handleExportPdf}>
-                  {t.exportPdf}
-                </Button>
-              </>
+              <MenuButton
+                label={t.exportLabel}
+                items={[
+                  { label: "Excel (.xlsx)", onClick: handleExportExcel },
+                  { label: "PDF", onClick: handleExportPdf },
+                ]}
+              />
             )}
-            <Button variant="primary" onClick={openCreatePanel} title={`${t.new} ${t.newShortcutHint}`}>
+            <Button
+              variant="primary"
+              onClick={openCreatePanel}
+              title={`${t.new} ${t.newShortcutHint}`}
+              aria-keyshortcuts="Insert"
+            >
               + {t.new}
+              <kbd className="ml-1 hidden rounded border border-white/30 bg-white/10 px-1.5 py-px font-sans text-[10px] font-medium sm:inline">
+                Ins
+              </kbd>
             </Button>
           </>
         }
       />
 
-      <input
-        type="text"
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-        placeholder={t.search}
-        className="w-full md:max-w-md rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none shadow-sm focus:border-blue-500 transition-all"
-      />
+      {/* UI 2026-11-10: búsqueda + filtros rápidos (2026-10-31) en una sola
+          barra de herramientas. Los filtros se combinan entre sí y con la
+          búsqueda (ver filteredRows); cualquiera activo ignora el plegado
+          de grupos, igual que la búsqueda. */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+        <div className="relative w-full md:w-80">
+          <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.45 4.39l3.33 3.33a.75.75 0 11-1.06 1.06l-3.33-3.33A7 7 0 012 9z" clipRule="evenodd" />
+          </svg>
+          <input
+            ref={searchRef}
+            type="search"
+            data-kbd-search=""
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown" && focusFirstRow(e.currentTarget)) e.preventDefault();
+            }}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder={t.search}
+            aria-label={t.search}
+            className="w-full rounded-lg border border-field bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-500 transition-colors focus:border-blue-700"
+          />
+        </div>
 
-      {/* NEW (2026-10-31, user request): quick filters -- Naturaleza,
-          Tipo de Cuenta, Requerimientos. Combine with each other and
-          with the text search above (see filteredRows); any filter
-          being active also bypasses group-collapse, same reasoning as
-          the text search already had (a collapsed group could hide the
-          very rows a filter is meant to surface). */}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
+        <div className="hidden h-5 w-px bg-slate-200 lg:block" />
+
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t.nature}</span>
           <div className="flex gap-1">
@@ -1896,7 +1941,7 @@ function ChartOfAccountsPage({ language = "es" }) {
           </div>
         </div>
 
-        <div className="hidden h-5 w-px bg-gray-200 sm:block" />
+        <div className="hidden h-5 w-px bg-slate-200 sm:block" />
 
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t.filterAccountTypeLabel}</span>
@@ -1921,7 +1966,7 @@ function ChartOfAccountsPage({ language = "es" }) {
           </div>
         </div>
 
-        <div className="hidden h-5 w-px bg-gray-200 sm:block" />
+        <div className="hidden h-5 w-px bg-slate-200 sm:block" />
 
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t.filterRequirementsLabel}</span>
@@ -2007,175 +2052,189 @@ function ChartOfAccountsPage({ language = "es" }) {
         </div>
       )}
 
-      <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-x-auto">
+      {/* UI 2026-11-10 (revisión de densidad): filas de ~40px (antes ~80px
+          con Editar/Desactivar apilados) -> ~2x cuentas visibles por
+          pantalla. Encabezado fijo dentro de un contenedor con scroll propio
+          y columna de acciones fija a la derecha. Los indicadores marcan la
+          EXCEPCIÓN, no el valor por defecto: "—" cuando no aplica, ✓ cuando
+          sí; "Inactiva" solo aparece en las cuentas inactivas. La jerarquía
+          del PUC se lee por la indentación del nombre + negrita en las
+          cuentas con subcuentas (por eso se quitó la columna Nivel; queda
+          como tooltip del código). */}
+      <div className="max-h-[calc(100vh-15rem)] min-h-[16rem] overflow-auto rounded-xl border border-slate-200 bg-white">
         {loading ? (
           <div className="flex items-center justify-center py-20 text-slate-500 text-sm">
             {t.loading}
           </div>
         ) : (
           <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                <th className="px-5 py-4">{t.code}</th>
-                <th className="px-5 py-4">{t.name}</th>
-                <th className="px-5 py-4">{t.level}</th>
-                <th className="px-5 py-4">{t.nature}</th>
-                <th className="px-5 py-4">{t.accountClass}</th>
-                <th className="px-5 py-4">{t.accountCategory}</th>
-                <th className="px-5 py-4">{t.financialStatement}</th>
-                <th className="px-5 py-4">{t.active}</th>
-                <th className="px-5 py-4">{t.postingAccount}</th>
-                <th className="px-5 py-4">{t.requiresThirdParty}</th>
-                <th className="px-5 py-4">{t.requiresCostCenter}</th>
-                <th className="px-5 py-4">{t.actions}</th>
+            <thead className="sticky top-0 z-[2] bg-slate-50">
+              <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <th className={COA_TH}>{t.code}</th>
+                <th className={COA_TH}>{t.name}</th>
+                <th className={COA_TH}>{t.nature}</th>
+                <th className={COA_TH}>{t.accountClass}</th>
+                <th className={COA_TH}>{t.accountCategory}</th>
+                <th className={COA_TH}>{t.financialStatement}</th>
+                <th className={`${COA_TH} text-center`} title={t.postingAccount}>{t.colPosting}</th>
+                <th className={`${COA_TH} text-center`} title={t.requiresThirdParty}>{t.colThirdParty}</th>
+                <th className={`${COA_TH} text-center`} title={t.requiresCostCenter}>{t.colCostCenter}</th>
+                <th className={`${COA_TH} sticky right-0 bg-slate-50`}>
+                  <span className="sr-only">{t.actions}</span>
+                </th>
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-slate-100" onKeyDown={rowNavKeyDown}>
               {visibleRows.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-16 text-center text-slate-500">
+                  <td colSpan={10} className="py-16 text-center text-slate-500">
                     {t.noResults}
                   </td>
                 </tr>
               ) : (
-                visibleRows.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="px-5 py-4 font-bold text-slate-700">
-                      <span
-                        className="inline-flex items-center gap-1.5"
-                        style={{ paddingLeft: `${((item.level || 1) - 1) * 16}px` }}
+                visibleRows.map((item) => {
+                  const isGroup = parentCodeSet.has(item.code);
+                  const isCollapsed = collapsedCodes.has(item.code);
+                  const emphasis = !item.active
+                    ? "text-slate-500"
+                    : isGroup
+                      ? "font-semibold text-slate-900"
+                      : "text-slate-700";
+                  return (
+                    <tr key={item.id} {...ROW_KBD} className="group transition-colors hover:bg-slate-50 focus:outline-none focus-visible:bg-blue-50 focus-visible:shadow-[inset_3px_0_0_#1d4ed8]">
+                      <td
+                        className={`${COA_TD} whitespace-nowrap tabular-nums ${emphasis}`}
+                        title={`${t.level} ${item.level ?? "—"}`}
                       >
-                        {hasChildren(item.code, rows) ? (
-                          <button
-                            type="button"
-                            onClick={() => toggleCollapse(item.code)}
-                            title={collapsedCodes.has(item.code) ? t.expandGroup : t.collapseGroup}
-                            aria-label={collapsedCodes.has(item.code) ? t.expandGroup : t.collapseGroup}
-                            className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-slate-300 text-[10px] font-black leading-none text-slate-500 transition-colors hover:bg-slate-100"
-                          >
-                            {collapsedCodes.has(item.code) ? "+" : "\u2212"}
-                          </button>
-                        ) : (
-                          <span className="inline-block h-4 w-4 shrink-0" aria-hidden="true" />
-                        )}
                         {item.code}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4 text-slate-600">{item.name}</td>
+                      </td>
 
-                    <td className="px-5 py-4 text-center">
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-500">
-                        {item.level ?? "—"}
-                      </span>
-                    </td>
+                      <td className={COA_TD}>
+                        <div
+                          className="flex min-w-[14rem] items-center gap-1"
+                          style={{ paddingLeft: `${((item.level || 1) - 1) * 16}px` }}
+                        >
+                          {isGroup ? (
+                            <button
+                              type="button"
+                              onClick={() => toggleCollapse(item.code)}
+                              title={isCollapsed ? t.expandGroup : t.collapseGroup}
+                              aria-label={`${isCollapsed ? t.expandGroup : t.collapseGroup} ${item.code}`}
+                              aria-expanded={!isCollapsed}
+                              data-row-toggle=""
+                              tabIndex={-1}
+                              className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-800"
+                            >
+                              <svg
+                                className={`h-3.5 w-3.5 transition-transform ${isCollapsed ? "" : "rotate-90"}`}
+                                viewBox="0 0 20 20"
+                                fill="currentColor"
+                                aria-hidden="true"
+                              >
+                                <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.17 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                              </svg>
+                            </button>
+                          ) : (
+                            <span className="inline-block h-5 w-5 shrink-0" aria-hidden="true" />
+                          )}
+                          <span className={`whitespace-nowrap ${emphasis}`}>{item.name}</span>
+                          {!item.active && (
+                            <span className="ml-2 shrink-0 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-700">
+                              {t.inactiveBadge}
+                            </span>
+                          )}
+                        </div>
+                      </td>
 
-                    <td className="px-5 py-4">
-                      <Badge
-                        active={item.nature === "D"}
-                        labelOn={t.debit}
-                        labelOff={t.credit}
-                        colorOn="blue"
-                      />
-                    </td>
+                      <td className={`${COA_TD} whitespace-nowrap text-slate-600`}>
+                        {item.nature === "D" ? t.debit : t.credit}
+                      </td>
 
-                    <td className="px-5 py-4 text-slate-500">
-                      {getMetadataLabel(accountClasses, item.accountClass, language) || item.accountClass}
-                    </td>
+                      <td className={`${COA_TD} whitespace-nowrap text-slate-600`}>
+                        {resolveAccountClassLabel(item)}
+                      </td>
 
-                    <td className="px-5 py-4 text-slate-500">
-                      {item.accountCategoryDisplay ||
-                        getMetadataLabel(accountCategories, item.accountCategory, language) ||
-                        item.accountCategory}
-                    </td>
+                      {/* Una sola línea por fila: los textos largos se recortan
+                          con "…" y se leen completos en el tooltip. */}
+                      <td className={`${COA_TD} max-w-[13rem] truncate text-slate-600`} title={resolveAccountCategoryLabel(item)}>
+                        {resolveAccountCategoryLabel(item)}
+                      </td>
 
-                    <td className="px-5 py-4 text-slate-500">
-                      {item.financialStatementDisplay ||
-                        getMetadataLabel(financialStatements, item.financialStatement, language) ||
-                        item.financialStatement}
-                    </td>
+                      <td className={`${COA_TD} max-w-[13rem] truncate text-slate-600`} title={resolveFinancialStatementLabel(item)}>
+                        {resolveFinancialStatementLabel(item)}
+                      </td>
 
-                    <td className="px-5 py-4">
-                      <Badge
-                        active={item.active}
-                        labelOn={t.active}
-                        labelOff={t.inactive}
-                        colorOn="green"
-                      />
-                    </td>
+                      {/* Edición in situ (2026-10-23): se conserva, ahora como
+                          interruptor compacto. Cuenta de movimiento no se puede
+                          cambiar si la cuenta tiene subcuentas. */}
+                      <td className={`${COA_TD} text-center`}>
+                        <FlagCell
+                          on={item.postingAccount}
+                          label={t.postingAccount}
+                          yes={t.yes}
+                          no={t.no}
+                          onToggle={isGroup ? undefined : () => handleToggleRequiresFlag(item, "postingAccount")}
+                          busy={togglingKey === `${item.id}:postingAccount`}
+                          title={isGroup ? t.postingToggleBlockedHint : t.toggleRequiresHint}
+                        />
+                      </td>
 
-                    <td className="px-5 py-4">
-                      {/* NEW (2026-10-23, user request): same inline toggle
-                          as Tercero/Centro de Costo below, but only when
-                          this account has no sub-accounts -- mirrors the
-                          edit panel's own disabled Toggle for the exact
-                          same reason (itemHasChildren above). Turning it
-                          OFF while it already has movements is still
-                          rejected by the backend's existing
-                          POSTING_ACCOUNT_HAS_MOVEMENTS guard, same as
-                          before this change. */}
-                      <Badge
-                        active={item.postingAccount}
-                        labelOn={t.postingAccount}
-                        labelOff={t.noPostingAccount}
-                        colorOn="blue"
-                        onClick={
-                          hasChildren(item.code, rows)
-                            ? undefined
-                            : () => handleToggleRequiresFlag(item, "postingAccount")
-                        }
-                        disabled={togglingKey === `${item.id}:postingAccount`}
-                        title={hasChildren(item.code, rows) ? t.postingToggleBlockedHint : t.toggleRequiresHint}
-                      />
-                    </td>
+                      <td className={`${COA_TD} text-center`}>
+                        <FlagCell
+                          on={item.requiresThirdParty}
+                          label={t.requiresThirdParty}
+                          yes={t.yes}
+                          no={t.no}
+                          onToggle={() => handleToggleRequiresFlag(item, "requiresThirdParty")}
+                          busy={togglingKey === `${item.id}:requiresThirdParty`}
+                          title={t.toggleRequiresHint}
+                        />
+                      </td>
 
-                    <td className="px-5 py-4">
-                      {/* NEW (2026-10-23, user request): clicking the badge
-                          toggles it directly -- no need to open the edit
-                          panel just to fix a missing Tercero/Centro de
-                          Costo requirement. */}
-                      <Badge
-                        active={item.requiresThirdParty}
-                        labelOn={t.requiresThirdParty}
-                        labelOff={t.noRequiresThirdParty}
-                        colorOn="blue"
-                        onClick={() => handleToggleRequiresFlag(item, "requiresThirdParty")}
-                        disabled={togglingKey === `${item.id}:requiresThirdParty`}
-                        title={t.toggleRequiresHint}
-                      />
-                    </td>
+                      <td className={`${COA_TD} text-center`}>
+                        <FlagCell
+                          on={item.requiresCostCenter}
+                          label={t.requiresCostCenter}
+                          yes={t.yes}
+                          no={t.no}
+                          onToggle={() => handleToggleRequiresFlag(item, "requiresCostCenter")}
+                          busy={togglingKey === `${item.id}:requiresCostCenter`}
+                          title={t.toggleRequiresHint}
+                        />
+                      </td>
 
-                    <td className="px-5 py-4">
-                      <Badge
-                        active={item.requiresCostCenter}
-                        labelOn={t.requiresCostCenter}
-                        labelOff={t.noRequiresCostCenter}
-                        colorOn="blue"
-                        onClick={() => handleToggleRequiresFlag(item, "requiresCostCenter")}
-                        disabled={togglingKey === `${item.id}:requiresCostCenter`}
-                        title={t.toggleRequiresHint}
-                      />
-                    </td>
-
-                    <td className="px-5 py-4">
-                      <div className="flex gap-2 flex-wrap">
-                        <Button variant="ghost" size="sm" onClick={() => openEditPanel(item)}>
-                          {t.edit}
-                        </Button>
-
-                        {item.active ? (
-                          <Button variant="danger" size="sm" onClick={() => handleDeactivate(item.id)}>
-                            {t.deactivate}
+                      {/* Acciones en una sola línea. "Desactivar" pasa a ícono
+                          gris (rojo solo al pasar el cursor) y conserva su
+                          confirmación: ya no hay una columna de botones rojos. */}
+                      <td className="sticky right-0 bg-white px-2 py-1.5 shadow-[-8px_0_8px_-8px_rgba(15,23,42,0.15)] group-hover:bg-slate-50">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <Button variant="ghost" size="xs" onClick={() => openEditPanel(item)} data-row-primary="">
+                            {t.edit}
                           </Button>
-                        ) : (
-                          <Button variant="secondary" size="sm" onClick={() => handleActivate(item.id)}>
-                            {t.activate}
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          {item.active ? (
+                            <button
+                              type="button"
+                              onClick={() => handleDeactivate(item.id)}
+                              data-row-delete=""
+                              title={`${t.deactivate} (Supr)`}
+                              aria-label={`${t.deactivate} ${item.code}`}
+                              className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-red-50 hover:text-red-700"
+                            >
+                              <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path fillRule="evenodd" d="M10 2a.75.75 0 01.75.75v7.5a.75.75 0 01-1.5 0v-7.5A.75.75 0 0110 2zM5.4 4.82a.75.75 0 01.02 1.06 6.25 6.25 0 109.16 0 .75.75 0 111.08-1.04 7.75 7.75 0 11-11.32 0 .75.75 0 011.06-.02z" clipRule="evenodd" />
+                              </svg>
+                            </button>
+                          ) : (
+                            <Button variant="ghost" size="xs" onClick={() => handleActivate(item.id)}>
+                              {t.activate}
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -2185,13 +2244,16 @@ function ChartOfAccountsPage({ language = "es" }) {
       {open && (
         <div className="fixed inset-0 z-50 flex items-start justify-end">
           <div className="absolute inset-0 bg-slate-900/20" onClick={closePanel} />
-          <div className="relative h-full w-full max-w-xl bg-white shadow-2xl overflow-y-auto flex flex-col">
+          <div ref={panelRef} role="dialog" aria-modal="true" aria-label={t.title} className="relative h-full w-full max-w-xl bg-white shadow-2xl overflow-y-auto flex flex-col">
             <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-8 py-5 flex items-center justify-between">
-              <h2 className="text-xl font-black text-slate-800">
+              <div className="min-w-0">
+                <h2 className="text-xl font-black text-slate-800">
                 {editingIdRef.current ? t.edit : t.new} — {t.title}
               </h2>
+                <KeyboardHints items={FORM_HINTS[language] || FORM_HINTS.es} className="mt-1" />
+              </div>
               <button
-                onClick={closePanel}
+                type="button" aria-label="Esc" title="Esc" onClick={closePanel}
                 className="text-slate-500 hover:text-slate-700 text-2xl leading-none"
               >
                 ×
@@ -2541,44 +2603,13 @@ function Toggle({ name, checked, onChange, label, color = "blue", disabled = fal
           checked={checked}
           onChange={onChange}
           disabled={disabled}
-          className="sr-only"
+          className="peer sr-only"
         />
-        <div className={`w-11 h-6 rounded-full transition-colors ${checked ? colors[color] : "bg-slate-200"}`} />
+        <div className={`w-11 h-6 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-blue-700 peer-focus-visible:ring-offset-2 ${checked ? colors[color] : "bg-slate-200"}`} />
         <div className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${checked ? "translate-x-5" : ""}`} />
       </div>
       <span className="text-sm font-medium text-slate-600">{label}</span>
     </label>
-  );
-}
-
-// NEW (2026-10-23, user request): optional onClick turns this into an
-// inline toggle button instead of a plain static label -- used by the
-// requiresThirdParty/requiresCostCenter columns above so the user can fix
-// a missing flag directly from the table (see handleToggleRequiresFlag).
-// Every other Badge usage on this page omits onClick and renders exactly
-// as before, as a plain non-interactive <span>.
-function Badge({ active, labelOn, labelOff, colorOn, onClick, disabled, title }) {
-  const colors = {
-    green: "bg-green-100 text-green-700",
-    blue: "bg-blue-100 text-blue-700",
-  };
-
-  const className = `rounded-full px-3 py-1 text-[10px] font-bold uppercase transition ${
-    active ? colors[colorOn] : "bg-gray-100 text-gray-500"
-  } ${onClick ? (disabled ? "opacity-50 cursor-wait" : "cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-blue-300") : ""}`;
-
-  if (onClick) {
-    return (
-      <button type="button" onClick={onClick} disabled={disabled} title={title} className={className}>
-        {active ? labelOn : labelOff}
-      </button>
-    );
-  }
-
-  return (
-    <span className={className} title={title}>
-      {active ? labelOn : labelOff}
-    </span>
   );
 }
 

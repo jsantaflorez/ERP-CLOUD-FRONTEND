@@ -13,7 +13,9 @@ html, body, #root {
 body {
   margin: 0;
   font-family: Inter, Geist, Arial, sans-serif;
-  background-color: #f8fafc;
+  /* UI 2026-11-10: lienzo gris (slate-100) para que las tarjetas blancas
+     se despeguen; #f8fafc contra blanco daba ~1.04:1, imperceptible. */
+  background-color: #f1f5f9;
   color: #0f172a;
 }
 
@@ -55,6 +57,15 @@ textarea:focus-visible {
 
 .animate-slide {
   animation: slide 0.25s ease-out;
+}
+
+/* UI 2026-11-10: hoja de atajos imprimible (ShortcutsHelp.jsx). Al
+   imprimir desde la ventana de atajos solo sale la hoja, sin la interfaz. */
+.kbd-print-sheet { display: none; }
+@media print {
+  body.kbd-printing > *:not(.kbd-print-sheet) { display: none !important; }
+  body.kbd-printing .kbd-print-sheet { display: block !important; padding: 0 8mm; color: #0f172a; }
+  body.kbd-printing { background: #fff !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {

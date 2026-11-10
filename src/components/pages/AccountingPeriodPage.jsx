@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
+import { CARD, TABLE_WRAP, THEAD, THEAD_ROW, FlagCell } from "../ui/tableKit";
 import api from "../../services/api"; // Centralized Axios instance configured for multi-tenancy
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
@@ -623,21 +624,23 @@ function AccountingPeriodPage({ language = "es" }) {
 
       <p className="text-xs text-slate-500">{t.hint}</p>
 
-      <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-x-auto">
+      <div className={`${CARD} ${TABLE_WRAP}`}>
         {loading ? (
           <div className="flex items-center justify-center py-20 text-slate-500 text-sm">
             {t.loading}
           </div>
         ) : (
           <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
+            {/* UI 2026-11-10: densidad compacta (py-2), encabezado fijo; "Cerrado"
+                deja de ser rojo (es un estado normal, no un error). */}
+            <thead className={THEAD}>
+              <tr className={THEAD_ROW}>
                 {[t.period, t.status, t.yearSeal, t.closingVoucher, t.closedBy, t.closedAt, t.closingNotes, t.reopenedBy, t.reopenedAt, t.reopeningNotes, t.actions].map((h) => (
-                  <th key={h} className="px-5 py-4 whitespace-nowrap">{h}</th>
+                  <th key={h} className="whitespace-nowrap border-b border-slate-200 px-3 py-2.5">{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-slate-100">
               {sortedPeriods.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="py-16 text-center text-slate-500">{t.noResults}</td>
@@ -656,35 +659,33 @@ function AccountingPeriodPage({ language = "es" }) {
                         className="cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors"
                         onClick={() => toggleYearCollapsed(year)}
                       >
-                        <td colSpan={11} className="px-5 py-3">
-                          <div className="flex items-center gap-2 font-black text-slate-700">
-                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-slate-200 text-sm leading-none text-slate-600">
-                              {isCollapsed ? "+" : "−"}
-                            </span>
+                        <td colSpan={11} className="px-3 py-2">
+                          <div className="flex items-center gap-2 font-semibold text-slate-800">
+                            <svg className={`h-3.5 w-3.5 text-slate-500 transition-transform ${isCollapsed ? "" : "rotate-90"}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                              <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.17 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                            </svg>
                             {t.year} {year}
                           </div>
                         </td>
                       </tr>
                       {!isCollapsed && rows.map((p) => (
-                  <tr key={p.id ?? p.periodCode ?? `${p.year}-${p.month}`} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="px-5 py-4 font-mono font-bold text-slate-700 whitespace-nowrap">
+                  <tr key={p.id ?? p.periodCode ?? `${p.year}-${p.month}`} className="transition-colors hover:bg-slate-50">
+                    <td className="px-3 py-2 font-semibold tabular-nums text-slate-900 whitespace-nowrap">
                       {p.periodCode || `${p.year}-${String(p.month).padStart(2, "0")}`}
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="px-3 py-2">
                       <StatusBadge isOpen={p.isOpen ?? p.open} labelOpen={t.open} labelClosed={t.closed} />
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="px-3 py-2">
                       {/* FIX: Jackson serializes a boolean getter isYearClose()
                           as JSON key "yearClose" (strips the "is" prefix),
                           same quirk already worked around in DocumentTypePage
                           for isAccounting/accounting -- read both so this
                           doesn't silently show "No" regardless of the real
                           value. */}
-                      <span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase ${(p.isYearClose ?? p.yearClose) ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-500"}`}>
-                        {(p.isYearClose ?? p.yearClose) ? t.yes : t.no}
-                      </span>
+                      <FlagCell on={Boolean(p.isYearClose ?? p.yearClose)} label={t.yearSeal} yes={t.yes} no={t.no} />
                     </td>
-                    <td className="px-5 py-4 text-slate-600 whitespace-nowrap">
+                    <td className="px-3 py-2 text-slate-600 whitespace-nowrap">
                       {p.closingEntryDocumentNumber ? (
                         <span
                           className="font-mono text-xs font-bold text-purple-700"
@@ -693,27 +694,27 @@ function AccountingPeriodPage({ language = "es" }) {
                           {p.closingEntryDocumentNumber}
                         </span>
                       ) : (
-                        <span className="text-slate-300">—</span>
+                        <span className="text-slate-400">—</span>
                       )}
                     </td>
-                    <td className="px-5 py-4 text-slate-600 whitespace-nowrap">{p.closedBy || "—"}</td>
-                    <td className="px-5 py-4 text-slate-500 whitespace-nowrap">{formatDateTime(p.closedAt)}</td>
-                    <td className="px-5 py-4 text-xs text-slate-500 max-w-[160px] truncate" title={p.closingNotes || ""}>
-                      {p.closingNotes?.trim() ? p.closingNotes : <span className="text-slate-300">—</span>}
+                    <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{p.closedBy || "—"}</td>
+                    <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{formatDateTime(p.closedAt)}</td>
+                    <td className="px-3 py-2 text-xs text-slate-500 max-w-[160px] truncate" title={p.closingNotes || ""}>
+                      {p.closingNotes?.trim() ? p.closingNotes : <span className="text-slate-400">—</span>}
                     </td>
-                    <td className="px-5 py-4 text-slate-600 whitespace-nowrap">{p.reopenedBy || "—"}</td>
-                    <td className="px-5 py-4 text-slate-500 whitespace-nowrap">{formatDateTime(p.reopenedAt)}</td>
-                    <td className="px-5 py-4 text-xs text-slate-500 max-w-[160px] truncate" title={p.reopeningNotes || ""}>
-                      {p.reopeningNotes?.trim() ? p.reopeningNotes : <span className="text-slate-300">—</span>}
+                    <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{p.reopenedBy || "—"}</td>
+                    <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{formatDateTime(p.reopenedAt)}</td>
+                    <td className="px-3 py-2 text-xs text-slate-500 max-w-[160px] truncate" title={p.reopeningNotes || ""}>
+                      {p.reopeningNotes?.trim() ? p.reopeningNotes : <span className="text-slate-400">—</span>}
                     </td>
-                    <td className="px-5 py-4">
-                      <div className="flex gap-2 flex-wrap">
+                    <td className="px-3 py-2">
+                      <div className="flex justify-end gap-1 whitespace-nowrap">
                         {(p.isYearClose ?? p.yearClose) ? (
-                          <Button variant="ghost" size="sm" onClick={() => openReopenYear(p)}>
+                          <Button variant="ghost" size="xs" onClick={() => openReopenYear(p)}>
                             {t.reopenYear}
                           </Button>
                         ) : !(p.isOpen ?? p.open) ? (
-                          <Button variant="ghost" size="sm" onClick={() => openReopenMonth(p)}>
+                          <Button variant="ghost" size="xs" onClick={() => openReopenMonth(p)}>
                             {t.reopenMonth}
                           </Button>
                         ) : (
@@ -723,7 +724,7 @@ function AccountingPeriodPage({ language = "es" }) {
                           // row, same action slot that shows "Reabrir
                           // Mes" once it's closed, so it behaves like one
                           // toggle control instead of two separate paths.
-                          <Button variant="ghost" size="sm" onClick={() => openCloseRowTarget(p)}>
+                          <Button variant="ghost" size="xs" onClick={() => openCloseRowTarget(p)}>
                             {t.closeMonth}
                           </Button>
                         )}
@@ -1014,12 +1015,20 @@ function Field({ label, error, children }) {
   );
 }
 
+// UI 2026-11-10: "Cerrado" es un estado normal, no un error -> neutro con
+// candado en vez de rojo. Forma + texto, nunca solo color (WCAG 1.4.1).
 function StatusBadge({ isOpen, labelOpen, labelClosed }) {
-  return (
-    <span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase ${
-      isOpen ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"
-    }`}>
-      {isOpen ? labelOpen : labelClosed}
+  return isOpen ? (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800 ring-1 ring-inset ring-emerald-600/30">
+      <span aria-hidden="true" className="text-[0.7em] leading-none">●</span>
+      {labelOpen}
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700 ring-1 ring-inset ring-slate-500/30">
+      <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
+      </svg>
+      {labelClosed}
     </span>
   );
 }

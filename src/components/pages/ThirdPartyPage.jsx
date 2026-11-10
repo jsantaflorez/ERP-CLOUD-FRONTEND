@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react"; // CHANGED (2026-11-01): useMemo no longer needed -- filtering moved server-side
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
+import {
+  CARD, TABLE_WRAP, THEAD, THEAD_ROW, TH, TH_ACTIONS, TBODY, TR, TD, TD_ACTIONS,
+  InactiveTag, RowActions, ExportMenu, ShortcutKbd, KeyboardHints,
+  Toolbar, ToolbarDivider, SearchInput, FilterLabel, FilterChip, FILTER_SELECT,
+} from "../ui/tableKit";
+import { useFormKeyboard, ROW_KBD, rowNavKeyDown, FORM_HINTS, DISCARD_MESSAGE } from "../ui/keyboard";
 import api from "../../services/api"; // Centralized Axios instance with multi-tenancy context
 import { useAuth } from "../../context/AuthContext";
 import { TAX_REGIME_LABELS, TAX_REGIMES_BY_PERSON } from "../../constants/taxRegimes";
@@ -120,26 +126,7 @@ const ALL_TAX_REGIMES = Array.from(
   new Set([...TAX_REGIMES_BY_PERSON.NATURAL, ...TAX_REGIMES_BY_PERSON.JURIDICA])
 );
 
-// Lightweight reusable toggle-pill for quick filters -- same pattern as
-// ChartOfAccountPage.jsx's own FilterChip (duplicated locally rather than
-// shared, same reasoning the Quick-Create modal already uses for its own
-// copied helpers: keeps this page independent of that one's internals).
-function FilterChip({ active, onClick, title, children }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-        active
-          ? "border-blue-500 bg-blue-500 text-white"
-          : "border-gray-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-600"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
+// FilterChip y piezas de tabla: ui/tableKit.jsx (UI 2026-11-10).
 
 function ThirdPartyPage({ language = "es" }) {
   // --- Component States ---
@@ -230,6 +217,7 @@ function ThirdPartyPage({ language = "es" }) {
       actions: "Acciones",
       required: "Campo obligatorio",
       deactivate: "Desactivar",
+      exportLabel: "Exportar",
       activate: "Activar",
       noResults: "Sin registros",
       loading: "Cargando registros...",
@@ -323,6 +311,7 @@ function ThirdPartyPage({ language = "es" }) {
       actions: "Actions",
       required: "Required field",
       deactivate: "Deactivate",
+      exportLabel: "Export",
       activate: "Activate",
       noResults: "No records found",
       loading: "Loading records...",
@@ -551,7 +540,7 @@ const loadCatalogs = async () => {
   // !open so it never interrupts an in-progress create/edit.
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key !== "Insert" || open) return;
+      if (e.key !== "Insert" || document.querySelector('[aria-modal="true"]') || open) return;
       e.preventDefault();
       openCreatePanel();
     };
@@ -1053,6 +1042,31 @@ const loadCatalogs = async () => {
     }
   };
 
+  // UI 2026-11-10: panel 100% teclado (Enter = siguiente campo, Ctrl+Enter
+  // guarda, Esc cierra con aviso si hay cambios). Ver ui/keyboard.js.
+  const panelRef = useRef(null);
+  // Panel "Ver" (solo lectura): Esc cierra, Tab queda dentro.
+  const viewPanelRef = useRef(null);
+  useFormKeyboard({ active: Boolean(viewItem), containerRef: viewPanelRef, onClose: closeViewPanel });
+  useFormKeyboard({
+    active: open,
+    containerRef: panelRef,
+    onClose: closePanel,
+    getSnapshot: () => JSON.stringify(form),
+    discardMessage: DISCARD_MESSAGE[language],
+    // Terceros tiene 3 pestañas: Enter en el último campo de una pestaña
+    // pasa a la siguiente (y solo en la última llega a Guardar).
+    onLastField: () => {
+      const i = TAB_ORDER.indexOf(activeTab);
+      if (i < 0 || i >= TAB_ORDER.length - 1) return false;
+      setActiveTab(TAB_ORDER[i + 1]);
+      requestAnimationFrame(() => {
+        panelRef.current?.querySelector("form input:not([disabled]):not([readonly]), form select:not([disabled])")?.focus();
+      });
+      return true;
+    },
+  });
+
   return (
     <div className="space-y-6 p-4">
       {/* Toast Alert Banner */}
@@ -1069,47 +1083,38 @@ const loadCatalogs = async () => {
         tenantId={activeTenantId}
         actions={
           <>
-            <span className="hidden text-[11px] text-slate-500 sm:inline">{t.newShortcutHint}</span>
             {rows.length > 0 && (
-              <>
-                <Button variant="secondary" size="sm" loading={exporting} disabled={exporting} onClick={handleExportExcel}>
-                  {t.exportExcel}
-                </Button>
-                <Button variant="secondary" size="sm" loading={exporting} disabled={exporting} onClick={handleExportPdf}>
-                  {t.exportPdf}
-                </Button>
-              </>
+              <ExportMenu
+                label={t.exportLabel}
+                onExcel={handleExportExcel}
+                onPdf={handleExportPdf}
+                disabled={exporting}
+              />
             )}
-            <button
-              type="button"
-              onClick={openSiewinModal}
-              className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline whitespace-nowrap"
-            >
+            <Button variant="ghost" size="sm" onClick={openSiewinModal}>
               {t.siewinOpenLink}
-            </button>
-            <Button variant="primary" onClick={openCreatePanel} title={`${t.new} ${t.newShortcutHint}`}>
+            </Button>
+            <Button
+              variant="primary"
+              onClick={openCreatePanel}
+              title={`${t.new} ${t.newShortcutHint}`}
+              aria-keyshortcuts="Insert"
+            >
               + {t.new}
+              <ShortcutKbd>Ins</ShortcutKbd>
             </Button>
           </>
         }
       />
 
-      {/* Search Input Bar Element */}
-      <input
-        type="text"
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-        placeholder={t.search}
-        className="w-full md:max-w-md rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none shadow-sm focus:border-blue-500 transition-all"
-      />
-
-      {/* Quick Filters Bar (2026-11-01, user request): Tipo de Persona as
-          chips (low cardinality, 2 options), Tipo de Documento and
-          Regimen as selects (11 and 6 options respectively -- too many
-          for a readable chip row). */}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
+      {/* UI 2026-11-10: búsqueda + filtros rápidos (2026-11-01) en una sola
+          barra. Tipo de Persona como chips (2 opciones); Tipo de Documento y
+          Régimen como selects (11 y 6 opciones). */}
+      <Toolbar>
+        <SearchInput value={searchTerm} onChange={setSearchTerm} placeholder={t.search} />
+        <ToolbarDivider />
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{t.type}:</span>
+          <FilterLabel>{t.type}</FilterLabel>
           <FilterChip active={personTypeFilter === "ALL"} onClick={() => setPersonTypeFilter("ALL")}>
             {t.filterAllOption}
           </FilterChip>
@@ -1122,11 +1127,11 @@ const loadCatalogs = async () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{t.docType}:</span>
+          <FilterLabel>{t.docType}</FilterLabel>
           <select
             value={documentTypeFilter}
             onChange={(e) => setDocumentTypeFilter(e.target.value)}
-            className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs outline-none focus:border-blue-500"
+            className={FILTER_SELECT}
           >
             <option value="ALL">{t.filterAllOption}</option>
             {DOCUMENT_TYPES.map((value) => (
@@ -1138,11 +1143,11 @@ const loadCatalogs = async () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{t.regime}:</span>
+          <FilterLabel>{t.regime}</FilterLabel>
           <select
             value={taxRegimeFilter}
             onChange={(e) => setTaxRegimeFilter(e.target.value)}
-            className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs outline-none focus:border-blue-500"
+            className={FILTER_SELECT}
           >
             <option value="ALL">{t.filterAllOption}</option>
             {ALL_TAX_REGIMES.map((value) => (
@@ -1161,71 +1166,70 @@ const loadCatalogs = async () => {
               setDocumentTypeFilter("ALL");
               setTaxRegimeFilter("ALL");
             }}
-            className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 hover:underline"
+            className="ml-auto text-xs font-medium text-slate-500 underline hover:text-slate-700"
           >
             {t.filterClear}
           </button>
         )}
-      </div>
+      </Toolbar>
 
       {/* Primary Master Listing Datagrid Container */}
-      <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+      {/* UI 2026-11-10: tabla compacta (ver ui/tableKit.jsx). Sin columna
+          "Activo": la etiqueta "Inactivo" aparece solo en la excepción. */}
+      <div className={`${CARD} overflow-hidden`}>
+        <div className={TABLE_WRAP}>
           {loading ? (
             <div className="flex items-center justify-center py-20 text-slate-500 text-sm">
               {t.loading}
             </div>
           ) : (
             <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  <th className="px-5 py-4">{t.identity}</th>
-                  <th className="px-5 py-4">{t.name}</th>
-                  <th className="px-5 py-4">{t.type}</th>
-                  <th className="px-5 py-4">{t.regime}</th>
-                  <th className="px-5 py-4">{t.active}</th>
-                  <th className="px-5 py-4 text-right">{t.actions}</th>
+              <thead className={THEAD}>
+                <tr className={THEAD_ROW}>
+                  <th className={TH}>{t.identity}</th>
+                  <th className={TH}>{t.name}</th>
+                  <th className={TH}>{t.type}</th>
+                  <th className={TH}>{t.regime}</th>
+                  <th className={TH_ACTIONS}><span className="sr-only">{t.actions}</span></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className={TBODY} onKeyDown={rowNavKeyDown}>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-16 text-center text-slate-500">{t.noResults}</td>
+                    <td colSpan={5} className="py-16 text-center text-slate-500">{t.noResults}</td>
                   </tr>
                 ) : (
-                  rows.map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="px-5 py-4 font-mono text-slate-700 font-bold whitespace-nowrap">
-                        {item.documentType} {item.documentNumber}
-                        {item.verificationDigit != null ? `-${item.verificationDigit}` : ""}
-                      </td>
-                      <td className="px-5 py-4 text-slate-800 font-medium">
-                        {item.legalDisplayName || item.businessName || `${item.firstName || ""} ${item.lastName || ""}`.trim()}
-                      </td>
-                      <td className="px-5 py-4 text-slate-500 text-xs">
-                        {item.personType === "JURIDICA" ? t.juridica : t.natural}
-                      </td>
-                      <td className="px-5 py-4 text-slate-500 text-xs font-medium">
+                  rows.map((item) => {
+                    const idLabel = `${item.documentType} ${item.documentNumber}${item.verificationDigit != null ? `-${item.verificationDigit}` : ""}`;
+                    return (
+                      <tr key={item.id} className={TR} {...ROW_KBD}>
+                        <td className={`${TD} whitespace-nowrap font-medium tabular-nums ${item.active ? "text-slate-700" : "text-slate-500"}`}>
+                          {idLabel}
+                        </td>
+                        <td className={`${TD} ${item.active ? "font-medium text-slate-900" : "text-slate-500"}`}>
+                          {item.legalDisplayName || item.businessName || `${item.firstName || ""} ${item.lastName || ""}`.trim()}
+                          {!item.active && <InactiveTag>{t.inactive}</InactiveTag>}
+                        </td>
+                        <td className={`${TD} whitespace-nowrap text-slate-600`}>
+                          {item.personType === "JURIDICA" ? t.juridica : t.natural}
+                        </td>
+                        <td className={`${TD} whitespace-nowrap text-slate-600`}>
                           {getRegimeDisplayLabel(item.taxRegime, item.personType, language, t)}
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${item.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
-                          {item.active ? t.active : t.inactive}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4 text-right">
-                        <div className="flex gap-2 justify-end">
-                          <Button variant="ghost" size="sm" onClick={() => openViewPanel(item)}>{t.view}</Button>
-                          <Button variant="ghost" size="sm" onClick={() => openEditPanel(item)}>{t.edit}</Button>
-                          {item.active ? (
-                            <Button variant="danger" size="sm" onClick={() => handleDeactivate(item.id)}>{t.deactivate}</Button>
-                          ) : (
-                            <Button variant="secondary" size="sm" onClick={() => handleActivate(item.id)}>{t.activate}</Button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                        </td>
+                        <td className={TD_ACTIONS}>
+                          <RowActions
+                            labels={t}
+                            itemLabel={idLabel}
+                            active={item.active}
+                            onView={() => openViewPanel(item)}
+                            onEdit={() => openEditPanel(item)}
+                            onDeactivate={() => handleDeactivate(item.id)}
+                            onActivate={() => handleActivate(item.id)}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -1233,7 +1237,7 @@ const loadCatalogs = async () => {
         </div>
 
         {/* FIXED: Dynamic Pagination Footer connected with Spring Boot Pageable */}
-        <div className="flex items-center justify-between border-t border-gray-100 bg-slate-50 px-6 py-4">
+        <div className="flex items-center justify-between border-t border-slate-200 bg-white px-4 py-2.5">
           <div className="text-xs text-slate-500 font-medium">
             {t.page} <span className="font-bold text-slate-700">{currentPage + 1}</span> {t.of} <span className="font-bold text-slate-700">{totalPages}</span>
           </div>
@@ -1264,14 +1268,17 @@ const loadCatalogs = async () => {
       {open && (
         <div className="fixed inset-0 z-50 flex items-start justify-end">
           <div className="absolute inset-0 bg-slate-900/20" onClick={closePanel} />
-          <div className="relative h-full w-full max-w-xl bg-white shadow-2xl flex flex-col">
+          <div ref={panelRef} role="dialog" aria-modal="true" aria-label={t.title} className="relative h-full w-full max-w-xl bg-white shadow-2xl flex flex-col">
 
             {/* Modal Heading Context Group */}
             <div className="bg-white border-b border-slate-100 px-8 py-4 flex items-center justify-between">
-              <h2 className="text-xl font-black text-slate-800">
+              <div className="min-w-0">
+                <h2 className="text-xl font-black text-slate-800">
                 {editingIdRef.current ? t.edit : t.new}
               </h2>
-              <button onClick={closePanel} className="text-slate-500 hover:text-slate-700 text-2xl">×</button>
+                <KeyboardHints items={FORM_HINTS[language] || FORM_HINTS.es} className="mt-1" />
+              </div>
+              <button type="button" aria-label="Esc" title="Esc" onClick={closePanel} className="text-slate-500 hover:text-slate-700 text-2xl">×</button>
             </div>
 
             {/* Horizontal Segmented Navigation Tab Menu */}
@@ -1622,7 +1629,7 @@ const loadCatalogs = async () => {
       {viewItem && (
         <div className="fixed inset-0 z-50 flex items-start justify-end">
           <div className="absolute inset-0 bg-slate-900/20" onClick={closeViewPanel} />
-          <div className="relative h-full w-full max-w-xl bg-white shadow-2xl flex flex-col">
+          <div ref={viewPanelRef} role="dialog" aria-modal="true" aria-label={t.viewTitle} className="relative h-full w-full max-w-xl bg-white shadow-2xl flex flex-col">
 
             <div className="bg-white border-b border-slate-100 px-8 py-4 flex items-center justify-between">
               <h2 className="text-xl font-black text-slate-800">{t.viewTitle}</h2>

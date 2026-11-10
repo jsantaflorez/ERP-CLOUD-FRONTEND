@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import api from "../../services/api";
 import Button from "../ui/Button";
+import { KeyboardHints } from "../ui/tableKit";
+import { useFormKeyboard, FORM_HINTS, DISCARD_MESSAGE } from "../ui/keyboard";
 import { getApiErrorMessage, API_ERROR_LABELS } from "../../constants/apiErrors";
 
 // NEW (2026-10-01): lets a journal entry line create the account it needs
@@ -409,13 +411,26 @@ function AccountQuickCreateModal({ language = "es", rows, onCreated, onClose }) 
     }
   };
 
+  // UI 2026-11-10: creación rápida 100% teclado (ver ui/keyboard.js).
+  const dialogRef = useRef(null);
+  useFormKeyboard({
+    active: true,
+    containerRef: dialogRef,
+    onClose,
+    getSnapshot: () => JSON.stringify(form),
+    discardMessage: DISCARD_MESSAGE[language],
+  });
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/20" onClick={onClose} />
-      <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={t.title} className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
         <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between">
-          <h2 className="text-lg font-black text-slate-800">{t.title}</h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
+          <div className="min-w-0">
+            <h2 className="text-lg font-black text-slate-800">{t.title}</h2>
+            <KeyboardHints items={FORM_HINTS[language] || FORM_HINTS.es} className="mt-1" />
+          </div>
+          <button type="button" aria-label="Esc" title="Esc" onClick={onClose} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
         </div>
 
         <form onSubmit={handleSave} className="px-6 py-5 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -605,8 +620,8 @@ function AqToggle({ name, checked, onChange, label, color = "blue" }) {
   return (
     <label className="flex items-center gap-2 select-none cursor-pointer">
       <div className="relative">
-        <input type="checkbox" name={name} checked={checked} onChange={onChange} className="sr-only" />
-        <div className={`w-9 h-5 rounded-full transition-colors ${checked ? colors[color] : "bg-slate-200"}`} />
+        <input type="checkbox" name={name} checked={checked} onChange={onChange} className="peer sr-only" />
+        <div className={`w-9 h-5 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-blue-700 peer-focus-visible:ring-offset-2 ${checked ? colors[color] : "bg-slate-200"}`} />
         <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${checked ? "translate-x-4" : ""}`} />
       </div>
       <span className="text-xs font-medium text-slate-600">{label}</span>

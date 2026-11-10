@@ -1,7 +1,13 @@
 // UserManagementPage.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
+import {
+  CARD, TABLE_WRAP, THEAD, THEAD_ROW, TH, TH_ACTIONS, TBODY, TR, TD, TD_ACTIONS,
+  InactiveTag, FlagCell, RowActions, ShortcutKbd, Toolbar, SearchInput,
+  KeyboardHints,
+} from "../ui/tableKit";
+import { useFormKeyboard, ROW_KBD, rowNavKeyDown, FORM_HINTS, DISCARD_MESSAGE } from "../ui/keyboard";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
@@ -77,7 +83,7 @@ function UserManagementPage({ language = "es" }) {
     es: {
       title: "Gestión de Usuarios", subtitle: "Usuarios y roles de esta empresa",
       new: "Agregar Usuario", edit: "Editar", save: "Guardar", saving: "Guardando...",
-      cancel: "Cancelar", close: "Cerrar", search: "Buscar usuario...",
+      cancel: "Cancelar", close: "Cerrar", search: "Buscar usuario...", inactiveTag: "Inactivo",
       email: "Correo", firstName: "Nombre", lastName: "Apellido",
       actions: "Acciones", required: "Obligatorio",
       activate: "Activar cuenta", deactivate: "Desactivar cuenta",
@@ -107,7 +113,7 @@ function UserManagementPage({ language = "es" }) {
     en: {
       title: "User Management", subtitle: "Users and roles for this company",
       new: "Add User", edit: "Edit", save: "Save", saving: "Saving...",
-      cancel: "Cancel", close: "Close", search: "Search user...",
+      cancel: "Cancel", close: "Close", search: "Search user...", inactiveTag: "Inactive",
       email: "Email", firstName: "First Name", lastName: "Last Name",
       actions: "Actions", required: "Required",
       activate: "Activate account", deactivate: "Deactivate account",
@@ -390,6 +396,19 @@ function UserManagementPage({ language = "es" }) {
   };
 
   // ── Render ───────────────────────────────────────────────────────
+  // UI 2026-11-10: panel 100% teclado (Enter = siguiente campo, Ctrl+Enter
+  // guarda, Esc cierra con aviso si hay cambios). Ver ui/keyboard.js.
+  const panelRef = useRef(null);
+  const pwdRef = useRef(null);
+  useFormKeyboard({ active: Boolean(pwdPanel), containerRef: pwdRef, onClose: closePwdPanel });
+  useFormKeyboard({
+    active: open,
+    containerRef: panelRef,
+    onClose: closePanel,
+    getSnapshot: () => JSON.stringify(form),
+    discardMessage: DISCARD_MESSAGE[language],
+  });
+
   return (
     <div className="space-y-6 p-4">
       {toast && (
@@ -406,22 +425,15 @@ function UserManagementPage({ language = "es" }) {
         tenantId={activeTenantId}
         language={language}
         actions={
-          <button
-            onClick={openCreatePanel}
-            className="rounded-xl bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 transition-colors shadow-md shadow-blue-100"
-          >
+          <Button variant="primary" onClick={openCreatePanel}>
             + {t.new}
-          </button>
+          </Button>
         }
       />
 
-      <input
-        type="text" autoComplete="off" name="userSearch"
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-        placeholder={t.search}
-        className="w-full md:max-w-md rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none shadow-sm focus:border-blue-500 transition-all"
-      />
+      <Toolbar>
+        <SearchInput value={searchTerm} onChange={setSearchTerm} placeholder={t.search} />
+      </Toolbar>
 
       {listError && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
@@ -429,50 +441,47 @@ function UserManagementPage({ language = "es" }) {
         </div>
       )}
 
-      <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-x-auto">
+      <div className={`${CARD} ${TABLE_WRAP}`}>
         <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
-              {[t.firstName, t.email, t.rolesInCompany, t.accountGlobalLabel, t.actions].map((h) => (
-                <th key={h} className="px-5 py-4">{h}</th>
-              ))}
+          {/* UI 2026-11-10: tabla compacta. El estado global de la cuenta ya
+              no es columna: "Inactivo" aparece junto al nombre solo cuando
+              aplica. Roles como etiquetas neutras. */}
+          <thead className={THEAD}>
+            <tr className={THEAD_ROW}>
+              <th className={TH}>{t.firstName}</th>
+              <th className={TH}>{t.email}</th>
+              <th className={TH}>{t.rolesInCompany}</th>
+              <th className={TH_ACTIONS}><span className="sr-only">{t.actions}</span></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-50">
+          <tbody className={TBODY} onKeyDown={rowNavKeyDown}>
             {loading ? (
-              <tr><td colSpan={5} className="py-16 text-center text-slate-500">...</td></tr>
+              <tr><td colSpan={4} className="py-16 text-center text-slate-500">...</td></tr>
             ) : filteredRows.length === 0 ? (
-              <tr><td colSpan={5} className="py-16 text-center text-slate-500">{t.noResults}</td></tr>
+              <tr><td colSpan={4} className="py-16 text-center text-slate-500">{t.noResults}</td></tr>
             ) : (
               filteredRows.map((item) => (
-                <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
-                  <td className="px-5 py-4 font-bold text-slate-700">{item.fullName}</td>
-                  <td className="px-5 py-4 text-slate-500 text-xs">{item.email}</td>
-                  <td className="px-5 py-4">
-                    <div className="flex flex-wrap gap-1.5">
+                <tr key={item.id} className={TR} {...ROW_KBD}>
+                  <td className={`${TD} whitespace-nowrap font-medium ${item.active ? "text-slate-900" : "text-slate-500"}`}>
+                    {item.fullName}
+                    {!item.active && <InactiveTag>{t.inactiveTag}</InactiveTag>}
+                  </td>
+                  <td className={`${TD} text-slate-600`}>{item.email}</td>
+                  <td className={TD}>
+                    <div className="flex flex-wrap gap-1">
                       {item.roles.length === 0 ? (
-                        <span className="text-xs text-slate-300">—</span>
+                        <span className="text-slate-400">—</span>
                       ) : (
                         item.roles.map((r) => (
-                          <span key={r.roleId} className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-[10px] font-bold text-indigo-600">
+                          <span key={r.roleId} className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-700">
                             {roleLabel(r)}
                           </span>
                         ))
                       )}
                     </div>
                   </td>
-                  <td className="px-5 py-4">
-                    <span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase ${
-                      item.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
-                    }`}>
-                      {item.active ? t.activate.replace("Activar ", "").replace("Activate ", "") : t.deactivate.replace("Desactivar ", "").replace("Deactivate ", "")}
-                    </span>
-                  </td>
-                  <td className="px-5 py-4">
-                    <button onClick={() => openEditPanel(item)}
-                      className="text-blue-600 hover:text-blue-800 font-semibold text-xs">
-                      {t.edit}
-                    </button>
+                  <td className={TD_ACTIONS}>
+                    <RowActions labels={t} itemLabel={item.fullName} onEdit={() => openEditPanel(item)} />
                   </td>
                 </tr>
               ))
@@ -485,12 +494,15 @@ function UserManagementPage({ language = "es" }) {
       {open && (
         <div className="fixed inset-0 z-50 flex items-start justify-end">
           <div className="absolute inset-0 bg-slate-900/20" onClick={closePanel} />
-          <div className="relative h-full w-full max-w-md bg-white shadow-2xl overflow-y-auto flex flex-col">
+          <div ref={panelRef} role="dialog" aria-modal="true" aria-label={t.title} className="relative h-full w-full max-w-md bg-white shadow-2xl overflow-y-auto flex flex-col">
             <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-8 py-5 flex items-center justify-between">
-              <h2 className="text-xl font-black text-slate-800">
+              <div className="min-w-0">
+                <h2 className="text-xl font-black text-slate-800">
                 {editingUser ? t.edit : t.new}
               </h2>
-              <button onClick={closePanel} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
+                <KeyboardHints items={FORM_HINTS[language] || FORM_HINTS.es} className="mt-1" />
+              </div>
+              <button type="button" aria-label="Esc" title="Esc" onClick={closePanel} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
             </div>
 
             <div className="flex-1 px-8 py-6 flex flex-col gap-5">
@@ -625,7 +637,7 @@ function UserManagementPage({ language = "es" }) {
       {pwdPanel && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center px-4">
           <div className="absolute inset-0 bg-slate-900/20" onClick={closePwdPanel} />
-          <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-8">
+          <div ref={pwdRef} role="dialog" aria-modal="true" aria-label={t.changePassword} className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-8">
             <h2 className="text-lg font-black text-slate-800 mb-1">{t.changePassword}</h2>
             <p className="text-xs text-slate-500 mb-6">{pwdPanel.email}</p>
 

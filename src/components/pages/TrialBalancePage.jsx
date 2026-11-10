@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
+import { ExportMenu } from "../ui/tableKit";
 import Alert from "../ui/Alert";
 import { inputClass, table as tbl, card } from "../ui/tokens";
 import api from "../../services/api";
@@ -301,12 +302,7 @@ function TrialBalancePage({ language = "es" }) {
 
             {report.lines?.length > 0 && (
               <div className="flex gap-2">
-                <Button variant="secondary" size="sm" onClick={handleExportExcel}>
-                  {t.exportExcel}
-                </Button>
-                <Button variant="secondary" size="sm" onClick={handleExportPdf}>
-                  {t.exportPdf}
-                </Button>
+                <ExportMenu label={language === "en" ? "Export" : "Exportar"} onExcel={handleExportExcel} onPdf={handleExportPdf} />
               </div>
             )}
           </div>

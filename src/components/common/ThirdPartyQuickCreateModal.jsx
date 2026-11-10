@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import api from "../../services/api";
 import Button from "../ui/Button";
+import { KeyboardHints } from "../ui/tableKit";
+import { useFormKeyboard, FORM_HINTS, DISCARD_MESSAGE } from "../ui/keyboard";
 import { TAX_REGIME_LABELS, TAX_REGIMES_BY_PERSON } from "../../constants/taxRegimes";
 import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABELS } from "../../constants/documentTypes";
 import { getApiErrorMessage } from "../../constants/apiErrors";
@@ -248,13 +250,26 @@ function ThirdPartyQuickCreateModal({ language = "es", onCreated, onClose }) {
     }
   };
 
+  // UI 2026-11-10: creación rápida 100% teclado (ver ui/keyboard.js).
+  const dialogRef = useRef(null);
+  useFormKeyboard({
+    active: true,
+    containerRef: dialogRef,
+    onClose,
+    getSnapshot: () => JSON.stringify(form),
+    discardMessage: DISCARD_MESSAGE[language],
+  });
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/20" onClick={onClose} />
-      <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={t.title} className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
         <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between">
-          <h2 className="text-lg font-black text-slate-800">{t.title}</h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
+          <div className="min-w-0">
+            <h2 className="text-lg font-black text-slate-800">{t.title}</h2>
+            <KeyboardHints items={FORM_HINTS[language] || FORM_HINTS.es} className="mt-1" />
+          </div>
+          <button type="button" aria-label="Esc" title="Esc" onClick={onClose} className="text-slate-500 hover:text-slate-700 text-2xl leading-none">×</button>
         </div>
 
         <form onSubmit={handleSave} className="px-6 py-5 grid grid-cols-1 gap-4 md:grid-cols-2">
