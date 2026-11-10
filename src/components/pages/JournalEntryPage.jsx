@@ -982,7 +982,12 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       // Changing the account resets third party/cost center -- the new
       // account may not require them, and a stale selection from the
       // previous account shouldn't silently ride along.
-      if (field === "accountId") {
+      // FIX (2026-11-10, user-reported): only when the account REALLY
+      // changes. Tabbing/Entering through an existing line re-confirms the
+      // same account, and that used to wipe its Tercero / Centro de costo /
+      // Base -- data silently lost while just moving through a voucher
+      // being edited.
+      if (field === "accountId" && String(value) !== String(items[index].accountId ?? "")) {
         item.thirdPartyId = "";
         item.costCenterId = "";
         item.taxBase = "";
@@ -2561,6 +2566,8 @@ function AccountComboBox({ accounts, value, onChange, onSelected, onRetreat, reg
   const [highlight, setHighlight] = useState(0);
   const inputRef = useRef(null);
   const blurTimerRef = useRef(null);
+  // Lo que handleFocus puso en la búsqueda (ver Tab/Enter "sin tocar").
+  const seedRef = useRef("");
 
   useEffect(() => () => clearTimeout(blurTimerRef.current), []);
 
@@ -2619,7 +2626,8 @@ function AccountComboBox({ accounts, value, onChange, onSelected, onRetreat, reg
     // own code instead means the exact-match rank (see `filtered`
     // above) keeps it first, so an untouched Tab/Enter-through
     // re-selects the SAME account instead of a random one.
-    setQuery(selected ? selected.code : "");
+    seedRef.current = selected ? selected.code : "";
+    setQuery(seedRef.current);
     setHighlight(0);
     setOpen(true);
   };
@@ -2671,7 +2679,11 @@ function AccountComboBox({ accounts, value, onChange, onSelected, onRetreat, reg
       // del campo SIN tomar lo escrito). Con el campo vacío no elige nada
       // (antes Enter vacío tomaba la primera cuenta de toda la lista).
       e.preventDefault();
-      if (query.trim() && filtered[highlight]) commitSelection(filtered[highlight]);
+      // FIX (2026-11-10): pasar por el campo SIN escribir (query == lo que
+      // sembró handleFocus) conserva la selección actual tal cual, en vez
+      // de "re-elegir" el primer resultado, que podía ser otro registro.
+      const untouched = selected && query === seedRef.current;
+      if (!untouched && query.trim() && filtered[highlight]) commitSelection(filtered[highlight]);
       else {
         setOpen(false);
         setQuery("");
@@ -2734,6 +2746,8 @@ function ThirdPartyComboBox({ thirdParties, value, onChange, onSelected, onRetre
   const [highlight, setHighlight] = useState(0);
   const inputRef = useRef(null);
   const blurTimerRef = useRef(null);
+  // Lo que handleFocus puso en la búsqueda (ver Tab/Enter "sin tocar").
+  const seedRef = useRef("");
 
   useEffect(() => () => clearTimeout(blurTimerRef.current), []);
 
@@ -2774,7 +2788,8 @@ function ThirdPartyComboBox({ thirdParties, value, onChange, onSelected, onRetre
     // selection visible (and exact-match-ranked first) instead of
     // blanking the field and risking an untouched Enter picking whatever
     // third party happens to come first in the full list.
-    setQuery(selected ? selected.documentNumber : "");
+    seedRef.current = selected ? selected.documentNumber : "";
+    setQuery(seedRef.current);
     setHighlight(0);
     setOpen(true);
   };
@@ -2820,7 +2835,11 @@ function ThirdPartyComboBox({ thirdParties, value, onChange, onSelected, onRetre
       // del campo SIN tomar lo escrito). Con el campo vacío no elige nada
       // (antes Enter vacío tomaba la primera cuenta de toda la lista).
       e.preventDefault();
-      if (query.trim() && filtered[highlight]) commitSelection(filtered[highlight]);
+      // FIX (2026-11-10): pasar por el campo SIN escribir (query == lo que
+      // sembró handleFocus) conserva la selección actual tal cual, en vez
+      // de "re-elegir" el primer resultado, que podía ser otro registro.
+      const untouched = selected && query === seedRef.current;
+      if (!untouched && query.trim() && filtered[highlight]) commitSelection(filtered[highlight]);
       else {
         setOpen(false);
         setQuery("");
