@@ -128,7 +128,7 @@ const ALL_TAX_REGIMES = Array.from(
 
 // FilterChip y piezas de tabla: ui/tableKit.jsx (UI 2026-11-10).
 
-function ThirdPartyPage({ language = "es" }) {
+function ThirdPartyPage({ language = "es", autoOpenSiewin = false, onAutoOpenSiewinHandled }) {
   // --- Component States ---
   const [rows, setRows]                         = useState([]);
   const [cities, setCities]                     = useState([]);
@@ -800,6 +800,16 @@ const loadCatalogs = async () => {
     setSiewinFileName("");
     setShowSiewinModal(true);
   };
+
+  // NEW (2026-11-12): llegada desde "Migración desde SIEWIN" (paso 2) --
+  // abre el modal de importación SIEWIN una sola vez y avisa al Dashboard
+  // para que una visita posterior a Terceros no lo reabra.
+  useEffect(() => {
+    if (!autoOpenSiewin) return;
+    openSiewinModal();
+    if (onAutoOpenSiewinHandled) onAutoOpenSiewinHandled();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenSiewin]);
 
   const closeSiewinModal = () => {
     if (siewinImporting) return;

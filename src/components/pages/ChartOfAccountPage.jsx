@@ -231,7 +231,7 @@ const DEFAULT_NATURE_BY_CLASS = {
   REVENUE: "C",
 };
 
-function ChartOfAccountsPage({ language = "es" }) {
+function ChartOfAccountsPage({ language = "es", autoOpenSiewin = false, onAutoOpenSiewinHandled }) {
   const [rows, setRows]             = useState([]);
   const [form, setForm]             = useState(initialForm);
   const [errors, setErrors]         = useState({});
@@ -350,6 +350,22 @@ function ChartOfAccountsPage({ language = "es" }) {
   const [siewinIssues, setSiewinIssues]         = useState(null);
   const [siewinSuccessResult, setSiewinSuccessResult] = useState(null);
   const [siewinParseError, setSiewinParseError] = useState("");
+
+  // NEW (2026-11-12): llegada desde "Migración desde SIEWIN" (paso 1) --
+  // abre el modal de importación SIEWIN una sola vez y avisa al Dashboard
+  // para que una visita posterior a Plan de Cuentas no lo reabra. Mismo
+  // patrón que openEntryId/onOpenEntryIdHandled de JournalEntryPage.
+  useEffect(() => {
+    if (!autoOpenSiewin) return;
+    setSiewinIssues(null);
+    setSiewinSuccessResult(null);
+    setSiewinParseError("");
+    setSiewinRows(null);
+    setSiewinFileName("");
+    setShowSiewinModal(true);
+    if (onAutoOpenSiewinHandled) onAutoOpenSiewinHandled();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenSiewin]);
   const siewinFileInputRef = useRef(null);
   const [siewinDragOver, setSiewinDragOver] = useState(false);
 
