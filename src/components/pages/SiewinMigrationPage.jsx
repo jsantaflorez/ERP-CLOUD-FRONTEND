@@ -44,7 +44,6 @@ const T = {
     pending: "Pendiente",
     loading: "Consultando…",
     countError: "No se pudo consultar",
-    reload: "Actualizar",
   },
   en: {
     title: "Migration from SIEWIN",
@@ -68,7 +67,6 @@ const T = {
     pending: "Pending",
     loading: "Checking…",
     countError: "Could not check",
-    reload: "Refresh",
   },
 };
 
@@ -134,8 +132,8 @@ function SiewinMigrationPage({ language = "es", onNavigate }) {
   const [thirdPartyCount, setThirdPartyCount] = useState(null);
   const [error, setError] = useState("");
 
-  // Solo actualiza estado después de la respuesta (no en el cuerpo del
-  // efecto); el botón "Actualizar" limpia antes con reload().
+  // Se consulta cada vez que se entra a la pantalla (al volver de un paso
+  // el Dashboard la monta de nuevo, así que los conteos quedan al día).
   const fetchCounts = async () => {
     const [acc, tp] = await Promise.allSettled([
       api.get("/v1/chart-of-accounts", { params: { page: 0, size: 1 } }),
@@ -153,13 +151,6 @@ function SiewinMigrationPage({ language = "es", onNavigate }) {
     fetchCounts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const reload = () => {
-    setAccountCount(null);
-    setThirdPartyCount(null);
-    setError("");
-    fetchCounts();
-  };
 
   const countInfo = (value, fmt) => {
     if (value === null) return t.loading;
@@ -181,11 +172,6 @@ function SiewinMigrationPage({ language = "es", onNavigate }) {
         subtitle={t.subtitle}
         tenantId={activeTenantId}
         language={language}
-        actions={
-          <Button variant="secondary" size="sm" onClick={reload}>
-            {t.reload}
-          </Button>
-        }
       />
 
       <Alert tone="info">{t.orderNote}</Alert>
