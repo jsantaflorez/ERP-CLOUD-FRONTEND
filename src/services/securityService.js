@@ -52,9 +52,19 @@ export async function getCompaniesForEmail(email) {
   try {
     const response = await api.post('/auth/companies', { email });
     return Array.isArray(response.data?.data) ? response.data.data : [];
-  } catch {
-    // No binding needed -- this fails soft on purpose, see the doc comment above.
-    return [];
+  } catch (error) {
+    // FIX (2026-11-12): this used to swallow EVERY error and return [], so a
+    // backend that was down, a 500 or the rate limit (429) all showed the
+    // misleading "no companies for this email". Now only a malformed email
+    // (400) counts as "no companies"; anything else is reported as what it is.
+    const status = error.response?.status;
+    if (status === 400) return [];
+    const code = !error.response
+      ? 'NETWORK_ERROR'
+      : status === 429 ? 'TOO_MANY_REQUESTS' : 'SERVER_UNAVAILABLE';
+    const err = new Error(code);
+    err.code = code;
+    throw err;
   }
 }
 

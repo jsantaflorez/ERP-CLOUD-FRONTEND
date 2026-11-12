@@ -26,6 +26,9 @@ function Login({ onLogin, language, onLanguageChange }) {
   // email, so the "no companies found" hint only shows after a real
   // attempt -- not while the user is still typing their address.
   const [companiesChecked, setCompaniesChecked] = useState(false);
+  // Set when the company lookup itself failed (server down, 429, 500) --
+  // shown instead of the "no companies" hint, which would be misleading.
+  const [companiesError, setCompaniesError] = useState("");
 
   const { login } = useAuth();
 
@@ -48,6 +51,7 @@ function Login({ onLogin, language, onLanguageChange }) {
     if (!cleanUser) return;
 
     setLoadingCompanies(true);
+    setCompaniesError("");
     try {
       const list = await getCompaniesForEmail(cleanUser);
       setCompanies(list);
@@ -57,6 +61,9 @@ function Login({ onLogin, language, onLanguageChange }) {
       if (list.length === 1) {
         setCompanyId(String(list[0].id));
       }
+    } catch (err) {
+      setCompanies([]);
+      setCompaniesError(authErrorMessage(err.code));
     } finally {
       setLoadingCompanies(false);
       setCompaniesChecked(true);
@@ -74,6 +81,7 @@ function Login({ onLogin, language, onLanguageChange }) {
     setCompanies([]);
     setCompanyId("");
     setCompaniesChecked(false);
+    setCompaniesError("");
   };
 
   /**
@@ -213,7 +221,9 @@ function Login({ onLogin, language, onLanguageChange }) {
                 </option>
               ))}
             </select>
-            {companiesChecked && !loadingCompanies && companies.length === 0 && (
+            {companiesError ? (
+              <p className="text-xs text-red-600">{companiesError}</p>
+            ) : companiesChecked && !loadingCompanies && companies.length === 0 && (
               <p className="text-xs text-amber-700">{t.noCompaniesForEmail}</p>
             )}
           </div>

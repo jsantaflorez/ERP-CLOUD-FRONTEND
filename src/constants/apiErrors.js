@@ -78,6 +78,7 @@ export const API_ERROR_LABELS = {
     ACCOUNT_LOCKED: "Tu cuenta está bloqueada temporalmente por varios intentos fallidos. Inténtalo de nuevo en 15 minutos.",
     INVALID_CREDENTIALS: "Usuario o contraseña incorrectos.",
     NETWORK_ERROR: "No se pudo conectar con el servidor. Verifica tu conexión e inténtalo de nuevo.",
+    SERVER_UNAVAILABLE: "El servidor respondió con un error al consultar tus empresas. Inténtalo de nuevo en un momento.",
     // Multiempresa Fase 3 (UserManagementController/UserManagementService).
     PASSWORD_TOO_SHORT: "La contraseña debe tener al menos 6 caracteres.",
     ROLE_NOT_IN_COMPANY: "El rol seleccionado no pertenece a esta empresa.",
@@ -189,6 +190,7 @@ export const API_ERROR_LABELS = {
     ACCOUNT_LOCKED: "Your account is temporarily locked after several failed attempts. Try again in 15 minutes.",
     INVALID_CREDENTIALS: "Incorrect username or password.",
     NETWORK_ERROR: "Could not reach the server. Check your connection and try again.",
+    SERVER_UNAVAILABLE: "The server returned an error while loading your companies. Try again in a moment.",
     PASSWORD_TOO_SHORT: "Password must be at least 6 characters.",
     ROLE_NOT_IN_COMPANY: "The selected role doesn't belong to this company.",
     // Pre-production audit 2026-11-02
