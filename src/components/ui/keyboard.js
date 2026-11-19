@@ -316,6 +316,31 @@ export function useSearchShortcut(inputRef) {
   }, [inputRef]);
 }
 
+// Alt+AvPág / Alt+RePág: página siguiente / anterior del listado
+// (2026-11-17). No actúa con un diálogo abierto. Si el foco estaba en una
+// fila, pasa a la primera fila de la página nueva para seguir con ↑/↓.
+export function usePagerShortcut({ enabled, onPrev, onNext }) {
+  const latest = useRef({ onPrev, onNext });
+  useEffect(() => { latest.current = { onPrev, onNext }; });
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const onKey = (e) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.key !== "PageDown" && e.key !== "PageUp") return;
+      if (document.querySelector('[aria-modal="true"]')) return;
+      e.preventDefault();
+      const wasOnRow = !!document.activeElement?.closest?.("tr[data-kbd-row]");
+      if (e.key === "PageDown") latest.current.onNext();
+      else latest.current.onPrev();
+      // Soltar el foco y devolverlo a la primera fila cuando la página nueva
+      // esté pintada (sirve igual si la página carga del servidor).
+      if (wasOnRow) { document.activeElement?.blur?.(); refocusRowSoon(0); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [enabled]);
+}
+
 // ---------- Registro ÚNICO de atajos (UI 2026-11-10) ----------
 // Fuente de verdad para: la ventana de ayuda (F1 / ?), las leyendas de los
 // paneles (FORM_HINTS) y la leyenda de la captura de comprobantes. Si
@@ -343,6 +368,7 @@ export const SHORTCUTS = [
       { keys: ["↑", "↓"], es: "Moverse entre filas", en: "Move between rows" },
       { keys: ["Inicio", "Fin"], es: "Primera / última fila", en: "First / last row" },
       { keys: ["RePág", "AvPág"], es: "Saltar 10 filas", en: "Jump 10 rows" },
+      { keys: ["Alt+AvPág", "Alt+RePág"], es: "Página siguiente / anterior del listado", en: "Next / previous page of the list" },
       { keys: ["Enter"], es: "Editar la fila (o verla, si no es editable)", en: "Edit the row (or view it if read-only)" },
       { keys: ["Supr"], es: "Desactivar / anular la fila (pide confirmación)", en: "Deactivate / annul the row (asks to confirm)" },
       { keys: ["←", "→"], es: "Contraer / expandir un grupo (Plan de Cuentas)", en: "Collapse / expand a group (Chart of Accounts)" },
