@@ -15,6 +15,7 @@ import {
   nowLocalIso,
   todayLocalIso,
 } from "../../utils/reportExport";
+import { thirdPartyLabel } from "../../utils/thirdPartyLabel";
 
 // NEW (2026-10-25, user request): "Buscador de Movimientos por Valor" --
 // an audit tool for the "Gestión y Terceros" report group, same family
@@ -390,7 +391,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
           r.entry.annulled ? `${r.entry.documentNumber} (${t.annulled.toUpperCase()})` : r.entry.documentNumber,
           documentTypeLabel(r.entry),
           `${r.item.accountCode} - ${r.item.accountName}`,
-          r.item.thirdPartyName || "",
+          thirdPartyLabel(r.item.thirdPartyIdNumber, r.item.thirdPartyName, ""),
           r.item.costCenterName || "",
           r.item.description || "",
           r.side === "DB" ? r.amount : -r.amount,
@@ -431,7 +432,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
         r.entry.annulled ? `${r.entry.documentNumber} (${t.annulled.toUpperCase()})` : r.entry.documentNumber,
         documentTypeLabel(r.entry),
         `${r.item.accountCode} - ${r.item.accountName}`,
-        r.item.thirdPartyName || "—",
+        thirdPartyLabel(r.item.thirdPartyIdNumber, r.item.thirdPartyName),
         r.item.costCenterName || "—",
         r.item.description || "—",
         `${money(r.amount)} (${r.side})`,
@@ -699,7 +700,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
                         <td className="px-4 py-2.5 text-slate-600">
                           {r.item.accountCode} — {r.item.accountName}
                         </td>
-                        <td className="px-4 py-2.5 text-slate-500">{r.item.thirdPartyName || "—"}</td>
+                        <td className="px-4 py-2.5 text-slate-500">{thirdPartyLabel(r.item.thirdPartyIdNumber, r.item.thirdPartyName)}</td>
                         <td className="px-4 py-2.5 text-slate-500">{r.item.costCenterName || "—"}</td>
                         <td className="px-4 py-2.5 text-slate-500">{r.item.description || "—"}</td>
                         <td className="px-4 py-2.5 text-right font-semibold text-slate-800">

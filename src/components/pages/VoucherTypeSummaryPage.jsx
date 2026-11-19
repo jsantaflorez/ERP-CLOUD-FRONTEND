@@ -15,6 +15,7 @@ import {
   nowLocalIso,
   todayLocalIso,
 } from "../../utils/reportExport";
+import { thirdPartyLabel as formatThirdParty } from "../../utils/thirdPartyLabel";
 
 // NEW (2026-10-24, user request): "Consolidado por Tipo de Comprobante"
 // (a.k.a. "Resumen de Comprobantes por Fuente") for the Libros Legales
@@ -200,8 +201,10 @@ function VoucherTypeSummaryPage({ language = "es" }) {
   // line's third party, if any. Detalle: the voucher's own description,
   // independent of whether it has a third party or not.
   const thirdPartyLabel = (entry) => {
-    const withThirdParty = (entry.items || []).find((i) => i.thirdPartyName);
-    return withThirdParty ? withThirdParty.thirdPartyName : "—";
+    const withThirdParty = (entry.items || []).find((i) => i.thirdPartyName || i.thirdPartyIdNumber);
+    return withThirdParty
+      ? formatThirdParty(withThirdParty.thirdPartyIdNumber, withThirdParty.thirdPartyName)
+      : "—";
   };
 
   const detailLabel = (entry) =>

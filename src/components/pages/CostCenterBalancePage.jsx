@@ -15,6 +15,7 @@ import {
   formatGeneratedAt,
   todayLocalIso,
 } from "../../utils/reportExport";
+import { thirdPartyLabel } from "../../utils/thirdPartyLabel";
 
 // NEW (2026-09-21): third report screen, after Libro Auxiliar and Balance
 // de Comprobación. First built as a simple period-totals report (no
@@ -305,7 +306,7 @@ function CostCenterBalancePage({ language = "es" }) {
         tx.documentNumber,
         tx.detail,
         tx.accountCode ? `${tx.accountCode} — ${tx.accountName || ""}` : "",
-        tx.thirdPartyName || "",
+        thirdPartyLabel(tx.thirdPartyDocument, tx.thirdPartyName, ""),
         rawAmount(tx.debit),
         rawAmount(tx.credit),
         rawAmount(tx.newBalance),
@@ -373,7 +374,7 @@ function CostCenterBalancePage({ language = "es" }) {
         tx.documentNumber || "",
         tx.detail || "",
         tx.accountCode ? `${tx.accountCode} — ${tx.accountName || ""}` : "",
-        tx.thirdPartyName || "",
+        thirdPartyLabel(tx.thirdPartyDocument, tx.thirdPartyName, ""),
         formatAmount(tx.debit),
         formatAmount(tx.credit),
         formatAmount(tx.newBalance),
@@ -578,7 +579,7 @@ function CostCenterBalancePage({ language = "es" }) {
                         <td className="px-4 py-2.5 text-slate-500">
                           {tx.accountCode ? `${tx.accountCode} — ${tx.accountName || ""}` : "—"}
                         </td>
-                        <td className="px-4 py-2.5 text-slate-500">{tx.thirdPartyName || "—"}</td>
+                        <td className="px-4 py-2.5 text-slate-500">{thirdPartyLabel(tx.thirdPartyDocument, tx.thirdPartyName)}</td>
                         <td className="px-4 py-2.5 text-right text-slate-700">
                           {formatAmount(tx.debit)}
                         </td>
