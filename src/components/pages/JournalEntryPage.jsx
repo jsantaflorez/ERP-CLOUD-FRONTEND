@@ -32,6 +32,13 @@ import { thirdPartyLabel } from "../../utils/thirdPartyLabel";
 // guard on the backend, which this mirrors in the UI (hide the action
 // instead of letting the user hit the error after filling the form).
 const CLOSING_DOC_TYPE_CODE = "CIERRE";
+// NEW (2026-11-19, user request): APERTURA (saldos iniciales) lo genera
+// solo la Migración de Saldos desde SIEWIN; el backend rechaza crear un
+// comprobante manual con ese tipo (OPENING_DOC_TYPE_RESERVED). Se oculta
+// del selector al crear para que el usuario no digite todo y falle al
+// grabar. Sí se muestra al EDITAR un comprobante que ya es APERTURA
+// (decisión 2026-11-19: el comprobante de apertura es editable).
+const OPENING_DOC_TYPE_CODE = "APERTURA";
 
 const emptyItem = () => ({
   accountId: "",
@@ -601,8 +608,11 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   // list and detail views -- only the create/edit form's own picker
   // hides it.
   const activeDocumentTypes = useMemo(
-    () => documentTypes.filter((d) => d.active && d.code !== CLOSING_DOC_TYPE_CODE),
-    [documentTypes]
+    () => documentTypes.filter(
+      (d) => d.active && d.code !== CLOSING_DOC_TYPE_CODE
+        && (d.code !== OPENING_DOC_TYPE_CODE || (editingId != null && String(d.id) === String(form.documentTypeId)))
+    ),
+    [documentTypes, editingId, form.documentTypeId]
   );
 
   const accountById = (id) => accounts.find((a) => String(a.id) === String(id));
