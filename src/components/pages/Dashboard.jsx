@@ -34,6 +34,8 @@ import ValueSearchPage from "./ValueSearchPage";
 import WithholdingCertificatePage from "./WithholdingCertificatePage";
 import LegalDocumentTemplatesPage from "./LegalDocumentTemplatesPage";
 import CompanySettingsPage from "./CompanySettingsPage";
+import OpeningBalanceImportPage from "./OpeningBalanceImportPage";
+import SiewinMigrationPage from "./SiewinMigrationPage";
 
 // UX IMPROVEMENT (2026-10-17, user request): with 9 reports in one flat
 // list, the "Reportes" submenu had gotten long enough that finding one
@@ -230,6 +232,15 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
   // doesn't reopen the same entry.
   const [pendingEditEntryId, setPendingEditEntryId] = useState(null);
 
+  // NEW (2026-11-12): "Migración desde SIEWIN" lleva a Plan de Cuentas o a
+  // Terceros con el modal SIEWIN ya abierto. Guarda a qué vista se pidió
+  // abrirlo; la página lo consume y lo limpia (onAutoOpenSiewinHandled).
+  const [siewinAutoOpenView, setSiewinAutoOpenView] = useState(null);
+  const handleSiewinNavigate = (view, opts = {}) => {
+    setSiewinAutoOpenView(opts.openSiewin ? view : null);
+    changeView(view);
+  };
+
   // UI 2026-11-10: F8 = nuevo comprobante desde cualquier pantalla.
   // Salvaguardas para no dañar el trabajo en otras pantallas:
   //  - Con un panel o modal abierto (cualquier [aria-modal]: edición de un
@@ -410,6 +421,12 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
               <NavItem active={activeView === "companySettings"} onClick={() => changeView("companySettings")}>
                 {t.navCompanySettings}
               </NavItem>
+              <NavItem
+                active={activeView === "siewinMigration" || activeView === "openingBalanceImport"}
+                onClick={() => changeView("siewinMigration")}
+              >
+                {t.navSiewinMigration}
+              </NavItem>
               <NavItem active={activeView === "users"} onClick={() => changeView("users")}>
                 {t.navUsers}
               </NavItem>
@@ -493,7 +510,11 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
         )}
 
         {activeView === "chartOfAccount" && (
-          <ChartOfAccountPage language={language} />
+          <ChartOfAccountPage
+            language={language}
+            autoOpenSiewin={siewinAutoOpenView === "chartOfAccount"}
+            onAutoOpenSiewinHandled={() => setSiewinAutoOpenView(null)}
+          />
         )}
 
         {activeView === "costCenter" && (
@@ -505,7 +526,11 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
         )}
 
         {activeView === "thirdParties" && (
-          <ThirdPartyPage language={language} />
+          <ThirdPartyPage
+            language={language}
+            autoOpenSiewin={siewinAutoOpenView === "thirdParties"}
+            onAutoOpenSiewinHandled={() => setSiewinAutoOpenView(null)}
+          />
         )}
 
         {activeView === "auxiliaryLedger" && (
@@ -570,6 +595,14 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
 
         {activeView === "companySettings" && (
           <CompanySettingsPage language={language} />
+        )}
+
+        {activeView === "openingBalanceImport" && (
+          <OpeningBalanceImportPage language={language} />
+        )}
+
+        {activeView === "siewinMigration" && (
+          <SiewinMigrationPage language={language} onNavigate={handleSiewinNavigate} />
         )}
 
         {activeView === "users" && (

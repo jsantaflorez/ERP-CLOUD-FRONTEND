@@ -7,10 +7,13 @@ import {
   Toolbar, ToolbarDivider, SearchInput, FilterLabel, FilterChip, FILTER_SELECT,
 } from "../ui/tableKit";
 import { useFormKeyboard, ROW_KBD, rowNavKeyDown, FORM_HINTS, DISCARD_MESSAGE } from "../ui/keyboard";
+import ListPager from "../ui/ListPager";
+import { usePaging } from "../ui/usePaging";
 import api from "../../services/api"; // Centralized Axios instance with multi-tenancy context
 import { useAuth } from "../../context/AuthContext";
 import { TAX_REGIME_LABELS, TAX_REGIMES_BY_PERSON } from "../../constants/taxRegimes";
 import { getApiErrorMessage } from "../../constants/apiErrors";
+import { downloadIssuesCsv } from "../../utils/downloadIssuesCsv";
 import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABELS } from "../../constants/documentTypes";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -173,8 +176,17 @@ function ThirdPartyPage({ language = "es", autoOpenSiewin = false, onAutoOpenSie
   const [viewTab, setViewTab]                   = useState("basic");
 
   // --- Spring Data Pagination States ---
-  const [currentPage, setCurrentPage]           = useState(0); // Spring Boot starts at index 0
-  const [totalPages, setTotalPages]             = useState(1);
+  // 2026-11-17: sin paginación (mismo criterio que Plan de Cuentas) -- se
+  // cargan todos los terceros que coinciden con la búsqueda/filtros y la
+  // tabla hace scroll con encabezado fijo. loadSeqRef descarta respuestas
+  // viejas si el usuario sigue escribiendo mientras llega una carga larga.
+  const loadSeqRef = useRef(0);
+  // 2026-11-17: filas por página elegidas por el usuario (25/50/100/200/
+  // Todas), recordadas en este navegador. Ver ui/usePaging.js.
+  const paging = usePaging(rows, {
+    storageKey: "erp_tp_page_size",
+    resetKey: [personTypeFilter, documentTypeFilter, taxRegimeFilter, debouncedSearchTerm].join("|"),
+  });
 
   // Mutable reference tracking current execution ID to bypass stale state closures
   const editingIdRef = useRef(null);
@@ -250,10 +262,8 @@ function ThirdPartyPage({ language = "es", autoOpenSiewin = false, onAutoOpenSie
       regimeHint: "Mostrando regímenes aplicables para:",
       yes: "Sí",
       no: "No",
-      page: "Página",
-      of: "de",
-      previous: "Anterior",
-      next: "Siguiente",
+      recordSingular: "tercero",
+      recordPlural: "terceros",
       newShortcutHint: "(tecla Insert)",
       // SIEWIN third-party importer (2026-11-01)
       siewinOpenLink: "Importar desde SIEWIN",
@@ -271,6 +281,9 @@ function ThirdPartyPage({ language = "es", autoOpenSiewin = false, onAutoOpenSie
       siewinIssueAmbiguousPerson: "No se pudo determinar si es Natural o Jurídica",
       siewinIssueMunicipalityNotFound: "Código de municipio no existe en el catálogo cargado",
       siewinIssueMore: "más",
+      siewinDownloadErrors: "Descargar errores (CSV)",
+      siewinCsvHeaders: ["Tipo de problema", "Fila", "Detalle"],
+      siewinCsvFileBase: "errores-migracion-terceros",
       siewinImportButton: "Migrar Terceros",
       siewinSuccess: "¡Terceros importados exitosamente! Total creados:",
       siewinPhoneListTitle: "Terceros con teléfono no válido en el origen (se dejó vacío):",
@@ -344,10 +357,8 @@ function ThirdPartyPage({ language = "es", autoOpenSiewin = false, onAutoOpenSie
       regimeHint: "Showing regimes applicable to:",
       yes: "Yes",
       no: "No",
-      page: "Page",
-      of: "of",
-      previous: "Previous",
-      next: "Next",
+      recordSingular: "third party",
+      recordPlural: "third parties",
       newShortcutHint: "(Insert key)",
       // SIEWIN third-party importer (2026-11-01)
       siewinOpenLink: "Import from SIEWIN",
@@ -365,6 +376,9 @@ function ThirdPartyPage({ language = "es", autoOpenSiewin = false, onAutoOpenSie
       siewinIssueAmbiguousPerson: "Couldn't determine Natural or Legal Entity",
       siewinIssueMunicipalityNotFound: "Municipality code not in the loaded catalog",
       siewinIssueMore: "more",
+      siewinDownloadErrors: "Download errors (CSV)",
+      siewinCsvHeaders: ["Problem type", "Row", "Detail"],
+      siewinCsvFileBase: "third-party-migration-errors",
       siewinImportButton: "Migrate Third Parties",
       siewinSuccess: "Third parties imported successfully! Total created:",
       siewinPhoneListTitle: "Third parties with an invalid source phone (left empty):",
@@ -412,33 +426,20 @@ function ThirdPartyPage({ language = "es", autoOpenSiewin = false, onAutoOpenSie
   // pages were invisible. The backend already had a working
   // findBySearchTerm() for `search`; this just wires it up and extends
   // it with the 3 new filter columns (see ThirdPartyRepository.findByFilters()).
+  // 2026-11-17: ya no pide una sola página de 10 -- recorre todas las
+  // páginas (200 por petición) con la misma búsqueda/filtros, igual que
+  // loadAccounts() en ChartOfAccountPage. Reutiliza
+  // fetchAllFilteredThirdParties() (la misma que usan los exports).
   const loadThirdParties = async () => {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      params.set("page", String(currentPage));
-      params.set("size", "10");
-      if (debouncedSearchTerm) params.set("search", debouncedSearchTerm);
-      if (personTypeFilter !== "ALL") params.set("personType", personTypeFilter);
-      if (documentTypeFilter !== "ALL") params.set("documentType", documentTypeFilter);
-      if (taxRegimeFilter !== "ALL") params.set("taxRegime", taxRegimeFilter);
-
-      const response = await api.get(`/v1/third-parties?${params.toString()}`);
-      if (response.data) {
-        const dataTarget = response.data.content || response.data.data || response.data;
-        setRows(Array.isArray(dataTarget) ? dataTarget : []);
-
-        // Extract total pages metadata sent by Spring Data Pageable
-        if (response.data.totalPages !== undefined) {
-          setTotalPages(response.data.totalPages || 1);
-        }
-      } else {
-        showToast(t.errorConn, "error");
-      }
+      const all = await fetchAllFilteredThirdParties();
+      if (seq === loadSeqRef.current) setRows(all);
     } catch (error) {
-      showToast(getApiErrorMessage(error, language, t.errorConn), "error");
+      if (seq === loadSeqRef.current) showToast(getApiErrorMessage(error, language, t.errorConn), "error");
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) setLoading(false);
     }
   };
 
@@ -494,20 +495,13 @@ const loadCatalogs = async () => {
     return () => clearTimeout(handle);
   }, [searchTerm]);
 
-  // Whenever a filter or the (debounced) search term changes, jump back
-  // to page 0 -- staying on, say, page 3 after narrowing the result set
-  // could land past the end of the new, smaller result set.
-  useEffect(() => {
-    setCurrentPage(0);
-  }, [personTypeFilter, documentTypeFilter, taxRegimeFilter, debouncedSearchTerm]);
-
-  // Reload records whenever the page, a quick filter, or the debounced
+  // Reload records whenever a quick filter or the debounced
   // search term changes -- all of it is now resolved server-side (see
   // loadThirdParties's own comment for why).
   useEffect(() => {
     loadThirdParties();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, personTypeFilter, documentTypeFilter, taxRegimeFilter, debouncedSearchTerm]);
+  }, [personTypeFilter, documentTypeFilter, taxRegimeFilter, debouncedSearchTerm]);
 
   useEffect(() => {
     loadCatalogs();
@@ -921,9 +915,8 @@ const loadCatalogs = async () => {
   // whole Terceros table -- confirmed explicitly with the user, unlike
   // Plan de Cuentas (a small, bounded catalog where the opposite made
   // sense). Re-fetches from the backend with the SAME filter params
-  // loadThirdParties() already sends, just paging through everything
-  // that matches instead of stopping at 10 rows -- never exports only
-  // what happens to be on the currently loaded page.
+  // loadThirdParties() already sends, paging through everything that
+  // matches. Since 2026-11-17 loadThirdParties() itself uses this too.
   const fetchAllFilteredThirdParties = async () => {
     let page = 0;
     let all = [];
@@ -1209,7 +1202,7 @@ const loadCatalogs = async () => {
                     <td colSpan={5} className="py-16 text-center text-slate-500">{t.noResults}</td>
                   </tr>
                 ) : (
-                  rows.map((item) => {
+                  paging.pageItems.map((item) => {
                     const idLabel = `${item.documentType} ${item.documentNumber}${item.verificationDigit != null ? `-${item.verificationDigit}` : ""}`;
                     return (
                       <tr key={item.id} className={TR} {...ROW_KBD}>
@@ -1246,32 +1239,10 @@ const loadCatalogs = async () => {
           )}
         </div>
 
-        {/* FIXED: Dynamic Pagination Footer connected with Spring Boot Pageable */}
-        <div className="flex items-center justify-between border-t border-slate-200 bg-white px-4 py-2.5">
-          <div className="text-xs text-slate-500 font-medium">
-            {t.page} <span className="font-bold text-slate-700">{currentPage + 1}</span> {t.of} <span className="font-bold text-slate-700">{totalPages}</span>
-          </div>
-          <div className="flex gap-2">
-           <Button
-             variant="secondary"
-             size="sm"
-             disabled={currentPage === 0}
-             onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
-           >
-             {t.previous}
-           </Button>
-
-           <Button
-             variant="secondary"
-             size="sm"
-             disabled={currentPage >= totalPages - 1}
-             onClick={() => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))}
-           >
-             {t.next}
-           </Button>
-
-          </div>
-        </div>
+        {/* 2026-11-17: filas por página a elección del usuario (ver usePaging). */}
+        {!loading && (
+          <ListPager paging={paging} language={language} itemLabel={{ singular: t.recordSingular, plural: t.recordPlural }} />
+        )}
       </div>
 
       {/* Contextual Side Panel Form Container */}
@@ -1579,7 +1550,26 @@ const loadCatalogs = async () => {
 
               {siewinIssues && (
                 <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700 space-y-3">
-                  <p className="font-bold">{t.siewinIssuesTitle}</p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-bold">{t.siewinIssuesTitle}</p>
+                    <Button
+                      variant="secondary"
+                      size="xs"
+                      onClick={() => downloadIssuesCsv(
+                        [
+                          { title: t.siewinIssueMissingDocNumber, items: siewinIssues.missingDocumentNumber },
+                          { title: t.siewinIssueDuplicateBatch, items: siewinIssues.duplicateInBatch },
+                          { title: t.siewinIssueDuplicateCompany, items: siewinIssues.duplicateInCompany },
+                          { title: t.siewinIssueUnmappedDocType, items: siewinIssues.unmappedDocumentTypes },
+                          { title: t.siewinIssueAmbiguousPerson, items: siewinIssues.ambiguousPersonType },
+                          { title: t.siewinIssueMunicipalityNotFound, items: siewinIssues.municipalityNotFound },
+                        ],
+                        { fileBaseName: t.siewinCsvFileBase, headers: t.siewinCsvHeaders }
+                      )}
+                    >
+                      {t.siewinDownloadErrors}
+                    </Button>
+                  </div>
                   <SiewinIssueList title={t.siewinIssueMissingDocNumber} items={siewinIssues.missingDocumentNumber} moreLabel={t.siewinIssueMore} />
                   <SiewinIssueList title={t.siewinIssueDuplicateBatch} items={siewinIssues.duplicateInBatch} moreLabel={t.siewinIssueMore} />
                   <SiewinIssueList title={t.siewinIssueDuplicateCompany} items={siewinIssues.duplicateInCompany} moreLabel={t.siewinIssueMore} />

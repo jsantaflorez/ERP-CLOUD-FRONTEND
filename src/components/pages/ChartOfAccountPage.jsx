@@ -10,9 +10,12 @@ import {
   KeyboardHints,
 } from "../ui/tableKit";
 import { useFormKeyboard, ROW_KBD, rowNavKeyDown, FORM_HINTS, DISCARD_MESSAGE, focusFirstRow, useSearchShortcut } from "../ui/keyboard";
+import ListPager from "../ui/ListPager";
+import { usePaging } from "../ui/usePaging";
 import api from "../../services/api"; // Centralized Axios instance with multi-tenancy context
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage, API_ERROR_LABELS } from "../../constants/apiErrors";
+import { downloadCsv, downloadIssuesCsv } from "../../utils/downloadIssuesCsv";
 import {
   addPdfReportHeader,
   addPdfRunningHeader,
@@ -437,6 +440,7 @@ function ChartOfAccountsPage({ language = "es", autoOpenSiewin = false, onAutoOp
       deactivate: "Desactivar",
       activate: "Activar",
       noResults: "Sin registros",
+      accountSingular: "cuenta", accountPlural: "cuentas",
       confirmDeactivate: "¿Desactivar esta cuenta?",
       confirmActivate: "¿Activar esta cuenta?",
       successCreate: "¡Cuenta creada!",
@@ -508,7 +512,32 @@ function ChartOfAccountsPage({ language = "es", autoOpenSiewin = false, onAutoOp
       siewinIssuePostingHasChildren: "Cuentas de movimiento que resultaron ser padre de otra cuenta",
       siewinIssueMissingName: "Filas sin nombre de cuenta",
       siewinIssueUnmappedGroup: "Grupos sin categoría configurada (contacta a soporte)",
+      siewinIssueParentIsPostingInPlan: "Cuentas nuevas cuyo padre es de movimiento en el plan actual",
+      siewinIssueParentInactiveInPlan: "Cuentas nuevas cuyo padre está inactivo en el plan actual",
+      siewinIssueCatchAllCollision: "Cuentas \"Varios\" (9999) que no pueden pasar a 99 porque ese código ya lo usa otra cuenta",
+      siewinCatchAllTitle: "Cuentas \"Varios\" de SIEWIN (nivel 9999) creadas con el código 99:",
+      siewinAddMissingTitle: "Agregar cuentas nuevas del PUC desde SIEWIN",
+      siewinAddMissingBody: "Esta compañía ya tiene plan de cuentas. Sube el PUC actual exportado de SIEWIN: solo se crearán las cuentas que todavía no existen. Ninguna cuenta existente se modifica (ni nombre, ni naturaleza, ni estado).",
+      siewinAddMissingButton: "Agregar cuentas nuevas",
+      siewinAddMissingSuccess: "Cuentas nuevas agregadas:",
+      siewinAlreadyExistingSuffix: "ya existían y no se modificaron.",
+      siewinNothingNew: "No había cuentas nuevas: el plan ya tiene todas las cuentas del archivo.",
+      siewinCreatedListTitle: "Cuentas creadas -- revisa naturaleza y requisitos antes de cargar saldos:",
+      siewinDownloadCreated: "Descargar lista (CSV)",
+      siewinCreatedCsvHeaders: ["Código", "Nombre", "Tipo", "Naturaleza", "Exige tercero", "Exige centro de costo"],
+      siewinCreatedCsvFileBase: "cuentas-creadas-siewin",
+      siewinPosting: "Movimiento",
+      siewinGroup: "Mayor",
+      siewinNatureD: "Débito",
+      siewinNatureC: "Crédito",
+      siewinThirdPartyTag: "tercero",
+      siewinCostCenterTag: "centro de costo",
+      siewinYes: "Sí",
+      siewinNo: "No",
       siewinIssueMore: "... y más (revisa el archivo completo)",
+      siewinDownloadErrors: "Descargar errores (CSV)",
+      siewinCsvHeaders: ["Tipo de problema", "Fila", "Detalle"],
+      siewinCsvFileBase: "errores-migracion-puc",
       siewinImportButton: "Migrar Plan de Cuentas",
       siewinSuccess: "¡PUC migrado desde SIEWIN!",
       siewinTruncatedWarningSuffix: "Nombres que parecen truncados en el origen, revísalos:",
@@ -568,6 +597,7 @@ function ChartOfAccountsPage({ language = "es", autoOpenSiewin = false, onAutoOp
       deactivate: "Deactivate",
       activate: "Activate",
       noResults: "No records",
+      accountSingular: "account", accountPlural: "accounts",
       confirmDeactivate: "Deactivate this account?",
       confirmActivate: "Activate this account?",
       successCreate: "Account created!",
@@ -638,7 +668,32 @@ function ChartOfAccountsPage({ language = "es", autoOpenSiewin = false, onAutoOp
       siewinIssuePostingHasChildren: "Posting accounts that turned out to be another account's parent",
       siewinIssueMissingName: "Rows with no account name",
       siewinIssueUnmappedGroup: "Groups with no category configured (contact support)",
+      siewinIssueParentIsPostingInPlan: "New accounts whose parent is a posting account in the current plan",
+      siewinIssueParentInactiveInPlan: "New accounts whose parent is inactive in the current plan",
+      siewinIssueCatchAllCollision: "\"Varios\" accounts (9999) that can't become 99 because another account already uses that code",
+      siewinCatchAllTitle: "SIEWIN \"Varios\" accounts (level 9999) created with code 99:",
+      siewinAddMissingTitle: "Add new PUC accounts from SIEWIN",
+      siewinAddMissingBody: "This company already has a chart of accounts. Upload the current PUC exported from SIEWIN: only accounts that don't exist yet will be created. No existing account is modified (name, nature or status).",
+      siewinAddMissingButton: "Add new accounts",
+      siewinAddMissingSuccess: "New accounts added:",
+      siewinAlreadyExistingSuffix: "already existed and were not modified.",
+      siewinNothingNew: "There were no new accounts: the plan already has every account in the file.",
+      siewinCreatedListTitle: "Accounts created -- review nature and requirements before loading balances:",
+      siewinDownloadCreated: "Download list (CSV)",
+      siewinCreatedCsvHeaders: ["Code", "Name", "Type", "Nature", "Requires third party", "Requires cost center"],
+      siewinCreatedCsvFileBase: "siewin-created-accounts",
+      siewinPosting: "Posting",
+      siewinGroup: "Group",
+      siewinNatureD: "Debit",
+      siewinNatureC: "Credit",
+      siewinThirdPartyTag: "third party",
+      siewinCostCenterTag: "cost center",
+      siewinYes: "Yes",
+      siewinNo: "No",
       siewinIssueMore: "... and more (review the full file)",
+      siewinDownloadErrors: "Download errors (CSV)",
+      siewinCsvHeaders: ["Problem type", "Row", "Detail"],
+      siewinCsvFileBase: "puc-migration-errors",
       siewinImportButton: "Migrate Chart of Accounts",
       siewinSuccess: "Chart of accounts migrated from SIEWIN!",
       siewinTruncatedWarningSuffix: "Names that look truncated at the source, review them:",
@@ -646,6 +701,31 @@ function ChartOfAccountsPage({ language = "es", autoOpenSiewin = false, onAutoOp
       siewinTruncatedListTitle: "Names that look truncated at the source -- review and complete them by hand if needed:",
     },
   }[language];
+
+  // Tipos de problema del importador de PUC (clave del backend -> título),
+  // compartidos por la lista en pantalla y la descarga CSV (2026-11-17).
+  const siewinPucIssueKinds = [
+    ["outOfRangeLevels", t.siewinIssueOutOfRange],
+    ["levelSkipGaps", t.siewinIssueLevelSkip],
+    ["duplicateCodes", t.siewinIssueDuplicate],
+    ["orphanCodes", t.siewinIssueOrphan],
+    ["postingAccountHasChildren", t.siewinIssuePostingHasChildren],
+    ["missingNames", t.siewinIssueMissingName],
+    ["unmappedGroups", t.siewinIssueUnmappedGroup],
+    ["parentIsPostingInPlan", t.siewinIssueParentIsPostingInPlan],
+    ["parentInactiveInPlan", t.siewinIssueParentInactiveInPlan],
+    ["catchAllCollisions", t.siewinIssueCatchAllCollision],
+  ];
+
+  // NEW (2026-11-17): con plan de cuentas ya cargado, el modal SIEWIN
+  // trabaja en modo "solo agregar cuentas nuevas" (mode ADD_MISSING en el
+  // backend); con el plan vacío, importación completa como siempre.
+  const siewinAddMissing = rows.length > 0;
+  // Tras una importación completa exitosa el plan deja de estar vacío; el
+  // título no debe cambiar a "agregar" por eso.
+  const siewinShowAddMissingTitle = siewinSuccessResult
+    ? siewinSuccessResult.accountsAlreadyExisting > 0
+    : siewinAddMissing;
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -856,7 +936,10 @@ function ChartOfAccountsPage({ language = "es", autoOpenSiewin = false, onAutoOp
     setSiewinImporting(true);
     setSiewinIssues(null);
     try {
-      const response = await api.post("/v1/chart-of-accounts/import-siewin", { rows: siewinRows });
+      const response = await api.post("/v1/chart-of-accounts/import-siewin", {
+        rows: siewinRows,
+        ...(siewinAddMissing ? { mode: "ADD_MISSING" } : {}),
+      });
       if (response.data && response.data.success) {
         const result = response.data.data || {};
         // Keep the modal open on success, showing the full result --
@@ -866,7 +949,9 @@ function ChartOfAccountsPage({ language = "es", autoOpenSiewin = false, onAutoOp
         // actually visible anywhere).
         setSiewinSuccessResult(result);
         setSiewinRows(null);
-        showToast(`${t.siewinSuccess} ${result.accountsCreated ?? ""} ${t.importPucAccountsSuffix}`.trim());
+        showToast(siewinAddMissing
+          ? `${t.siewinAddMissingSuccess} ${result.accountsCreated ?? 0}`
+          : `${t.siewinSuccess} ${result.accountsCreated ?? ""} ${t.importPucAccountsSuffix}`.trim());
         await loadAccounts();
       } else {
         showToast(response.data?.message || t.errorConn, "error");
@@ -985,6 +1070,14 @@ function ChartOfAccountsPage({ language = "es", autoOpenSiewin = false, onAutoOp
     if (searchTerm.trim() || hasActiveQuickFilter) return filteredRows;
     return filteredRows.filter((r) => !isCodeHiddenByCollapse(r));
   }, [filteredRows, searchTerm, hasActiveQuickFilter, collapsedCodes, rowsByCode]);
+
+  // 2026-11-17: filas por página elegidas por el usuario (25/50/100/200/
+  // Todas), recordadas en este navegador. Se pagina DESPUÉS del plegado,
+  // así un grupo contraído no deja páginas vacías. Ver ui/usePaging.js.
+  const paging = usePaging(visibleRows, {
+    storageKey: "erp_coa_page_size",
+    resetKey: [searchTerm.trim(), natureFilter, accountTypeFilter, requireThirdPartyOnly, requireCostCenterOnly].join("|"),
+  });
 
   // FIX: previously depended on `[rows]` only, while filtering using
   // `editingIdRef.current` — a ref mutation doesn't trigger a re-render or
@@ -1693,7 +1786,14 @@ function ChartOfAccountsPage({ language = "es", autoOpenSiewin = false, onAutoOp
             }}
           />
           <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl max-h-[85vh] overflow-y-auto">
-            <h3 className="text-lg font-bold text-slate-800">{t.siewinModalTitle}</h3>
+            <h3 className="text-lg font-bold text-slate-800">
+              {siewinShowAddMissingTitle ? t.siewinAddMissingTitle : t.siewinModalTitle}
+            </h3>
+            {siewinAddMissing && !siewinSuccessResult && (
+              <p className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+                {t.siewinAddMissingBody}
+              </p>
+            )}
             <p className="mt-2 text-sm text-slate-600">{t.siewinModalBody}</p>
 
             {!siewinSuccessResult && (
@@ -1791,16 +1891,20 @@ function ChartOfAccountsPage({ language = "es", autoOpenSiewin = false, onAutoOp
 
             {!siewinSuccessResult && siewinIssues && (
               <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800 space-y-2">
-                <p className="font-semibold">{t.siewinIssuesTitle}</p>
-                {[
-                  ["outOfRangeLevels", t.siewinIssueOutOfRange],
-                  ["levelSkipGaps", t.siewinIssueLevelSkip],
-                  ["duplicateCodes", t.siewinIssueDuplicate],
-                  ["orphanCodes", t.siewinIssueOrphan],
-                  ["postingAccountHasChildren", t.siewinIssuePostingHasChildren],
-                  ["missingNames", t.siewinIssueMissingName],
-                  ["unmappedGroups", t.siewinIssueUnmappedGroup],
-                ].map(([key, label]) =>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-semibold">{t.siewinIssuesTitle}</p>
+                  <Button
+                    variant="secondary"
+                    size="xs"
+                    onClick={() => downloadIssuesCsv(
+                      siewinPucIssueKinds.map(([key, title]) => ({ title, items: siewinIssues[key] })),
+                      { fileBaseName: t.siewinCsvFileBase, headers: t.siewinCsvHeaders }
+                    )}
+                  >
+                    {t.siewinDownloadErrors}
+                  </Button>
+                </div>
+                {siewinPucIssueKinds.map(([key, label]) =>
                   Array.isArray(siewinIssues[key]) && siewinIssues[key].length > 0 ? (
                     <div key={key}>
                       <p className="font-medium">{label} ({siewinIssues[key].length}):</p>
@@ -1825,9 +1929,79 @@ function ChartOfAccountsPage({ language = "es", autoOpenSiewin = false, onAutoOp
                 dismisses it with "Cerrar". */}
             {siewinSuccessResult && (
               <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800 space-y-2">
-                <p className="font-semibold">
-                  {t.siewinSuccess} {siewinSuccessResult.accountsCreated ?? ""} {t.importPucAccountsSuffix}
-                </p>
+                {siewinSuccessResult.accountsAlreadyExisting > 0 ? (
+                  <>
+                    <p className="font-semibold">
+                      {siewinSuccessResult.accountsCreated > 0
+                        ? `${t.siewinAddMissingSuccess} ${siewinSuccessResult.accountsCreated}`
+                        : t.siewinNothingNew}
+                    </p>
+                    <p>{siewinSuccessResult.accountsAlreadyExisting} {t.siewinAlreadyExistingSuffix}</p>
+                  </>
+                ) : (
+                  <p className="font-semibold">
+                    {t.siewinSuccess} {siewinSuccessResult.accountsCreated ?? ""} {t.importPucAccountsSuffix}
+                  </p>
+                )}
+                {/* NEW (2026-11-17): cuentas "Varios" de SIEWIN (9999)
+                    convertidas al código 99 del ERP (decisión del usuario). */}
+                {Array.isArray(siewinSuccessResult.catchAllRemapped) &&
+                  siewinSuccessResult.catchAllRemapped.length > 0 && (
+                    <div className="rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-amber-900">
+                      <p className="font-medium">
+                        {t.siewinCatchAllTitle} ({siewinSuccessResult.catchAllRemapped.length})
+                      </p>
+                      <ul className="ml-4 list-disc">
+                        {siewinSuccessResult.catchAllRemapped.map((item) => (
+                          <li key={item} className="font-mono">{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                {/* NEW (2026-11-17): qué cuentas se crearon y qué dedujo el
+                    importador de cada una (naturaleza, movimiento, tercero,
+                    centro de costo), para revisarlas antes de los saldos. */}
+                {Array.isArray(siewinSuccessResult.createdAccounts) &&
+                  siewinSuccessResult.createdAccounts.length > 0 && (
+                    <div>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-medium">
+                          {t.siewinCreatedListTitle} ({siewinSuccessResult.createdAccounts.length})
+                        </p>
+                        <Button
+                          variant="secondary"
+                          size="xs"
+                          onClick={() => downloadCsv(
+                            t.siewinCreatedCsvHeaders,
+                            siewinSuccessResult.createdAccounts.map((a) => [
+                              a.code,
+                              a.name,
+                              a.postingAccount ? t.siewinPosting : t.siewinGroup,
+                              a.nature === "C" ? t.siewinNatureC : t.siewinNatureD,
+                              a.requiresThirdParty ? t.siewinYes : t.siewinNo,
+                              a.requiresCostCenter ? t.siewinYes : t.siewinNo,
+                            ]),
+                            t.siewinCreatedCsvFileBase
+                          )}
+                        >
+                          {t.siewinDownloadCreated}
+                        </Button>
+                      </div>
+                      <ul className="mt-1 max-h-48 overflow-y-auto rounded border border-emerald-200 bg-white/70 px-2 py-1">
+                        {siewinSuccessResult.createdAccounts.map((a) => (
+                          <li key={a.code} className="py-0.5">
+                            <span className="font-mono">{a.code}</span> - {a.name}
+                            <span className="text-emerald-700">
+                              {" · "}{a.postingAccount ? t.siewinPosting : t.siewinGroup}
+                              {" · "}{a.nature === "C" ? t.siewinNatureC : t.siewinNatureD}
+                              {a.requiresThirdParty ? ` · ${t.siewinThirdPartyTag}` : ""}
+                              {a.requiresCostCenter ? ` · ${t.siewinCostCenterTag}` : ""}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 {Array.isArray(siewinSuccessResult.truncatedNameWarnings) &&
                   siewinSuccessResult.truncatedNameWarnings.length > 0 && (
                     <div>
@@ -1869,10 +2043,12 @@ function ChartOfAccountsPage({ language = "es", autoOpenSiewin = false, onAutoOp
                   <Button
                     variant="primary"
                     loading={siewinImporting}
-                    disabled={!siewinRows || siewinRows.length === 0}
+                    // loading: hasta saber si el plan está vacío no se sabe
+                    // si es importación completa o "agregar cuentas nuevas".
+                    disabled={loading || !siewinRows || siewinRows.length === 0}
                     onClick={handleImportSiewin}
                   >
-                    {siewinImporting ? t.importPucImporting : t.siewinImportButton}
+                    {siewinImporting ? t.importPucImporting : (siewinAddMissing ? t.siewinAddMissingButton : t.siewinImportButton)}
                   </Button>
                 </>
               )}
@@ -2109,7 +2285,7 @@ function ChartOfAccountsPage({ language = "es", autoOpenSiewin = false, onAutoOp
                   </td>
                 </tr>
               ) : (
-                visibleRows.map((item) => {
+                paging.pageItems.map((item) => {
                   const isGroup = parentCodeSet.has(item.code);
                   const isCollapsed = collapsedCodes.has(item.code);
                   const emphasis = !item.active
@@ -2256,6 +2432,11 @@ function ChartOfAccountsPage({ language = "es", autoOpenSiewin = false, onAutoOp
           </table>
         )}
       </div>
+      {!loading && rows.length > 0 && (
+        <div className="mt-2 overflow-hidden rounded-xl border border-slate-200">
+          <ListPager paging={paging} language={language} itemLabel={{ singular: t.accountSingular, plural: t.accountPlural }} />
+        </div>
+      )}
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-start justify-end">

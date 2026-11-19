@@ -8,7 +8,7 @@ import StatusBadge from "../ui/StatusBadge";
 import LoadingState from "../ui/LoadingState";
 import Alert from "../ui/Alert";
 import { inputClass, table as tbl } from "../ui/tokens";
-import { ROW_KBD, rowNavKeyDown, focusFirstRow, useSearchShortcut, focusFirstInvalidSoon, hintsFor } from "../ui/keyboard";
+import { ROW_KBD, rowNavKeyDown, focusFirstRow, useSearchShortcut, focusFirstInvalidSoon, hintsFor, usePagerShortcut } from "../ui/keyboard";
 import { KeyboardHints, ExportMenu, ShortcutKbd } from "../ui/tableKit";
 import AmountInput from "../ui/AmountInput";
 import { formatMoney } from "../../utils/amountFormat";
@@ -22,6 +22,7 @@ import { addPdfReportHeader, addPdfRunningHeader, buildExcelHeaderRows, nowLocal
 import AccountQuickCreateModal from "../common/AccountQuickCreateModal";
 import CostCenterQuickCreateModal from "../common/CostCenterQuickCreateModal";
 import ThirdPartyQuickCreateModal from "../common/ThirdPartyQuickCreateModal";
+import { thirdPartyLabel } from "../../utils/thirdPartyLabel";
 
 // A brand-new line starts with both amounts empty -- the user picks either
 // a debit or a credit, never both (mirrors JournalEntryService's own rule).
@@ -1410,6 +1411,12 @@ function JeListView({
   // Supr abre la anulación (con su confirmación). Ver ui/keyboard.js.
   const searchRef = useRef(null);
   useSearchShortcut(searchRef);
+  // 2026-11-17: Alt+AvPág / Alt+RePág cambian de página (ver keyboard.js).
+  usePagerShortcut({
+    enabled: totalPages > 1,
+    onPrev: () => { if (currentPage > 0) onPageChange(currentPage - 1); },
+    onNext: () => { if (currentPage < totalPages - 1) onPageChange(currentPage + 1); },
+  });
   return (
     <>
       <div className="flex flex-col gap-3 md:flex-row md:items-end">
@@ -2306,7 +2313,7 @@ function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose }) {
     const body = (entry.items || []).map((item) => [
       `${item.accountCode} - ${item.accountName}`,
       truncateDetail(item.description),
-      item.thirdPartyName || "—",
+      thirdPartyLabel(item.thirdPartyIdNumber, item.thirdPartyName),
       item.costCenterName || "—",
       money(item.debit),
       money(item.credit),
@@ -2362,7 +2369,7 @@ function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose }) {
       ...(entry.items || []).map((item) => [
         `${item.accountCode} - ${item.accountName}`,
         item.description || "—",
-        item.thirdPartyName || "—",
+        thirdPartyLabel(item.thirdPartyIdNumber, item.thirdPartyName),
         item.costCenterName || "—",
         item.debit || 0,
         item.credit || 0,
@@ -2416,7 +2423,7 @@ function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose }) {
                   <span className="font-semibold text-slate-900">{item.accountCode}</span> {item.accountName}
                 </td>
                 <td className={`${tbl.td} text-xs`} title={item.description || ""}>{truncateDetail(item.description)}</td>
-                <td className={`${tbl.td} text-xs`}>{item.thirdPartyName || "—"}</td>
+                <td className={`${tbl.td} text-xs`}>{thirdPartyLabel(item.thirdPartyIdNumber, item.thirdPartyName)}</td>
                 <td className={`${tbl.td} text-xs`}>{item.costCenterName || "—"}</td>
                 <td className={tbl.tdNum}>{money(item.debit)}</td>
                 <td className={tbl.tdNum}>{money(item.credit)}</td>

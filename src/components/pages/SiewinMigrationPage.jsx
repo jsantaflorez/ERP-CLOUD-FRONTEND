@@ -3,6 +3,8 @@ import PropTypes from "prop-types";
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
 import Alert from "../ui/Alert";
+import Modal from "../ui/Modal";
+import { inputClass } from "../ui/tokens";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
@@ -17,9 +19,9 @@ import { getApiErrorMessage } from "../../constants/apiErrors";
 // compañía ya tiene y lleva a la pantalla correspondiente, abriendo el
 // modal de SIEWIN automáticamente (props autoOpenSiewin de
 // ChartOfAccountPage / ThirdPartyPage).
-// El paso 1 se muestra siempre; si la compañía ya tiene cuentas queda
-// deshabilitado con el aviso, en vez de desaparecer como pasaba con el
-// enlace dentro de Plan de Cuentas.
+// El paso 1 se muestra siempre. UPDATE 2026-11-17: si la compañía ya
+// tiene cuentas, ofrece "agregar cuentas nuevas" (vuelve a subir el PUC
+// actual y solo crea las que faltan) en vez de quedar bloqueado.
 
 const T = {
   es: {
@@ -30,8 +32,24 @@ const T = {
     pucTitle: "Plan de cuentas (PUC)",
     pucDesc: "Importa el PUC exportado de SIEWIN con sus cuentas, naturaleza y requisitos de tercero/centro de costo.",
     pucCount: (n) => `${n} cuenta${n === 1 ? "" : "s"} en esta compañía`,
-    pucBlocked: "Esta compañía ya tiene plan de cuentas, por eso la importación del PUC está deshabilitada (solo se permite sobre una compañía sin cuentas). Puedes seguir con los pasos 2 y 3.",
+    pucAddMissingNote: "Esta compañía ya tiene plan de cuentas. Si el PUC cambió en SIEWIN después de la primera migración (por ejemplo, el balance reporta cuentas que no existen), sube el PUC actual: solo se agregan las cuentas que faltan y ninguna existente se modifica.",
     pucButton: "Importar PUC",
+    pucAddMissingButton: "Agregar cuentas nuevas del PUC",
+    resetButton: "Borrar plan de cuentas…",
+    resetHint: "¿Migraste un PUC equivocado o desactualizado? Mientras no haya comprobantes puedes borrarlo e importarlo de nuevo.",
+    resetTitle: "Borrar el plan de cuentas",
+    resetChecking: "Revisando si se puede borrar…",
+    resetBlockedTitle: "No se puede borrar: ya hay información registrada con estas cuentas.",
+    resetWarningTitle: (n) => `Se borrarán las ${n} cuentas del plan de cuentas de esta compañía. No se puede deshacer.`,
+    resetAlsoTitle: "También se hará esto (tendrás que configurarlo de nuevo después de importar):",
+    resetDocTypes: (n) => `Se quitará la cuenta por defecto de ${n} tipo(s) de documento.`,
+    resetClosingAccounts: "Se quitarán las cuentas de ganancia y pérdida de la compañía (Configuración de la empresa).",
+    resetTaxes: (list) => `Se eliminarán ${list.length} impuesto(s): ${list.join(", ")}.`,
+    resetTypeToConfirm: "Escribe BORRAR para confirmar",
+    resetConfirm: "Borrar plan de cuentas",
+    resetCancel: "Cancelar",
+    resetClose: "Cerrar",
+    resetDone: (r) => `Plan de cuentas borrado: ${r.accountsDeleted} cuentas eliminadas. Ya puedes importar el PUC de nuevo (paso 1).`,
     tpTitle: "Terceros",
     tpDesc: "Importa clientes, proveedores y demás terceros. Puede repetirse: los ya existentes se reportan, no se duplican.",
     tpCount: (n) => `${n} tercero${n === 1 ? "" : "s"} en esta compañía`,
@@ -53,8 +71,24 @@ const T = {
     pucTitle: "Chart of accounts (PUC)",
     pucDesc: "Imports the PUC exported from SIEWIN with its accounts, nature and third-party/cost-center requirements.",
     pucCount: (n) => `${n} account${n === 1 ? "" : "s"} in this company`,
-    pucBlocked: "This company already has a chart of accounts, so PUC import is disabled (it is only allowed on a company with no accounts). You can continue with steps 2 and 3.",
+    pucAddMissingNote: "This company already has a chart of accounts. If the PUC changed in SIEWIN after the first migration (for example, the balance reports accounts that don't exist), upload the current PUC: only missing accounts are added and no existing one is modified.",
     pucButton: "Import PUC",
+    pucAddMissingButton: "Add new PUC accounts",
+    resetButton: "Delete chart of accounts…",
+    resetHint: "Migrated a wrong or outdated PUC? While there are no entries you can delete it and import it again.",
+    resetTitle: "Delete the chart of accounts",
+    resetChecking: "Checking whether it can be deleted…",
+    resetBlockedTitle: "Can't delete: information is already recorded with these accounts.",
+    resetWarningTitle: (n) => `All ${n} accounts of this company's chart of accounts will be deleted. This can't be undone.`,
+    resetAlsoTitle: "This will also happen (you'll need to configure it again after importing):",
+    resetDocTypes: (n) => `The default account will be removed from ${n} document type(s).`,
+    resetClosingAccounts: "The company's gain and loss accounts will be removed (Company settings).",
+    resetTaxes: (list) => `${list.length} tax(es) will be deleted: ${list.join(", ")}.`,
+    resetTypeToConfirm: "Type BORRAR to confirm",
+    resetConfirm: "Delete chart of accounts",
+    resetCancel: "Cancel",
+    resetClose: "Close",
+    resetDone: (r) => `Chart of accounts deleted: ${r.accountsDeleted} accounts removed. You can import the PUC again (step 1).`,
     tpTitle: "Third parties",
     tpDesc: "Imports customers, suppliers and other third parties. It can be repeated: existing ones are reported, not duplicated.",
     tpCount: (n) => `${n} third part${n === 1 ? "y" : "ies"} in this company`,
@@ -132,6 +166,57 @@ function SiewinMigrationPage({ language = "es", onNavigate }) {
   const [thirdPartyCount, setThirdPartyCount] = useState(null);
   const [error, setError] = useState("");
 
+  // NEW (2026-11-17): borrar todo el plan de cuentas (solo sin
+  // movimientos) para volver a importarlo -- ChartOfAccountResetService.
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetPreview, setResetPreview] = useState(null);
+  const [resetConfirmText, setResetConfirmText] = useState("");
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState("");
+  const [resetBlockers, setResetBlockers] = useState(null);
+  const [resetResult, setResetResult] = useState(null);
+
+  const openReset = async () => {
+    setResetOpen(true);
+    setResetPreview(null);
+    setResetConfirmText("");
+    setResetError("");
+    setResetBlockers(null);
+    try {
+      const response = await api.get("/v1/chart-of-accounts/reset-preview");
+      setResetPreview(response.data?.data || null);
+    } catch (err) {
+      setResetError(getApiErrorMessage(err, language, t.countError));
+    }
+  };
+
+  const closeReset = () => {
+    if (resetting) return;
+    setResetOpen(false);
+  };
+
+  const confirmReset = async () => {
+    setResetting(true);
+    setResetError("");
+    try {
+      const response = await api.post("/v1/chart-of-accounts/reset", { confirmation: resetConfirmText });
+      setResetResult(response.data?.data || {});
+      setResetOpen(false);
+      setAccountCount(null);
+      setThirdPartyCount(null);
+      fetchCounts();
+    } catch (err) {
+      const details = err?.response?.data?.data;
+      if (err?.response?.data?.message === "CHART_OF_ACCOUNTS_RESET_BLOCKED" && Array.isArray(details)) {
+        setResetBlockers(details);
+      } else {
+        setResetError(getApiErrorMessage(err, language, t.countError));
+      }
+    } finally {
+      setResetting(false);
+    }
+  };
+
   // Se consulta cada vez que se entra a la pantalla (al volver de un paso
   // el Dashboard la monta de nuevo, así que los conteos quedan al día).
   const fetchCounts = async () => {
@@ -176,6 +261,7 @@ function SiewinMigrationPage({ language = "es", onNavigate }) {
 
       <Alert tone="info">{t.orderNote}</Alert>
       {error && <Alert tone="error">{error}</Alert>}
+      {resetResult && <Alert tone="success">{t.resetDone(resetResult)}</Alert>}
 
       <ol className="space-y-4">
         <li>
@@ -187,14 +273,25 @@ function SiewinMigrationPage({ language = "es", onNavigate }) {
             statusLabel={labelOf(accountCount)}
             info={countInfo(accountCount, t.pucCount)}
           >
-            {hasAccounts && <Alert tone="warning">{t.pucBlocked}</Alert>}
+            {/* UPDATE 2026-11-17: con plan ya cargado el paso 1 ya no queda
+                bloqueado -- ofrece "agregar cuentas nuevas" (mode
+                ADD_MISSING del backend). */}
+            {hasAccounts && <Alert tone="info">{t.pucAddMissingNote}</Alert>}
             <Button
-              variant="primary"
-              disabled={!noAccounts}
+              variant={hasAccounts ? "secondary" : "primary"}
+              disabled={!noAccounts && !hasAccounts}
               onClick={() => onNavigate("chartOfAccount", { openSiewin: true })}
             >
-              {t.pucButton}
+              {hasAccounts ? t.pucAddMissingButton : t.pucButton}
             </Button>
+            {hasAccounts && (
+              <div className="border-t border-slate-100 pt-3">
+                <p className="text-xs text-slate-500">{t.resetHint}</p>
+                <Button variant="danger" size="sm" className="mt-2" onClick={openReset}>
+                  {t.resetButton}
+                </Button>
+              </div>
+            )}
           </StepCard>
         </li>
         <li>
@@ -227,6 +324,72 @@ function SiewinMigrationPage({ language = "es", onNavigate }) {
           </StepCard>
         </li>
       </ol>
+
+      {resetOpen && (
+        <Modal
+          title={t.resetTitle}
+          onClose={closeReset}
+          dismissible={!resetting}
+          footer={
+            <>
+              <Button variant="secondary" onClick={closeReset} disabled={resetting}>
+                {resetPreview?.allowed && !resetBlockers ? t.resetCancel : t.resetClose}
+              </Button>
+              {resetPreview?.allowed && !resetBlockers && (
+                <Button
+                  variant="dangerSolid"
+                  loading={resetting}
+                  disabled={resetConfirmText !== "BORRAR"}
+                  onClick={confirmReset}
+                >
+                  {t.resetConfirm}
+                </Button>
+              )}
+            </>
+          }
+        >
+          <div className="space-y-3 text-sm">
+            {!resetPreview && !resetError && <p className="text-slate-500">{t.resetChecking}</p>}
+            {resetError && <Alert tone="error">{resetError}</Alert>}
+            {(resetBlockers || (resetPreview && !resetPreview.allowed)) && (
+              <Alert tone="error" title={t.resetBlockedTitle}>
+                <ul className="ml-4 list-disc">
+                  {(resetBlockers || resetPreview.blockers).map((b) => <li key={b}>{b}</li>)}
+                </ul>
+              </Alert>
+            )}
+            {resetPreview?.allowed && !resetBlockers && (
+              <>
+                <Alert tone="warning" title={t.resetWarningTitle(resetPreview.accountCount)} />
+                {(resetPreview.documentTypesWithDefaultAccount > 0 || resetPreview.companyClosingAccountsSet
+                  || resetPreview.taxesToDelete?.length > 0) && (
+                  <div>
+                    <p className="font-medium text-slate-700">{t.resetAlsoTitle}</p>
+                    <ul className="ml-4 mt-1 list-disc text-slate-600">
+                      {resetPreview.documentTypesWithDefaultAccount > 0 && (
+                        <li>{t.resetDocTypes(resetPreview.documentTypesWithDefaultAccount)}</li>
+                      )}
+                      {resetPreview.companyClosingAccountsSet && <li>{t.resetClosingAccounts}</li>}
+                      {resetPreview.taxesToDelete?.length > 0 && <li>{t.resetTaxes(resetPreview.taxesToDelete)}</li>}
+                    </ul>
+                  </div>
+                )}
+                <label className="block">
+                  <span className="text-slate-700">{t.resetTypeToConfirm}</span>
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    className={`mt-1 ${inputClass(false)}`}
+                    value={resetConfirmText}
+                    onChange={(e) => setResetConfirmText(e.target.value)}
+                    disabled={resetting}
+                  />
+                </label>
+              </>
+            )}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

@@ -116,6 +116,20 @@ export const API_ERROR_LABELS = {
     // lists instead, same pattern as the PUC importer. This label is just
     // the fallback for any other place that error code might surface.
     SIEWIN_THIRD_PARTY_INTEGRITY_GAP: "El archivo de terceros SIEWIN tiene problemas de datos que impiden la importacion. Revisa el detalle mostrado en el formulario.",
+    // Migracion de saldos de apertura SIEWIN (2026-11-12). Varios de
+    // estos codigos normalmente nunca llegan a este lookup generico --
+    // OpeningBalanceImportPage.jsx lee el detalle estructurado
+    // (error.response.data.data) directamente para
+    // SIEWIN_BALANCE_IMPORT_INTEGRITY_GAP y SIEWIN_BALANCE_OUT_OF_BALANCE,
+    // mismo patron que los otros importadores SIEWIN. Estas etiquetas son
+    // el respaldo por si ese codigo aparece en otro lugar.
+    SIEWIN_BALANCE_MISSING_YEAR: "Debes indicar el ano de cierre que estas migrando.",
+    SIEWIN_BALANCE_EMPTY_FILE: "El archivo no contiene filas para importar.",
+    SIEWIN_BALANCE_IMPORT_INTEGRITY_GAP: "El archivo de saldos SIEWIN tiene problemas de datos que impiden la importacion. Revisa el detalle mostrado en el formulario.",
+    SIEWIN_BALANCE_OUT_OF_BALANCE: "Los subtotales del archivo no cuadran contra las cuentas recalculadas. Revisa el detalle mostrado en el formulario.",
+    SIEWIN_BALANCE_CLOSING_ACCOUNTS_NOT_CONFIGURED: "Falta configurar las cuentas de cierre de la compañía (cuenta de ganancia y cuenta de pérdida). Son las cuentas donde se registra el resultado del ejercicio. Ve a Administración > Períodos Contables, elígelas y guarda. Al volver aquí el archivo seguirá cargado.",
+    SIEWIN_BALANCE_NO_LINES_TO_POST: "El archivo no genero ninguna linea de apertura con saldo. Revisa el archivo.",
+    SIEWIN_BALANCE_MULTIPLE_OPENING_ENTRIES_FOUND: "Existe mas de un comprobante de apertura vivo para esta compania. Contacta a soporte antes de continuar.",
     // Certificados de Retencion (2026-11-07): validaciones del
     // backend en WithholdingCertificateService/LegalDocumentTemplateService.
     TAX_TYPE_REQUIRED: "Selecciona un tipo de impuesto.",
@@ -223,6 +237,20 @@ export const API_ERROR_LABELS = {
     // SIEWIN legacy Third Party importer (2026-11-01). Same fallback-only
     // note as SIEWIN_IMPORT_INTEGRITY_GAP above.
     SIEWIN_THIRD_PARTY_INTEGRITY_GAP: "The SIEWIN third-party file has data problems that prevent importing. Review the detail shown in the form.",
+    // SIEWIN opening-balance migration (2026-11-12). Several of these
+    // codes normally never reach this generic lookup --
+    // OpeningBalanceImportPage.jsx reads the structured detail
+    // (error.response.data.data) directly for
+    // SIEWIN_BALANCE_IMPORT_INTEGRITY_GAP and SIEWIN_BALANCE_OUT_OF_BALANCE,
+    // same pattern as the other SIEWIN importers. These labels are just
+    // the fallback for any other place that error code might surface.
+    SIEWIN_BALANCE_MISSING_YEAR: "You must indicate the closing year being migrated.",
+    SIEWIN_BALANCE_EMPTY_FILE: "The file has no rows to import.",
+    SIEWIN_BALANCE_IMPORT_INTEGRITY_GAP: "The SIEWIN balance file has data problems that prevent importing. Review the detail shown in the form.",
+    SIEWIN_BALANCE_OUT_OF_BALANCE: "The file's subtotals don't match the recalculated accounts. Review the detail shown in the form.",
+    SIEWIN_BALANCE_CLOSING_ACCOUNTS_NOT_CONFIGURED: "The company's closing accounts (gain account and loss account) are not configured. They receive the result of the year. Go to Administration > Accounting Periods, choose them and save. When you come back, the file will still be loaded.",
+    SIEWIN_BALANCE_NO_LINES_TO_POST: "The file produced no opening-balance line with a balance. Review the file.",
+    SIEWIN_BALANCE_MULTIPLE_OPENING_ENTRIES_FOUND: "There is more than one live opening-balance entry for this company. Contact support before continuing.",
     // Withholding Certificates (2026-11-07): backend validations in
     // WithholdingCertificateService/LegalDocumentTemplateService.
     TAX_TYPE_REQUIRED: "Select a tax type.",
