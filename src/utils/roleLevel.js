@@ -10,11 +10,15 @@
 // backend enforces the same rule with @PreAuthorize.
 export const ADMIN_ROLE_CODES = ["SYS_ADMIN", "COMPANY_ADMIN"];
 export const OPERATIONAL_ROLE_CODES = ["ACCOUNTANT"];
+// NEW (2026-11-19): read-only profile "Consulta". Backend rule:
+// app.security.writer-roles -- any role outside it gets 403 on every write.
+export const READ_ONLY_ROLE_CODES = ["VIEWER"];
 
 export function levelFromRoles(roles) {
   const list = Array.isArray(roles) ? roles : [];
   if (list.some((r) => ADMIN_ROLE_CODES.includes(r))) return "Administrator";
   if (list.some((r) => OPERATIONAL_ROLE_CODES.includes(r))) return "Accountant";
+  if (list.some((r) => READ_ONLY_ROLE_CODES.includes(r))) return "Viewer";
   return "USER";
 }
 
@@ -22,12 +26,12 @@ export function levelFromRoles(roles) {
 // block). Unknown codes (custom roles a company may create) fall back to a
 // readable version of the code itself.
 const ROLE_LABELS = {
-  es: { SYS_ADMIN: "Administrador del sistema", COMPANY_ADMIN: "Administrador", ACCOUNTANT: "Contador" },
-  en: { SYS_ADMIN: "System administrator", COMPANY_ADMIN: "Administrator", ACCOUNTANT: "Accountant" },
+  es: { SYS_ADMIN: "Administrador del sistema", COMPANY_ADMIN: "Administrador", ACCOUNTANT: "Auxiliar / Contador", VIEWER: "Consulta" },
+  en: { SYS_ADMIN: "System administrator", COMPANY_ADMIN: "Administrator", ACCOUNTANT: "Assistant / Accountant", VIEWER: "Read-only" },
 };
 
 // Highest role first: the header shows one role, the tooltip lists all.
-const ROLE_PRIORITY = ["SYS_ADMIN", "COMPANY_ADMIN", "ACCOUNTANT"];
+const ROLE_PRIORITY = ["SYS_ADMIN", "COMPANY_ADMIN", "ACCOUNTANT", "VIEWER"];
 
 export function sortRoles(roles) {
   const list = Array.isArray(roles) ? [...new Set(roles)] : [];

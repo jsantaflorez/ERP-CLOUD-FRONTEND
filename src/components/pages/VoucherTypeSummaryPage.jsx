@@ -5,6 +5,7 @@ import { ExportMenu } from "../ui/tableKit";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
+import { completeContent } from "../../utils/completeResult";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -242,7 +243,8 @@ function VoucherTypeSummaryPage({ language = "es" }) {
         },
       });
       const pageData = response.data?.data;
-      setEntries(Array.isArray(pageData?.content) ? pageData.content : []);
+      // Bloque 0.4: refuse a truncated result instead of showing it.
+      setEntries(completeContent(pageData, language));
     } catch (err) {
       setError(getApiErrorMessage(err, language, t.errorConn));
     } finally {

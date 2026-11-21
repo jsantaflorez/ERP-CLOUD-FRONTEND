@@ -279,6 +279,10 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
   // (entries, catalogs, reports); not periods or users. See utils/roleLevel.js.
   const isAuthorizedOperational = userLevel === "Administrator" || userLevel === "ADMIN" || userLevel === "Accountant" || (Number(userLevel) <= 3);
   const isAuthorizedManagement  = userLevel === "Administrator" || userLevel === "ADMIN" || (Number(userLevel) <= 2);
+  // "Viewer" (2026-11-19, perfil Consulta): sees Comprobantes (read-only)
+  // and Reportes, nothing that writes. The backend returns 403 on any write
+  // anyway (app.security.writer-roles); this only hides the buttons.
+  const isReadOnly = userLevel === "Viewer";
 
   // F8 (ver comentario junto a newEntryRequest). Se registra aparte del
   // listener de F1 porque depende de la vista activa y del rol.
@@ -331,14 +335,14 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
             {t.navDashboard}
           </NavItem>
 
-          {isAuthorizedOperational && (
+          {(isAuthorizedOperational || isReadOnly) && (
             <>
               <NavSectionLabel>{t.navSectionOperations}</NavSectionLabel>
               <NavItem
                 active={activeView === "journalEntry"}
                 onClick={() => changeView("journalEntry")}
-                shortcut="F8"
-                title={language === "en" ? "F8: new entry from any screen" : "F8: nuevo comprobante desde cualquier pantalla"}
+                shortcut={isAuthorizedOperational ? "F8" : undefined}
+                title={!isAuthorizedOperational ? undefined : language === "en" ? "F8: new entry from any screen" : "F8: nuevo comprobante desde cualquier pantalla"}
               >
                 {t.navJournalEntry}
               </NavItem>
@@ -390,6 +394,8 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
                 </div>
               )}
 
+              {isAuthorizedOperational && (
+              <>
               <NavSectionLabel>{t.navSectionCatalogs}</NavSectionLabel>
               <NavItem active={activeView === "chartOfAccount"} onClick={() => changeView("chartOfAccount")}>
                 {t.navChartOfAccount}
@@ -406,6 +412,8 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
               <NavItem active={activeView === "tax"} onClick={() => changeView("tax")}>
                 {t.navTax}
               </NavItem>
+              </>
+              )}
             </>
           )}
 
@@ -502,6 +510,8 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
             onOpenEntryIdHandled={() => setPendingEditEntryId(null)}
             newEntryRequest={newEntryRequest}
             onNewEntryRequestHandled={() => setNewEntryRequest(0)}
+            canManageEntries={isAuthorizedManagement}
+            canCreateEntries={isAuthorizedOperational}
           />
         )}
 

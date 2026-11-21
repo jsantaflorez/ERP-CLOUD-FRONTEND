@@ -15,6 +15,7 @@ import { formatMoney } from "../../utils/amountFormat";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
+import { completeContent } from "../../utils/completeResult";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -150,7 +151,13 @@ const fieldOrderForRow = (item, acc, tax) => {
   return order;
 };
 
-function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenEntryIdHandled, newEntryRequest, onNewEntryRequestHandled }) {
+// canManageEntries (Bloque 0.8, auditoria 2026-11-19): only administrators
+// may edit or annul a saved entry -- the backend enforces it with
+// @PreAuthorize on PUT and on PATCH .../annul. Dashboard passes it from the
+// active company's roles; this just hides what would end in a 403.
+// canCreateEntries (2026-11-19): false for the read-only profile (Consulta):
+// no Nuevo comprobante, no Duplicar, no Insert/F8.
+function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenEntryIdHandled, newEntryRequest, onNewEntryRequestHandled, canManageEntries = false, canCreateEntries = false }) {
   const [view, setView] = useState("list"); // "list" | "form"
 
   // List/search state
@@ -207,6 +214,11 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   const pristineFormRef = useRef(JSON.stringify(emptyForm()));
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
+  // Bloque 0.3 (auditoria 2026-11-19, F1-03): a ref, not just the state
+  // above. Ctrl+Enter calls requestSubmit(), which submits even while the
+  // Guardar button is disabled, and two key presses inside the same render
+  // both see saving === false -- that created the same voucher twice.
+  const savingRef = useRef(false);
   const [toast, setToast] = useState(null);
   // null = creating a new entry; otherwise the id of the entry being edited.
   const [editingId, setEditingId] = useState(null);
@@ -326,6 +338,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       successDuplicate: "¡Comprobante duplicado!",
       editingTitle: "Editar Asiento",
       cannotEditClosingEntry: "Un comprobante de cierre de año no se puede editar.",
+      cannotEditNoPermission: "Solo un administrador puede editar o anular un comprobante guardado.",
       periodClosedBanner: "🔒 Comprobante en periodo cerrado — Solo lectura",
       periodClosedCannotSave: "Este comprobante pertenece a un periodo cerrado y no se puede guardar.",
       documentTypeLocked: "El tipo de documento no se puede modificar una vez creado el asiento.",
@@ -416,6 +429,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       successDuplicate: "Journal entry duplicated!",
       editingTitle: "Edit Entry",
       cannotEditClosingEntry: "A year-end closing entry cannot be edited.",
+      cannotEditNoPermission: "Only an administrator can edit or annul a saved entry.",
       periodClosedBanner: "🔒 Entry in a closed period — Read only",
       periodClosedCannotSave: "This entry belongs to a closed period and can't be saved.",
       documentTypeLocked: "The document type can't be changed once the entry is created.",
@@ -486,7 +500,9 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
     params.set("sort", "entryDate,asc");
     const response = await api.get(`/v1/journal-entries?${params.toString()}`);
     const pageData = response.data?.data;
-    return Array.isArray(pageData?.content) ? pageData.content : [];
+    // Bloque 0.4: an export must cover the whole filtered range, never
+    // the first 2.000 entries only.
+    return completeContent(pageData, language);
   };
 
   const loadCatalogs = async () => {
@@ -771,6 +787,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   // ============================================================
 
   const openNewEntry = () => {
+    if (!canCreateEntries) return;
     const blank = emptyForm();
     setForm(blank);
     pristineFormRef.current = JSON.stringify(blank);
@@ -787,19 +804,25 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   // -- it must never interrupt an entry already being captured or edited.
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key !== "Insert" || document.querySelector('[aria-modal="true"]') || view !== "list") return;
+      if (e.key !== "Insert" || !canCreateEntries || document.querySelector('[aria-modal="true"]') || view !== "list") return;
       e.preventDefault();
       openNewEntry();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [view]);
+    // openNewEntry only uses setters plus canCreateEntries, which is listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, canCreateEntries]);
 
   // Fetches the entry fresh from the backend rather than reusing the list
   // row: the list response omits some fields, and this guarantees the form
   // is seeded from the exact current state (in case it changed since the
   // list was last loaded).
   const openEditEntry = async (entry) => {
+    if (!canManageEntries) {
+      showToast(t.cannotEditNoPermission, "error");
+      return;
+    }
     // NEW (2026-10-12): defense in depth -- the "Editar" button is
     // already hidden for a closing entry in the list row below, but this
     // guards any other path that might call openEditEntry() directly
@@ -866,6 +889,17 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   // point (pre- vs post-fetch guard) and on which pieces of the id they
   // start from.
   const openEditEntryById = async (id) => {
+    // Bloque 0.8: without permission to edit, the cross-navigation from
+    // the reports opens the read-only detail instead of the edit form.
+    if (!canManageEntries) {
+      try {
+        const response = await api.get(`/v1/journal-entries/${id}`);
+        if (response.data?.data) setViewingEntry(response.data.data);
+      } catch (error) {
+        showToast(getApiErrorMessage(error, language, t.errorConn), "error");
+      }
+      return;
+    }
     setLoadingEntry(true);
     setView("form");
     setErrors({});
@@ -1122,6 +1156,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
 
   const handleSave = async (e) => {
     e.preventDefault();
+    if (savingRef.current) return; // Bloque 0.3: a save is already in flight
     // Defense in depth: the Guardar button is disabled and the whole form
     // is wrapped in a disabled <fieldset> while periodClosed, so this
     // shouldn't be reachable in the UI -- but handleSave is also wired to
@@ -1155,6 +1190,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       }),
     };
 
+    savingRef.current = true;
     setSaving(true);
     try {
       // The document type/document number are assigned once at creation
@@ -1189,6 +1225,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
     } catch (error) {
       showToast(getApiErrorMessage(error, language, t.errorConn), "error");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -1238,6 +1275,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   // ============================================================
 
   const openDuplicateModal = (entry) => {
+    if (!canCreateEntries) return;
     setDuplicateTarget(entry);
     setDuplicateDate(todayLocalIso());
     setDuplicateDescription(entry.description || "");
@@ -1295,10 +1333,12 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
                   scrolling back up to click "+ Nuevo Comprobante" every time is
                   tedious. Insert opens the form from anywhere on the page --
                   see the keydown effect near openNewEntry(). */}
-              <Button variant="primary" onClick={openNewEntry} title={`${t.newEntry} ${t.newShortcutHint} · F8`} aria-keyshortcuts="Insert F8">
-                {t.newEntry}
-                <ShortcutKbd>Ins</ShortcutKbd>
-              </Button>
+              {canCreateEntries && (
+                <Button variant="primary" onClick={openNewEntry} title={`${t.newEntry} ${t.newShortcutHint} · F8`} aria-keyshortcuts="Insert F8">
+                  {t.newEntry}
+                  <ShortcutKbd>Ins</ShortcutKbd>
+                </Button>
+              )}
             </>
           ) : (
             <Button variant="secondary" onClick={requestLeaveForm}>{t.backToList}</Button>
@@ -1328,6 +1368,8 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
           onEditEntry={openEditEntry}
           onAnnulEntry={openAnnulModal}
           onDuplicateEntry={openDuplicateModal}
+          canManageEntries={canManageEntries}
+          canCreateEntries={canCreateEntries}
           exporting={exporting}
           onExportExcel={handleExportExcel}
           onExportPdf={handleExportPdf}
@@ -1414,7 +1456,7 @@ function JeListView({
   documentTypeId, setDocumentTypeId, documentTypes, documentTypeLabel,
   currentPage, totalPages, totalElements, pageSize, onPageSizeChange,
   onPageChange, onViewEntry, onEditEntry, onAnnulEntry, onDuplicateEntry,
-  exporting, onExportExcel, onExportPdf,
+  exporting, onExportExcel, onExportPdf, canManageEntries = false, canCreateEntries = false,
 }) {
   // UI 2026-11-10: "/" o F3 llevan a la búsqueda; ↓ baja a la tabla, donde
   // ↑/↓ recorren comprobantes, Enter edita (o ve, si no es editable) y
@@ -1533,7 +1575,7 @@ function JeListView({
                       <td className={`${tbl.tdNum} !align-middle`}>{money(totalCredit)}</td>
                       <td className={`${tbl.tdActions} !align-middle group-hover:bg-slate-50`}>
                         <div className="flex justify-end gap-0.5">
-                          <Button variant="ghost" size="xs" onClick={() => onViewEntry(entry)} data-row-primary={entry.annulled || isClosingEntry ? "" : undefined}>{t.view}</Button>
+                          <Button variant="ghost" size="xs" onClick={() => onViewEntry(entry)} data-row-primary={entry.annulled || isClosingEntry || !canManageEntries ? "" : undefined}>{t.view}</Button>
                           {/* An annulled entry is immutable (backend rejects
                               both PUT and PATCH .../annul on it), so neither
                               action is offered once it's annulled. */}
@@ -1541,14 +1583,20 @@ function JeListView({
                             <>
                               {!isClosingEntry && (
                                 <>
-                                  <Button variant="ghost" size="xs" onClick={() => onEditEntry(entry)} data-row-primary="">{t.edit}</Button>
+                                  {canManageEntries && (
+                                    <Button variant="ghost" size="xs" onClick={() => onEditEntry(entry)} data-row-primary="">{t.edit}</Button>
+                                  )}
                                   {/* NEW (2026-10-22, user request): hidden for a closing
                                       entry for the same reason Editar is -- it's a
                                       system-generated entry, not a template to reuse. */}
-                                  <Button variant="ghost" size="xs" onClick={() => onDuplicateEntry(entry)}>{t.duplicate}</Button>
+                                  {canCreateEntries && (
+                                    <Button variant="ghost" size="xs" onClick={() => onDuplicateEntry(entry)}>{t.duplicate}</Button>
+                                  )}
                                 </>
                               )}
-                              <Button variant="dangerGhost" size="xs" onClick={() => onAnnulEntry(entry)} data-row-delete="" title={`${t.annul} (Supr)`}>{t.annul}</Button>
+                              {canManageEntries && (
+                                <Button variant="dangerGhost" size="xs" onClick={() => onAnnulEntry(entry)} data-row-delete="" title={`${t.annul} (Supr)`}>{t.annul}</Button>
+                              )}
                             </>
                           )}
                         </div>
