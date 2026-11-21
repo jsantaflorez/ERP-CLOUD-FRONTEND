@@ -151,6 +151,18 @@ const fieldOrderForRow = (item, acc, tax) => {
   return order;
 };
 
+// Bloque A (2026-11-21, F1-03): one key per comprobante being captured, sent
+// as Idempotency-Key. If the same POST reaches the backend twice (double
+// Ctrl+Enter, a retry on a slow network), the second one returns the entry
+// the first created instead of a duplicate. A new key is drawn for every new
+// form, so two DIFFERENT comprobantes never share one.
+function newIdempotencyKey() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
 // canManageEntries (Bloque 0.8, auditoria 2026-11-19): only administrators
 // may edit or annul a saved entry -- the backend enforces it with
 // @PreAuthorize on PUT and on PATCH .../annul. Dashboard passes it from the
@@ -219,6 +231,12 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   // Guardar button is disabled, and two key presses inside the same render
   // both see saving === false -- that created the same voucher twice.
   const savingRef = useRef(false);
+  // Bloque A (2026-11-21): Idempotency-Key of the form being captured, and
+  // the @Version of the entry being edited (sent back on PUT so a stale copy
+  // cannot overwrite someone else's save -- ENTRY_MODIFIED_BY_OTHER_USER).
+  const idempotencyKeyRef = useRef(newIdempotencyKey());
+  const duplicateKeyRef = useRef(null);
+  const editingVersionRef = useRef(null);
   const [toast, setToast] = useState(null);
   // null = creating a new entry; otherwise the id of the entry being edited.
   const [editingId, setEditingId] = useState(null);
@@ -339,6 +357,16 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       editingTitle: "Editar Asiento",
       cannotEditClosingEntry: "Un comprobante de cierre de año no se puede editar.",
       cannotEditNoPermission: "Solo un administrador puede editar o anular un comprobante guardado.",
+      historyButton: "Historial de cambios",
+      historyHide: "Ocultar historial",
+      historyTitle: "Versiones anteriores",
+      historyLoading: "Cargando historial…",
+      historyEmpty: "Este comprobante no ha sido editado ni anulado desde que se guardó.",
+      historyHint: "Cada versión muestra el comprobante tal como estaba justo antes del cambio.",
+      historyActionUPDATE: "Antes de editarlo",
+      historyActionANNUL: "Antes de anularlo",
+      historyBy: "por",
+      historyVersion: "Versión",
       periodClosedBanner: "🔒 Comprobante en periodo cerrado — Solo lectura",
       periodClosedCannotSave: "Este comprobante pertenece a un periodo cerrado y no se puede guardar.",
       documentTypeLocked: "El tipo de documento no se puede modificar una vez creado el asiento.",
@@ -430,6 +458,16 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       editingTitle: "Edit Entry",
       cannotEditClosingEntry: "A year-end closing entry cannot be edited.",
       cannotEditNoPermission: "Only an administrator can edit or annul a saved entry.",
+      historyButton: "Change history",
+      historyHide: "Hide history",
+      historyTitle: "Previous versions",
+      historyLoading: "Loading history…",
+      historyEmpty: "This entry has not been edited or annulled since it was saved.",
+      historyHint: "Each version shows the entry exactly as it was right before the change.",
+      historyActionUPDATE: "Before it was edited",
+      historyActionANNUL: "Before it was annulled",
+      historyBy: "by",
+      historyVersion: "Version",
       periodClosedBanner: "🔒 Entry in a closed period — Read only",
       periodClosedCannotSave: "This entry belongs to a closed period and can't be saved.",
       documentTypeLocked: "The document type can't be changed once the entry is created.",
@@ -788,6 +826,8 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
 
   const openNewEntry = () => {
     if (!canCreateEntries) return;
+    idempotencyKeyRef.current = newIdempotencyKey();
+    editingVersionRef.current = null;
     const blank = emptyForm();
     setForm(blank);
     pristineFormRef.current = JSON.stringify(blank);
@@ -860,6 +900,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       setForm(loadedForm);
       pristineFormRef.current = JSON.stringify(loadedForm);
       setEditingId(entry.id);
+      editingVersionRef.current = data.version ?? null;
       setKeptThirdPartyIds(new Set(loadedForm.items.map((i) => i.thirdPartyId).filter(Boolean)));
       setPeriodClosed(Boolean(data.periodClosed));
     } catch (error) {
@@ -929,6 +970,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       setForm(loadedForm);
       pristineFormRef.current = JSON.stringify(loadedForm);
       setEditingId(id);
+      editingVersionRef.current = data.version ?? null;
       setKeptThirdPartyIds(new Set(loadedForm.items.map((i) => i.thirdPartyId).filter(Boolean)));
       setPeriodClosed(Boolean(data.periodClosed));
     } catch (error) {
@@ -1190,6 +1232,8 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       }),
     };
 
+    if (editingId) payload.version = editingVersionRef.current;
+
     savingRef.current = true;
     setSaving(true);
     try {
@@ -1199,7 +1243,9 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       // about the request shape is identical.
       const response = editingId
         ? await api.put(`/v1/journal-entries/${editingId}`, payload)
-        : await api.post("/v1/journal-entries", payload);
+        : await api.post("/v1/journal-entries", payload, {
+            headers: { "Idempotency-Key": idempotencyKeyRef.current },
+          });
       if (response.data?.success) {
         showToast(editingId ? t.successUpdate : t.successCreate);
         if (editingId) {
@@ -1217,6 +1263,8 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
           setForm(blank);
           pristineFormRef.current = JSON.stringify(blank);
           setErrors({});
+          // The next comprobante is a different one: new key.
+          idempotencyKeyRef.current = newIdempotencyKey();
         }
         loadEntries(currentPage);
       } else {
@@ -1224,9 +1272,35 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       }
     } catch (error) {
       showToast(getApiErrorMessage(error, language, t.errorConn), "error");
+      // Bloque A (2026-11-21, prueba Chrome + Firefox): when the save was
+      // refused because someone else changed the entry, the list behind the
+      // form is stale too -- reload it so that going back shows the real
+      // values, not the ones this browser loaded before the other save.
+      const code = error?.response?.data?.message;
+      if (code === "ENTRY_MODIFIED_BY_OTHER_USER" || code === "CONCURRENT_MODIFICATION") {
+        loadEntries(currentPage);
+      }
     } finally {
       savingRef.current = false;
       setSaving(false);
+    }
+  };
+
+  // Bloque A (2026-11-21): "Ver" used to show the list row as it was when
+  // the list loaded, which can be stale if another user (or another
+  // browser) saved the entry since. Show the row at once, then replace it
+  // with the current entry from the server.
+  const openViewEntry = async (entry) => {
+    setViewingEntry(entry);
+    try {
+      const response = await api.get(`/v1/journal-entries/${entry.id}`);
+      const fresh = response.data?.data;
+      if (fresh) {
+        setViewingEntry((current) => (current && current.id === fresh.id ? fresh : current));
+      }
+    } catch {
+      // keep the list row; the modal is still useful, and an error here
+      // would only hide it
     }
   };
 
@@ -1277,6 +1351,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   const openDuplicateModal = (entry) => {
     if (!canCreateEntries) return;
     setDuplicateTarget(entry);
+    duplicateKeyRef.current = newIdempotencyKey();
     setDuplicateDate(todayLocalIso());
     setDuplicateDescription(entry.description || "");
   };
@@ -1294,6 +1369,8 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       const response = await api.post(`/v1/journal-entries/${duplicateTarget.id}/duplicate`, {
         entryDate: duplicateDate,
         description: duplicateDescription,
+      }, {
+        headers: { "Idempotency-Key": duplicateKeyRef.current },
       });
       if (response.data?.success) {
         showToast(t.successDuplicate);
@@ -1364,7 +1441,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
           pageSize={pageSize}
           onPageSizeChange={changePageSize}
           onPageChange={(p) => loadEntries(p)}
-          onViewEntry={setViewingEntry}
+          onViewEntry={openViewEntry}
           onEditEntry={openEditEntry}
           onAnnulEntry={openAnnulModal}
           onDuplicateEntry={openDuplicateModal}
@@ -1413,6 +1490,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
           documentTypeLabel={documentTypeLabel}
           companyName={companyLegalName || activeTenantId}
           onClose={() => setViewingEntry(null)}
+          language={language}
         />
       )}
 
@@ -2326,9 +2404,30 @@ function JeFormView({
 // Read-only detail modal
 // ============================================================
 
-function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose }) {
+function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose, language = "es" }) {
   const totalDebit = (entry.items || []).reduce((s, i) => s + (i.debit || 0), 0);
   const totalCredit = (entry.items || []).reduce((s, i) => s + (i.credit || 0), 0);
+
+  // Bloque A (2026-11-21): previous versions of this entry, loaded on demand
+  // (GET /history). Each one is the entry exactly as it was before an edit
+  // or the annulment, with who changed it and when.
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState(null); // null = not loaded yet
+  const [historyError, setHistoryError] = useState("");
+
+  const toggleHistory = async () => {
+    const next = !showHistory;
+    setShowHistory(next);
+    if (!next || history !== null) return;
+    setHistoryError("");
+    try {
+      const response = await api.get(`/v1/journal-entries/${entry.id}/history`);
+      setHistory(Array.isArray(response.data?.data) ? response.data.data : []);
+    } catch (error) {
+      setHistory([]);
+      setHistoryError(getApiErrorMessage(error, language, t.errorConn));
+    }
+  };
 
   // NEW (2026-09-30): print the voucher as a standalone PDF, launched from
   // inside "Ver" rather than a separate button on the list row -- opening
@@ -2451,6 +2550,7 @@ function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose }) {
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>{t.close}</Button>
+          <Button variant="ghost" onClick={toggleHistory}>{showHistory ? t.historyHide : t.historyButton}</Button>
           <Button variant="secondary" onClick={handleExportExcel}>{t.exportExcel}</Button>
           <Button variant="primary" onClick={handlePrintPdf}>{t.printPdf}</Button>
         </>
@@ -2497,6 +2597,10 @@ function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose }) {
           </tfoot>
         </table>
       </div>
+
+      {showHistory && (
+        <JeHistoryPanel t={t} history={history} error={historyError} />
+      )}
     </Modal>
   );
 }
@@ -2963,3 +3067,98 @@ function JeField({ label, error, children }) {
 }
 
 export default JournalEntryPage;
+
+// Bloque A (2026-11-21): list of saved versions of one entry, newest first.
+// Each version is the snapshot taken right BEFORE an edit or the annulment
+// (JournalEntryHistoryService), so it shows what the entry said then.
+function JeHistoryPanel({ t, history, error }) {
+  const [openId, setOpenId] = useState(null);
+
+  if (history === null) {
+    return <p className="mt-4 text-sm text-slate-500">{t.historyLoading}</p>;
+  }
+
+  const when = (value) => (value ? String(value).replace("T", " ").slice(0, 16) : "");
+
+  return (
+    <div className="mt-5 border-t border-slate-200 pt-4">
+      <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">{t.historyTitle}</h4>
+      {error && <Alert tone="error" className="mt-2">{error}</Alert>}
+      {!error && history.length === 0 && (
+        <p className="mt-2 text-sm text-slate-500">{t.historyEmpty}</p>
+      )}
+      {history.length > 0 && (
+        <>
+          <p className="mt-1 text-xs text-slate-500">{t.historyHint}</p>
+          <ul className="mt-3 flex flex-col gap-2">
+            {history.map((version) => {
+              const snap = version.snapshot || {};
+              const items = Array.isArray(snap.items) ? snap.items : [];
+              const debit = items.reduce((s, i) => s + (Number(i.debit) || 0), 0);
+              const credit = items.reduce((s, i) => s + (Number(i.credit) || 0), 0);
+              const open = openId === version.id;
+              return (
+                <li key={version.id} className="rounded-lg border border-slate-200">
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-slate-50"
+                    onClick={() => setOpenId(open ? null : version.id)}
+                    aria-expanded={open}
+                  >
+                    <span>
+                      <span className="font-semibold text-slate-900">
+                        {t[`historyAction${version.action}`] || version.action}
+                      </span>
+                      <span className="text-slate-500"> · {when(version.changedAt)} · {t.historyBy} {version.changedBy || "—"}</span>
+                    </span>
+                    <span className="text-xs text-slate-400">{t.historyVersion} {version.entryVersion} {open ? "▲" : "▼"}</span>
+                  </button>
+                  {open && (
+                    <div className="border-t border-slate-200 px-3 py-2">
+                      <p className="mb-2 text-xs text-slate-600">
+                        {snap.entryDate}{snap.description ? ` · ${snap.description}` : ""}
+                      </p>
+                      <div className="overflow-x-auto">
+                        <table className={tbl.table}>
+                          <thead className={tbl.thead}>
+                            <tr>
+                              <th scope="col" className={tbl.th}>{t.account}</th>
+                              <th scope="col" className={tbl.th}>{t.thirdParty}</th>
+                              <th scope="col" className={tbl.th}>{t.costCenter}</th>
+                              <th scope="col" className={tbl.thNum}>{t.debit}</th>
+                              <th scope="col" className={tbl.thNum}>{t.credit}</th>
+                            </tr>
+                          </thead>
+                          <tbody className={tbl.tbody}>
+                            {items.map((item, idx) => (
+                              <tr key={item.id ?? idx}>
+                                <td className={tbl.td}>
+                                  <span className="font-semibold text-slate-900">{item.accountCode}</span> {item.accountName}
+                                </td>
+                                <td className={`${tbl.td} text-xs`}>{thirdPartyLabel(item.thirdPartyIdNumber, item.thirdPartyName)}</td>
+                                <td className={`${tbl.td} text-xs`}>{item.costCenterName || "—"}</td>
+                                <td className={tbl.tdNum}>{money(item.debit)}</td>
+                                <td className={tbl.tdNum}>{money(item.credit)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot className={tbl.tfoot}>
+                            <tr>
+                              <td className={tbl.td} colSpan={3}>Total</td>
+                              <td className={`${tbl.tdNum} font-bold`}>{money(debit)}</td>
+                              <td className={`${tbl.tdNum} font-bold`}>{money(credit)}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
