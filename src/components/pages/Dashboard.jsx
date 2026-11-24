@@ -8,6 +8,7 @@ import translations from "../../translations";
 
 import UserManagementPage from "./UserManagementPage";
 import AppHeader from "../common/AppHeader";
+import GlobalBar from "../common/GlobalBar";
 import { LogoutRequestContext } from "../../context/logoutRequest";
 import { roleLabel, sortRoles } from "../../utils/roleLevel";
 import DocumentTypePage from "./DocumentTypePage";
@@ -342,7 +343,7 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
                 active={activeView === "journalEntry"}
                 onClick={() => changeView("journalEntry")}
                 shortcut={isAuthorizedOperational ? "F8" : undefined}
-                title={!isAuthorizedOperational ? undefined : language === "en" ? "F8: new entry from any screen" : "F8: nuevo comprobante desde cualquier pantalla"}
+                title={!isAuthorizedOperational ? undefined : language === "en" ? "F8: new entry from any screen" : "F8: nuevo documento desde cualquier pantalla"}
               >
                 {t.navJournalEntry}
               </NavItem>
@@ -484,6 +485,9 @@ function Dashboard({ user, onLogout, language, onLanguageChange }) {
 
       {/* CORE WORKSPACE CONTENT VIEWPORT */}
       <main className="min-w-0 flex-1 p-6">
+        {/* UI 2026-11-21: la sesión (empresa activa, F1, usuario/rol, cerrar
+            sesión) vive UNA vez aquí; AppHeader queda solo con título y acciones. */}
+        <GlobalBar language={language} />
         {activeView === "dashboard" && (
           <>
             <AppHeader title={t.dashboardTitle} subtitle={t.dashboardSubtitle} />

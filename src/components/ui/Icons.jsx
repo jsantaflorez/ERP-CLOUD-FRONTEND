@@ -41,3 +41,51 @@ export function IconClose({ className = base }) {
     </svg>
   );
 }
+
+// Íconos de acción de fila (2026-11-21): trazo (outline), heredan el color
+// del botón. El botón que los usa SIEMPRE lleva aria-label y title, porque
+// un ícono solo no le dice nada a un lector de pantalla.
+const stroke = {
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.8,
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+};
+
+export function IconEye({ className = base }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" {...stroke}>
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+export function IconPencil({ className = base }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" {...stroke}>
+      <path d="M4 20h4L19 9a2.1 2.1 0 00-3-3L5 17v3z" />
+      <path d="M14.5 7.5l2 2" />
+    </svg>
+  );
+}
+
+export function IconCopy({ className = base }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" {...stroke}>
+      <rect x="8" y="8" width="12" height="12" rx="2" />
+      <path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2" />
+    </svg>
+  );
+}
+
+export function IconHistory({ className = base }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" {...stroke}>
+      <path d="M3.5 12a8.5 8.5 0 101.9-5.4" />
+      <path d="M3.5 4v3.5H7" />
+      <path d="M12 7.5V12l3 2" />
+    </svg>
+  );
+}

@@ -355,8 +355,8 @@ export const SHORTCUTS = [
     items: [
       { keys: ["F1"], es: "Mostrar u ocultar esta ayuda (también dentro de un campo)", en: "Show or hide this help (works inside a field too)" },
       { keys: ["?"], es: "Mostrar esta ayuda (fuera de un campo de texto)", en: "Show this help (outside a text field)" },
-      { keys: ["F8"], es: "Nuevo comprobante desde cualquier pantalla (si hay un formulario abierto, primero ciérrelo)", en: "New journal entry from any screen (close any open form first)" },
-      { keys: ["Insert"], es: "Crear un registro nuevo en la pantalla actual (catálogos y comprobantes)", en: "Create a new record on the current screen (catalogs and entries)" },
+      { keys: ["F8"], es: "Nuevo documento desde cualquier pantalla (si hay un formulario abierto, primero ciérrelo)", en: "New journal entry from any screen (close any open form first)" },
+      { keys: ["Insert"], es: "Crear un registro nuevo en la pantalla actual (catálogos y documentos)", en: "Create a new record on the current screen (catalogs and entries)" },
     ],
   },
   {
@@ -388,7 +388,7 @@ export const SHORTCUTS = [
   },
   {
     id: "journal",
-    title: { es: "Captura de comprobantes", en: "Journal entry capture" },
+    title: { es: "Captura de documentos", en: "Journal entry capture" },
     items: [
       { keys: ["Enter", "Tab"], es: "Siguiente campo, siempre en el mismo orden (encabezado incluido); en la última línea crea una nueva; si la última línea está vacía, va a Guardar", en: "Next field, always in the same order (header included); on the last line creates a new one; if the last line is blank, goes to Save", short: { es: "siguiente campo", en: "next field" } },
       { keys: ["Shift+Enter", "Shift+Tab"], es: "Campo anterior (mismo orden, hacia atrás)", en: "Previous field (same order, backwards)", short: { es: "anterior", en: "previous" } },
@@ -398,7 +398,7 @@ export const SHORTCUTS = [
       { keys: [",", "."], es: "En Débito, Crédito y Base: escribir los centavos (los puntos de miles se ponen solos)", en: "In Debit, Credit and Base: start the cents (thousands separators are added automatically)" },
       { keys: ["F9"], es: "Autocuadrar la partida doble", en: "Auto-balance the double entry", short: { es: "autocuadrar", en: "auto-balance" } },
       { keys: ["Alt+Supr"], es: "Eliminar la línea actual", en: "Remove the current line", short: { es: "eliminar línea", en: "remove line" } },
-      { keys: ["Ctrl+Enter", "Ctrl+S"], es: "Guardar el comprobante", en: "Save the entry", short: { es: "guardar", en: "save" } },
+      { keys: ["Ctrl+Enter", "Ctrl+S"], es: "Guardar el documento", en: "Save the entry", short: { es: "guardar", en: "save" } },
       { keys: ["Esc"], es: "Cerrar las sugerencias sin salir del campo; fuera de ellas, cancelar (con confirmación)", en: "Close suggestions keeping focus; otherwise cancel (asks to confirm)", short: { es: "cancelar", en: "cancel" } },
     ],
   },

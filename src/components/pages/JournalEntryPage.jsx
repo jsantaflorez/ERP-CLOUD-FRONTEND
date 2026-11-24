@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
 import Field from "../ui/Field";
@@ -7,6 +8,7 @@ import Toast from "../ui/Toast";
 import StatusBadge from "../ui/StatusBadge";
 import LoadingState from "../ui/LoadingState";
 import Alert from "../ui/Alert";
+import { IconEye, IconPencil, IconCopy, IconHistory } from "../ui/Icons";
 import { inputClass, table as tbl } from "../ui/tokens";
 import { ROW_KBD, rowNavKeyDown, focusFirstRow, useSearchShortcut, focusFirstInvalidSoon, hintsFor, usePagerShortcut } from "../ui/keyboard";
 import { KeyboardHints, ExportMenu, ShortcutKbd } from "../ui/tableKit";
@@ -163,6 +165,189 @@ function newIdempotencyKey() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 }
 
+// Row action as an icon (UI 2026-11-21, pedido del usuario: Ver, Editar y
+// Duplicar como íconos para descargar la columna de acciones). The label goes
+// to aria-label AND title: a bare icon tells nothing to a screen reader, and
+// the tooltip is how a mouse user learns what it does. Anular stays as red
+// text on purpose: it is the destructive action.
+function RowIconButton({ label, onClick, children, ...rest }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="relative inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+      {...rest}
+    >
+      {children}
+    </button>
+  );
+}
+
+// Keeps the icons of every row in the same columns when one is not shown.
+const ROW_ICON_SLOT = <span className="inline-block h-7 w-7" aria-hidden="true" />;
+
+// ---------------------------------------------------------------------------
+// UI 2026-11-21 (pedido del usuario, estándar ERP corporativo):
+//  - Período del listado: por defecto "Este mes" (antes "todo"), con atajos
+//    Mes anterior / Este año / Rango personalizado / Todo.
+//  - Fecha en DD/MM/AAAA, como se lee en Colombia.
+//  - Por fila, una sola acción visible (Editar si se puede, si no Ver) y el
+//    resto en el menú ⋮ (Ver, Historial, Duplicar, Anular).
+// ---------------------------------------------------------------------------
+function isoLocal(d) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+// Fechas inclusivas del atajo; "all" y "custom" no imponen fechas aquí.
+function periodRange(preset, today = new Date()) {
+  const y = today.getFullYear();
+  const m = today.getMonth();
+  switch (preset) {
+    case "thisMonth": return { start: isoLocal(new Date(y, m, 1)), end: isoLocal(new Date(y, m + 1, 0)) };
+    case "lastMonth": return { start: isoLocal(new Date(y, m - 1, 1)), end: isoLocal(new Date(y, m, 0)) };
+    case "thisYear": return { start: `${y}-01-01`, end: `${y}-12-31` };
+    default: return { start: "", end: "" };
+  }
+}
+
+const PERIOD_PRESETS = ["thisMonth", "lastMonth", "thisYear", "custom", "all"];
+
+// "2026-11-21" -> "21/11/2026" (solo presentación; el valor sigue en ISO).
+function formatDateDMY(iso) {
+  const [y, m, d] = String(iso || "").slice(0, 10).split("-");
+  return y && m && d ? `${d}/${m}/${y}` : (iso || "");
+}
+
+function IconDots() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+      <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zm0 5.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zm1.5 7a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
+    </svg>
+  );
+}
+
+// The one visible action of a row: Editar when the entry can still be
+// changed, Ver otherwise. Enter on the row clicks it (data-row-primary).
+function RowPrimaryButton({ label, title, icon, onClick }) {
+  return (
+    <button
+      type="button"
+      data-row-primary=""
+      onClick={onClick}
+      title={title || label}
+      className="inline-flex h-7 w-[5.5rem] items-center gap-1.5 rounded-md px-2 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+// ⋮ menu of a row. Rendered in a portal with position:fixed so the table's
+// own scroll box never clips it (last rows open it upwards). Keys stay inside
+// the menu (stopPropagation): ↑/↓ move, Enter picks, Escape/Tab close --
+// otherwise the table's row navigation (keyboard.js) would also react.
+function RowMenu({ label, items }) {
+  const [pos, setPos] = useState(null);
+  const buttonRef = useRef(null);
+  const menuRef = useRef(null);
+  const open = pos != null;
+
+  const toggle = () => {
+    if (open) { setPos(null); return; }
+    const r = buttonRef.current.getBoundingClientRect();
+    const height = items.length * 34 + 16;
+    const up = r.bottom + height > window.innerHeight - 8;
+    setPos({
+      right: Math.max(8, window.innerWidth - r.right),
+      top: up ? undefined : r.bottom + 4,
+      bottom: up ? window.innerHeight - r.top + 4 : undefined,
+    });
+  };
+
+  useEffect(() => {
+    if (!open) return undefined;
+    menuRef.current?.querySelector("[role=menuitem]")?.focus();
+    const onPointerDown = (e) => {
+      if (!menuRef.current?.contains(e.target) && !buttonRef.current?.contains(e.target)) setPos(null);
+    };
+    const onScroll = (e) => {
+      if (!menuRef.current?.contains(e.target)) setPos(null);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [open]);
+
+  const onMenuKeyDown = (e) => {
+    e.stopPropagation();
+    const nodes = Array.from(menuRef.current?.querySelectorAll("[role=menuitem]") || []);
+    const i = nodes.indexOf(document.activeElement);
+    if (e.key === "ArrowDown") { e.preventDefault(); nodes[(i + 1) % nodes.length]?.focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); nodes[(i - 1 + nodes.length) % nodes.length]?.focus(); }
+    else if (e.key === "Home") { e.preventDefault(); nodes[0]?.focus(); }
+    else if (e.key === "End") { e.preventDefault(); nodes[nodes.length - 1]?.focus(); }
+    else if (e.key === "Escape") { e.preventDefault(); setPos(null); buttonRef.current?.focus(); }
+    else if (e.key === "Tab") { setPos(null); }
+  };
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label}
+        title={label}
+        onClick={toggle}
+        className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-slate-100 hover:text-slate-900 ${open ? "bg-slate-100 text-slate-900" : "text-slate-500"}`}
+      >
+        <IconDots />
+      </button>
+      {open && createPortal(
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label={label}
+          onKeyDown={onMenuKeyDown}
+          style={{ position: "fixed", top: pos.top, bottom: pos.bottom, right: pos.right }}
+          className="z-50 min-w-[12rem] rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+        >
+          {items.map((it) => (
+            <div key={it.key}>
+              {it.separatorBefore && <div className="my-1 border-t border-slate-100" role="separator" />}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setPos(null); it.onClick(); }}
+                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm focus:outline-none ${
+                  it.danger
+                    ? "text-red-700 hover:bg-red-50 focus:bg-red-50"
+                    : "text-slate-700 hover:bg-slate-50 focus:bg-slate-100"
+                }`}
+              >
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">{it.icon}</span>
+                <span className="flex-1">{it.label}</span>
+                {it.hint && <kbd className="font-sans text-[10px] text-slate-400">{it.hint}</kbd>}
+              </button>
+            </div>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
 // canManageEntries (Bloque 0.8, auditoria 2026-11-19): only administrators
 // may edit or annul a saved entry -- the backend enforces it with
 // @PreAuthorize on PUT and on PATCH .../annul. Dashboard passes it from the
@@ -193,10 +378,33 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
     loadEntries(0, size);
   };
   const [searchTerm, setSearchTerm] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  // UI 2026-11-21: el listado abre en "Este mes" (antes mostraba todo).
+  const [periodPreset, setPeriodPreset] = useState("thisMonth");
+  const [startDate, setStartDate] = useState(() => periodRange("thisMonth").start);
+  const [endDate, setEndDate] = useState(() => periodRange("thisMonth").end);
+  const changePeriodPreset = (preset) => {
+    setPeriodPreset(preset);
+    // "Rango personalizado" parte de las fechas actuales para ajustarlas.
+    if (preset !== "custom") {
+      const range = periodRange(preset);
+      setStartDate(range.start);
+      setEndDate(range.end);
+    }
+  };
+  // Closed months/years, so each row offers Editar only when its period is
+  // open (the backend still validates on save; this just avoids offering an
+  // action that would end in "período cerrado").
+  const [closedPeriods, setClosedPeriods] = useState(() => ({ months: new Set(), years: new Set() }));
+  const isEntryPeriodOpen = (entry) => {
+    const [y, m] = String(entry?.entryDate || "").split("-").map(Number);
+    if (!y || !m) return true;
+    return !closedPeriods.years.has(y) && !closedPeriods.months.has(`${y}-${m}`);
+  };
   const [documentTypeId, setDocumentTypeId] = useState("");
   const [viewingEntry, setViewingEntry] = useState(null);
+  // true when the detail was opened from the list's history icon: it opens
+  // with "Historial de cambios" already expanded.
+  const [viewingHistory, setViewingHistory] = useState(false);
   const [exporting, setExporting] = useState(false);
   // NEW (2026-10-22, user-reported UX issue): the backend already refused
   // to save an edit whose entryDate falls in a closed period, but only
@@ -240,6 +448,9 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   const [toast, setToast] = useState(null);
   // null = creating a new entry; otherwise the id of the entry being edited.
   const [editingId, setEditingId] = useState(null);
+  // Number of the document being edited (CC-6...), shown in the form title
+  // so the user always knows WHICH document is open (2026-11-21).
+  const [editingDocumentNumber, setEditingDocumentNumber] = useState(null);
   // 2026-11-04: third parties that were already on the entry being edited.
   // They stay selectable even if deactivated afterwards (the backend allows
   // keeping them on that entry, but never using them in NEW vouchers).
@@ -283,7 +494,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
     es: {
       title: "Documentos Contables",
       subtitle: "Captura y Consulta de Movimientos Contables",
-      newEntry: "+ Nuevo Comprobante",
+      newEntry: "+ Nuevo Documento",
       newShortcutHint: "(tecla Insert)",
       backToList: "← Volver al listado",
       search: "Buscar por número de documento o descripción...",
@@ -291,7 +502,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       searchButton: "Buscar",
       allDocumentTypes: "Todos los tipos",
       exportExcel: "Exportar Excel", exportPdf: "Exportar PDF", exporting: "Exportando...",
-      exportTitle: "Relación de Asientos Contables",
+      exportTitle: "Relación de Documentos Contables",
       generatedAt: "Generado",
       totalsRow: "Totales",
       exportFilterSearch: "Búsqueda", exportFilterFrom: "Desde", exportFilterTo: "Hasta",
@@ -299,14 +510,18 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       docNumber: "N° Documento", date: "Fecha", description: "Descripción",
       totalDebit: "Total Débito", totalCredit: "Total Crédito", status: "Estado",
       annulled: "Anulado", active: "Activo", view: "Ver",
-      noResults: "No hay asientos registrados",
-      loading: "Cargando asientos...",
-      alreadyInEntry: "Ya hay un comprobante abierto. Guárdelo (Ctrl+Enter) o cancélelo (Esc) antes de iniciar otro.",
-      page: "Página", of: "de", prev: "Anterior", next: "Siguiente", exportLabel: "Exportar", perPage: "Por página", showing: "Mostrando", entriesLabel: "comprobantes",
-      entryDate: "Fecha del Asiento", documentType: "Tipo de Documento",
+      periodLabel: "Período", typeLabel: "Tipo", statusLabel: "Estado", reversed: "Reversado",
+      period_thisMonth: "Este mes", period_lastMonth: "Mes anterior", period_thisYear: "Este año",
+      period_custom: "Rango personalizado", period_all: "Todo",
+      moreActions: "Más acciones del documento", periodClosedShort: "período cerrado",
+      noResults: "No hay documentos registrados",
+      loading: "Cargando documentos...",
+      alreadyInEntry: "Ya hay un documento abierto. Guárdelo (Ctrl+Enter) o cancélelo (Esc) antes de iniciar otro.",
+      page: "Página", of: "de", prev: "Anterior", next: "Siguiente", exportLabel: "Exportar", perPage: "Por página", showing: "Mostrando", entriesLabel: "documentos",
+      entryDate: "Fecha del Documento", documentType: "Tipo de Documento",
       selectDocumentType: "Seleccione un tipo de documento",
       generalDescription: "Descripción General",
-      items: "Líneas del Documento", addLine: "+ Agregar Asiento",
+      items: "Líneas del Documento", addLine: "+ Agregar línea",
       removeLine: "Quitar",
       repeatPreviousThirdParty: "Repetir tercero anterior",
       repeatPreviousCostCenter: "Repetir centro de costo anterior",
@@ -321,12 +536,12 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       debit: "Débito", credit: "Crédito", lineDescription: "Descripción (opcional)",
       totalDebitLabel: "Total Débitos:", totalCreditLabel: "Total Créditos:",
       difference: "Diferencia:", balanced: "Balanceado", unbalanced: "Descuadrado",
-      save: "Guardar Asiento", cancel: "Cancelar", saving: "Guardando...",
+      save: "Guardar Documento", cancel: "Cancelar", saving: "Guardando...",
       saveShortcutHint: "Ctrl+Enter: Guardar · F9: Auto-cuadrar · Esc: Cancelar",
-      unsavedChangesWarning: "Hay cambios sin guardar en este comprobante. ¿Desea salir de todos modos? Se perderán los datos digitados.",
+      unsavedChangesWarning: "Hay cambios sin guardar en este documento. ¿Desea salir de todos modos? Se perderán los datos digitados.",
       loadingCatalogs: "Cargando catálogos...",
       errorConn: "Error de conexión con el servidor.",
-      successCreate: "¡Asiento contable creado!",
+      successCreate: "¡Documento contable creado!",
       required: "Obligatorio",
       itemRequiresThirdParty: "Esta cuenta requiere un tercero",
       itemRequiresCostCenter: "Esta cuenta requiere un centro de costo",
@@ -336,45 +551,45 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       itemTaxBaseBelowMinimum: "La base no alcanza el mínimo configurado para este impuesto -- no aplica. Elimine la línea o aumente la base",
       taxComputedHint: "Calculado automáticamente a partir de la base y la tarifa del impuesto",
       needAtLeastOneAccount: "Seleccione una cuenta en cada línea",
-      unbalancedError: "El asiento no está balanceado. Los débitos deben ser iguales a los créditos.",
+      unbalancedError: "El documento no está balanceado. Los débitos deben ser iguales a los créditos.",
       itemsAllBlankError: "Agregue al menos una línea con una cuenta antes de guardar.",
-      detailTitle: "Detalle del Asiento",
+      detailTitle: "Detalle del Documento",
       close: "Cerrar",
       printPdf: "Imprimir PDF",
-      voucherTitle: "Comprobante Contable",
+      voucherTitle: "Documento Contable",
       printedAtLabel: "Impreso",
       noThirdParty: "— Sin tercero —", noCostCenter: "— Sin centro de costo —",
       documentTypeHint: "Próximo número",
       edit: "Editar", annul: "Anular", duplicate: "Duplicar",
-      duplicateTitle: "Duplicar Comprobante",
-      duplicateBody: "Se creará un nuevo comprobante con las mismas líneas (cuenta, tercero, centro de costo, valores), bajo un número nuevo. Elija la fecha del nuevo comprobante.",
-      duplicateDateLabel: "Fecha del Nuevo Comprobante",
+      duplicateTitle: "Duplicar Documento",
+      duplicateBody: "Se creará un nuevo documento con las mismas líneas (cuenta, tercero, centro de costo, valores), bajo un número nuevo. Elija la fecha del nuevo documento.",
+      duplicateDateLabel: "Fecha del Nuevo Documento",
       duplicateDescriptionLabel: "Descripción",
-      duplicateDescriptionHint: "Se usará como descripción general del nuevo comprobante y también quedará en la descripción de cada línea.",
+      duplicateDescriptionHint: "Se usará como descripción general del nuevo documento y también quedará en la descripción de cada línea.",
       duplicateConfirm: "Duplicar",
       duplicateCancel: "Cancelar",
-      successDuplicate: "¡Comprobante duplicado!",
-      editingTitle: "Editar Asiento",
-      cannotEditClosingEntry: "Un comprobante de cierre de año no se puede editar.",
-      cannotEditNoPermission: "Solo un administrador puede editar o anular un comprobante guardado.",
+      successDuplicate: "¡Documento duplicado!",
+      editingTitle: "Editar documento",
+      cannotEditClosingEntry: "Un documento de cierre de año no se puede editar.",
+      cannotEditNoPermission: "Solo un administrador puede editar o anular un documento guardado.",
       historyButton: "Historial de cambios",
       historyHide: "Ocultar historial",
       historyTitle: "Versiones anteriores",
       historyLoading: "Cargando historial…",
-      historyEmpty: "Este comprobante no ha sido editado ni anulado desde que se guardó.",
-      historyHint: "Cada versión muestra el comprobante tal como estaba justo antes del cambio.",
+      historyEmpty: "Este documento no ha sido editado ni anulado desde que se guardó.",
+      historyHint: "Cada versión muestra el documento tal como estaba justo antes del cambio.",
       historyActionUPDATE: "Antes de editarlo",
       historyActionANNUL: "Antes de anularlo",
       historyBy: "por",
       historyVersion: "Versión",
-      periodClosedBanner: "🔒 Comprobante en periodo cerrado — Solo lectura",
-      periodClosedCannotSave: "Este comprobante pertenece a un periodo cerrado y no se puede guardar.",
-      documentTypeLocked: "El tipo de documento no se puede modificar una vez creado el asiento.",
-      loadingEntry: "Cargando asiento...",
-      successUpdate: "¡Asiento contable actualizado!",
-      successAnnul: "¡Asiento contable anulado!",
-      annulTitle: "Anular Asiento",
-      annulBody: "Esta acción neutraliza el efecto financiero del asiento (los débitos y créditos quedan en cero). El número de documento y el registro permanecen para el historial, pero ya no podrá editarse ni volver a anularse.",
+      periodClosedBanner: "🔒 Documento en periodo cerrado — Solo lectura",
+      periodClosedCannotSave: "Este documento pertenece a un periodo cerrado y no se puede guardar.",
+      documentTypeLocked: "El tipo de documento no se puede modificar una vez creado el documento.",
+      loadingEntry: "Cargando documento...",
+      successUpdate: "¡Documento contable actualizado!",
+      successAnnul: "¡Documento contable anulado!",
+      annulTitle: "Anular Documento",
+      annulBody: "Esta acción neutraliza el efecto financiero del documento (los débitos y créditos quedan en cero). El número de documento y el registro permanecen para el historial, pero ya no podrá editarse ni volver a anularse.",
       annulReasonLabel: "Motivo de anulación",
       annulReasonPlaceholder: "Explique el motivo (obligatorio para el registro de auditoría)",
       annulReasonRequired: "El motivo de anulación es obligatorio",
@@ -384,7 +599,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
     en: {
       title: "Journal Entries",
       subtitle: "Capture and Query Accounting Movements",
-      newEntry: "+ New Voucher",
+      newEntry: "+ New Document",
       newShortcutHint: "(Insert key)",
       backToList: "← Back to list",
       search: "Search by document number or description...",
@@ -400,6 +615,10 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       docNumber: "Doc. Number", date: "Date", description: "Description",
       totalDebit: "Total Debit", totalCredit: "Total Credit", status: "Status",
       annulled: "Annulled", active: "Active", view: "View",
+      periodLabel: "Period", typeLabel: "Type", statusLabel: "Status", reversed: "Reversed",
+      period_thisMonth: "This month", period_lastMonth: "Last month", period_thisYear: "This year",
+      period_custom: "Custom range", period_all: "All",
+      moreActions: "More actions for document", periodClosedShort: "period closed",
       noResults: "No journal entries yet",
       loading: "Loading entries...",
       alreadyInEntry: "An entry is already open. Save it (Ctrl+Enter) or cancel it (Esc) before starting another.",
@@ -407,7 +626,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       entryDate: "Entry Date", documentType: "Document Type",
       selectDocumentType: "Select a document type",
       generalDescription: "General Description",
-      items: "Entry Lines", addLine: "+ Add Entry",
+      items: "Entry Lines", addLine: "+ Add line",
       removeLine: "Remove",
       repeatPreviousThirdParty: "Repeat previous third party",
       repeatPreviousCostCenter: "Repeat previous cost center",
@@ -455,7 +674,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       duplicateConfirm: "Duplicate",
       duplicateCancel: "Cancel",
       successDuplicate: "Journal entry duplicated!",
-      editingTitle: "Edit Entry",
+      editingTitle: "Edit document",
       cannotEditClosingEntry: "A year-end closing entry cannot be edited.",
       cannotEditNoPermission: "Only an administrator can edit or annul a saved entry.",
       historyButton: "Change history",
@@ -611,11 +830,34 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
     }
   };
 
+  const loadClosedPeriods = async () => {
+    try {
+      const res = await api.get("/v1/accounting-periods/closed");
+      const list = Array.isArray(res.data?.data) ? res.data.data : [];
+      const months = new Set();
+      const years = new Set();
+      list.forEach((p) => {
+        months.add(`${Number(p.year)}-${Number(p.month)}`);
+        if (p.isYearClose ?? p.yearClose) years.add(Number(p.year));
+      });
+      setClosedPeriods({ months, years });
+    } catch {
+      // Sin la lista se ofrecen las acciones como antes; el backend decide.
+    }
+  };
+
   useEffect(() => {
-    loadEntries(0);
     loadCatalogs();
+    loadClosedPeriods();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // UI 2026-11-21: período y tipo se aplican al cambiarlos (ya no hay botón
+  // Buscar); el texto se aplica con Enter. También hace la carga inicial.
+  useEffect(() => {
+    loadEntries(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startDate, endDate, documentTypeId]);
 
   // Only accounts eligible for posting are offered -- the backend rejects
   // inactive or non-posting (summary) accounts anyway, so filtering here
@@ -833,6 +1075,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
     pristineFormRef.current = JSON.stringify(blank);
     setErrors({});
     setEditingId(null);
+    setEditingDocumentNumber(null);
     setPeriodClosed(false);
     setView("form");
   };
@@ -900,6 +1143,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       setForm(loadedForm);
       pristineFormRef.current = JSON.stringify(loadedForm);
       setEditingId(entry.id);
+      setEditingDocumentNumber(data.documentNumber || entry.documentNumber || null);
       editingVersionRef.current = data.version ?? null;
       setKeptThirdPartyIds(new Set(loadedForm.items.map((i) => i.thirdPartyId).filter(Boolean)));
       setPeriodClosed(Boolean(data.periodClosed));
@@ -916,6 +1160,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
     setForm(emptyForm());
     setErrors({});
     setEditingId(null);
+    setEditingDocumentNumber(null);
     setPeriodClosed(false);
   };
 
@@ -970,6 +1215,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       setForm(loadedForm);
       pristineFormRef.current = JSON.stringify(loadedForm);
       setEditingId(id);
+      setEditingDocumentNumber(data.documentNumber || null);
       editingVersionRef.current = data.version ?? null;
       setKeptThirdPartyIds(new Set(loadedForm.items.map((i) => i.thirdPartyId).filter(Boolean)));
       setPeriodClosed(Boolean(data.periodClosed));
@@ -1290,7 +1536,8 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   // the list loaded, which can be stale if another user (or another
   // browser) saved the entry since. Show the row at once, then replace it
   // with the current entry from the server.
-  const openViewEntry = async (entry) => {
+  const openViewEntry = async (entry, { history = false } = {}) => {
+    setViewingHistory(history);
     setViewingEntry(entry);
     try {
       const response = await api.get(`/v1/journal-entries/${entry.id}`);
@@ -1403,6 +1650,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
         title={t.title}
         subtitle={t.subtitle}
         tenantId={activeTenantId}
+        meta={view === "list" && totalElements != null ? `${totalElements} ${t.entriesLabel}` : null}
         actions={
           view === "list" ? (
             <>
@@ -1429,6 +1677,8 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
           entries={entries}
           loading={loading}
           searchTerm={searchTerm} setSearchTerm={setSearchTerm}
+          periodPreset={periodPreset} onPeriodPresetChange={changePeriodPreset}
+          isEntryPeriodOpen={isEntryPeriodOpen}
           startDate={startDate} setStartDate={setStartDate}
           endDate={endDate} setEndDate={setEndDate}
           documentTypeId={documentTypeId} setDocumentTypeId={setDocumentTypeId}
@@ -1442,6 +1692,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
           onPageSizeChange={changePageSize}
           onPageChange={(p) => loadEntries(p)}
           onViewEntry={openViewEntry}
+          onViewHistory={(entry) => openViewEntry(entry, { history: true })}
           onEditEntry={openEditEntry}
           onAnnulEntry={openAnnulModal}
           onDuplicateEntry={openDuplicateModal}
@@ -1460,6 +1711,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
           loadingCatalogs={loadingCatalogs}
           loadingEntry={loadingEntry}
           isEditing={editingId != null}
+          editingDocumentNumber={editingDocumentNumber}
           periodClosed={periodClosed}
           documentTypes={activeDocumentTypes}
           postableAccounts={postableAccounts}
@@ -1491,6 +1743,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
           companyName={companyLegalName || activeTenantId}
           onClose={() => setViewingEntry(null)}
           language={language}
+          initialShowHistory={viewingHistory}
         />
       )}
 
@@ -1535,6 +1788,7 @@ function JeListView({
   currentPage, totalPages, totalElements, pageSize, onPageSizeChange,
   onPageChange, onViewEntry, onEditEntry, onAnnulEntry, onDuplicateEntry,
   exporting, onExportExcel, onExportPdf, canManageEntries = false, canCreateEntries = false,
+  onViewHistory, periodPreset = "all", onPeriodPresetChange, isEntryPeriodOpen = () => true,
 }) {
   // UI 2026-11-10: "/" o F3 llevan a la búsqueda; ↓ baja a la tabla, donde
   // ↑/↓ recorren comprobantes, Enter edita (o ve, si no es editable) y
@@ -1549,8 +1803,14 @@ function JeListView({
   });
   return (
     <>
-      <div className="flex flex-col gap-3 md:flex-row md:items-end">
-        <div className="flex-1">
+      {/* UI 2026-11-21: filtros en una sola línea, sin etiquetas en
+          mayúsculas ni botón Buscar: período y tipo se aplican al cambiar,
+          el texto con Enter. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[16rem] flex-1">
+          <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.45 4.39l3.08 3.08a.75.75 0 11-1.06 1.06l-3.08-3.08A7 7 0 012 9z" clipRule="evenodd" />
+          </svg>
           <input
             ref={searchRef}
             type="text"
@@ -1562,46 +1822,56 @@ function JeListView({
               else if (e.key === "ArrowDown" && focusFirstRow(e.currentTarget)) e.preventDefault();
             }}
             placeholder={t.search}
-            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none shadow-sm focus:border-blue-500 transition-all"
+            aria-label={t.search}
+            className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none transition-colors focus:border-blue-600 focus:ring-2 focus:ring-blue-600/15"
           />
         </div>
-        <div className="flex flex-wrap gap-2">
-          <label className="flex flex-col text-[10px] font-black text-slate-500 uppercase tracking-widest">
-            {t.from}
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
-              className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500" />
-          </label>
-          <label className="flex flex-col text-[10px] font-black text-slate-500 uppercase tracking-widest">
-            {t.to}
-            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
-              className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500" />
-          </label>
-          <label className="flex flex-col text-[10px] font-black text-slate-500 uppercase tracking-widest">
-            {t.documentType}
-            <select value={documentTypeId} onChange={(e) => setDocumentTypeId(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && onSearch()}
-              className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500">
-              <option value="">{t.allDocumentTypes}</option>
-              {documentTypes.map((d) => (
-                <option key={d.id} value={d.id}>{d.code} - {d.name}</option>
-              ))}
-            </select>
-          </label>
-          <Button variant="primary" onClick={onSearch} className="self-end">{t.searchButton}</Button>
-          {/* UI 2026-11-10: Exportar en la misma fila de los filtros (antes
-              ocupaba una fila propia encima de la tabla). */}
-          <div className="self-end">
-            <ExportMenu
-              label={exporting ? t.exporting : t.exportLabel}
-              onExcel={onExportExcel}
-              onPdf={onExportPdf}
-              disabled={exporting}
-            />
+
+        <label className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white pl-3 text-sm text-slate-500 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-600/15">
+          {t.periodLabel}:
+          <select
+            value={periodPreset}
+            onChange={(e) => onPeriodPresetChange(e.target.value)}
+            className="cursor-pointer rounded-lg bg-transparent py-2 pr-2 font-semibold text-slate-800 outline-none"
+          >
+            {PERIOD_PRESETS.map((p) => (
+              <option key={p} value={p}>{t[`period_${p}`]}</option>
+            ))}
+          </select>
+        </label>
+
+        {periodPreset === "custom" && (
+          <div className="flex items-center gap-1.5 text-sm text-slate-500">
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} aria-label={t.from} title={t.from}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-800 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/15" />
+            <span aria-hidden="true">–</span>
+            <input type="date" value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} aria-label={t.to} title={t.to}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-800 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/15" />
           </div>
+        )}
+
+        <label className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white pl-3 text-sm text-slate-500 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-600/15">
+          {t.typeLabel}:
+          <select value={documentTypeId} onChange={(e) => setDocumentTypeId(e.target.value)}
+            className="max-w-[14rem] cursor-pointer truncate rounded-lg bg-transparent py-2 pr-2 font-semibold text-slate-800 outline-none">
+            <option value="">{t.allDocumentTypes}</option>
+            {documentTypes.map((d) => (
+              <option key={d.id} value={d.id}>{d.code} - {d.name}</option>
+            ))}
+          </select>
+        </label>
+
+        <div className="ml-auto">
+          <ExportMenu
+            label={exporting ? t.exporting : t.exportLabel}
+            onExcel={onExportExcel}
+            onPdf={onExportPdf}
+            disabled={exporting}
+          />
         </div>
       </div>
 
-      <div className={`${tbl.wrapper} max-h-[calc(100vh-16rem)] min-h-[16rem] overflow-y-auto`}>
+      <div className={`${tbl.wrapper} max-h-[calc(100vh-15rem)] min-h-[16rem] overflow-y-auto`}>
         {loading ? (
           <LoadingState label={t.loading} />
         ) : (
@@ -1609,17 +1879,18 @@ function JeListView({
             <thead className={tbl.thead}>
               <tr>
                 <th scope="col" className={tbl.th}>{t.docNumber}</th>
-                <th scope="col" className={tbl.th}>{t.documentType}</th>
                 <th scope="col" className={tbl.th}>{t.date}</th>
+                <th scope="col" className={tbl.th}>{t.documentType}</th>
                 <th scope="col" className={tbl.th}>{t.description}</th>
-                <th scope="col" className={tbl.thNum}>{t.totalDebit}</th>
-                <th scope="col" className={tbl.thNum}>{t.totalCredit}</th>
+                <th scope="col" className={`${tbl.thNum} !pl-6 !pr-4`}>{t.totalDebit}</th>
+                <th scope="col" className={`${tbl.thNum} !pl-6 !pr-4`}>{t.totalCredit}</th>
+                <th scope="col" className={tbl.th}>{t.statusLabel}</th>
                 <th scope="col" className={tbl.thActions}><span className="sr-only">{t.actions || "Acciones"}</span></th>
               </tr>
             </thead>
             <tbody className={tbl.tbody} onKeyDown={rowNavKeyDown}>
               {entries.length === 0 ? (
-                <tr><td colSpan={7} className={tbl.empty}>{t.noResults}</td></tr>
+                <tr><td colSpan={8} className={tbl.empty}>{t.noResults}</td></tr>
               ) : (
                 entries.map((entry) => {
                   const totalDebit = (entry.items || []).reduce((s, i) => s + (i.debit || 0), 0);
@@ -1628,54 +1899,80 @@ function JeListView({
                   // editable -- see CLOSING_DOC_TYPE_CODE's comment above.
                   const entryDocType = documentTypes.find((d) => String(d.id) === String(entry.documentTypeId));
                   const isClosingEntry = entryDocType?.code === CLOSING_DOC_TYPE_CODE;
+                  // UI 2026-11-21: Editar only while the entry's period is
+                  // open; Anular too (the backend rejects both otherwise).
+                  const periodOpen = isEntryPeriodOpen(entry);
+                  const canEdit = !entry.annulled && !isClosingEntry && canManageEntries && periodOpen;
+                  const canAnnul = !entry.annulled && canManageEntries && periodOpen;
+                  const canDuplicate = !entry.annulled && !isClosingEntry && canCreateEntries;
+                  const menuItems = [];
+                  if (canEdit) menuItems.push({ key: "view", label: t.view, icon: <IconEye />, onClick: () => onViewEntry(entry) });
+                  if (entry.historyCount > 0) menuItems.push({ key: "history", label: `${t.historyButton} (${entry.historyCount})`, icon: <IconHistory />, onClick: () => onViewHistory(entry) });
+                  if (canDuplicate) menuItems.push({ key: "duplicate", label: `${t.duplicate}…`, icon: <IconCopy />, onClick: () => onDuplicateEntry(entry) });
+                  if (canAnnul) menuItems.push({ key: "annul", label: `${t.annul}…`, danger: true, hint: "Supr", separatorBefore: menuItems.length > 0, onClick: () => onAnnulEntry(entry) });
                   return (
                     <tr key={entry.id} {...ROW_KBD} className={`${tbl.row} focus:outline-none focus-visible:bg-blue-50 focus-visible:shadow-[inset_3px_0_0_#1d4ed8] ${entry.annulled ? "text-slate-500" : ""}`}>
-                      {/* UI review 2026-11-04: la columna Estado se quitó; casi todo
-                          está Activo, así que solo se marca la excepción (Anulado)
-                          junto al número, con insignia de texto + símbolo. */}
-                      {/* UI 2026-11-10: una sola línea por comprobante (antes la
-                          insignia "Anulado" y la descripción en 2 líneas
-                          duplicaban la altura de la fila). */}
                       <td className={`${tbl.td} !align-middle whitespace-nowrap`}>
                         <span className={`font-semibold tabular-nums ${entry.annulled ? "text-slate-500 line-through decoration-slate-400" : "text-slate-900"}`}>
                           {entry.documentNumber}
                         </span>
-                        {entry.annulled && (
-                          <span className="ml-2 align-middle"><StatusBadge tone="danger">{t.annulled}</StatusBadge></span>
-                        )}
                       </td>
+                      <td className={`${tbl.td} !align-middle whitespace-nowrap tabular-nums`}>{formatDateDMY(entry.entryDate)}</td>
                       <td className={`${tbl.td} !align-middle max-w-[12rem] truncate`} title={documentTypeLabel(entry)}>{documentTypeLabel(entry)}</td>
-                      <td className={`${tbl.td} !align-middle whitespace-nowrap tabular-nums`}>{entry.entryDate}</td>
                       <td className={`${tbl.td} !align-middle w-full max-w-0 truncate`} title={entry.description || ""}>
                         {entry.description}
                       </td>
-                      <td className={`${tbl.tdNum} !align-middle`}>{money(totalDebit)}</td>
-                      <td className={`${tbl.tdNum} !align-middle`}>{money(totalCredit)}</td>
+                      <td className={`${tbl.tdNum} !align-middle min-w-[9.5rem] !pl-6 !pr-4`}>{money(totalDebit)}</td>
+                      <td className={`${tbl.tdNum} !align-middle min-w-[9.5rem] !pl-6 !pr-4`}>{money(totalCredit)}</td>
+                      <td className={`${tbl.td} !align-middle whitespace-nowrap`}>
+                        {/* Fase 3 (reverso ANULACION) will send the reverse
+                            voucher's number; until then an annulled entry
+                            shows "Anulado" with its reason as tooltip. */}
+                        {entry.annulled ? (
+                          entry.reversalDocumentNumber ? (
+                            <span className="inline-flex items-center gap-1.5" title={entry.annulmentReason || ""}>
+                              <StatusBadge tone="warning">{t.reversed}</StatusBadge>
+                              <span className="text-xs tabular-nums text-slate-500">{entry.reversalDocumentNumber}</span>
+                            </span>
+                          ) : (
+                            <span title={entry.annulmentReason || ""}><StatusBadge tone="danger">{t.annulled}</StatusBadge></span>
+                          )
+                        ) : (
+                          <StatusBadge tone="success">{t.active}</StatusBadge>
+                        )}
+                      </td>
                       <td className={`${tbl.tdActions} !align-middle group-hover:bg-slate-50`}>
-                        <div className="flex justify-end gap-0.5">
-                          <Button variant="ghost" size="xs" onClick={() => onViewEntry(entry)} data-row-primary={entry.annulled || isClosingEntry || !canManageEntries ? "" : undefined}>{t.view}</Button>
-                          {/* An annulled entry is immutable (backend rejects
-                              both PUT and PATCH .../annul on it), so neither
-                              action is offered once it's annulled. */}
-                          {!entry.annulled && (
-                            <>
-                              {!isClosingEntry && (
-                                <>
-                                  {canManageEntries && (
-                                    <Button variant="ghost" size="xs" onClick={() => onEditEntry(entry)} data-row-primary="">{t.edit}</Button>
-                                  )}
-                                  {/* NEW (2026-10-22, user request): hidden for a closing
-                                      entry for the same reason Editar is -- it's a
-                                      system-generated entry, not a template to reuse. */}
-                                  {canCreateEntries && (
-                                    <Button variant="ghost" size="xs" onClick={() => onDuplicateEntry(entry)}>{t.duplicate}</Button>
-                                  )}
-                                </>
-                              )}
-                              {canManageEntries && (
-                                <Button variant="dangerGhost" size="xs" onClick={() => onAnnulEntry(entry)} data-row-delete="" title={`${t.annul} (Supr)`}>{t.annul}</Button>
-                              )}
-                            </>
+                        <div className="flex items-center justify-end gap-0.5">
+                          {/* History stays visible as an indicator (with its
+                              count) only when the entry was edited/annulled. */}
+                          {entry.historyCount > 0 ? (
+                            <RowIconButton
+                              label={`${t.historyButton} (${entry.historyCount})`}
+                              onClick={() => onViewHistory(entry)}
+                            >
+                              <IconHistory />
+                              <span className="absolute -right-0.5 -top-0.5 min-w-[1rem] rounded-full bg-amber-500 px-1 text-[10px] font-bold leading-4 text-white">
+                                {entry.historyCount}
+                              </span>
+                            </RowIconButton>
+                          ) : ROW_ICON_SLOT}
+                          {canEdit ? (
+                            <RowPrimaryButton label={t.edit} icon={<IconPencil />} onClick={() => onEditEntry(entry)} />
+                          ) : (
+                            <RowPrimaryButton
+                              label={t.view}
+                              title={!periodOpen && !entry.annulled ? `${t.view} · ${t.periodClosedShort}` : t.view}
+                              icon={<IconEye />}
+                              onClick={() => onViewEntry(entry)}
+                            />
+                          )}
+                          {menuItems.length > 0 ? (
+                            <RowMenu label={`${t.moreActions} ${entry.documentNumber}`} items={menuItems} />
+                          ) : ROW_ICON_SLOT}
+                          {/* Supr on the row still opens Anular (keyboard.js
+                              clicks [data-row-delete]) now that it lives in ⋮. */}
+                          {canAnnul && (
+                            <button type="button" tabIndex={-1} aria-hidden="true" className="hidden" data-row-delete="" onClick={() => onAnnulEntry(entry)} />
                           )}
                         </div>
                       </td>
@@ -1731,7 +2028,7 @@ function JeListView({
 // ============================================================
 
 function JeFormView({
-  t, form, errors, saving, loadingCatalogs, loadingEntry, isEditing, periodClosed,
+  t, form, errors, saving, loadingCatalogs, loadingEntry, isEditing, editingDocumentNumber, periodClosed,
   documentTypes, postableAccounts, activeThirdParties, activeCostCenters, accountById,
   taxByAccountId,
   accounts, costCenters, language,
@@ -2023,7 +2320,14 @@ function JeFormView({
     <>
     <form ref={formRef} data-kbd-context="journal" onSubmit={onSubmit} onKeyDown={handleFormKeyDown} className="space-y-6">
       {isEditing && (
-        <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">{t.editingTitle}</h3>
+        <h3 className="flex items-baseline gap-3 text-slate-500">
+          <span className="text-sm font-black uppercase tracking-widest">{t.editingTitle}</span>
+          {editingDocumentNumber && (
+            <span className="rounded-lg bg-slate-800 px-2.5 py-0.5 text-lg font-bold tabular-nums text-white">
+              {editingDocumentNumber}
+            </span>
+          )}
+        </h3>
       )}
 
       {/* NEW (2026-10-22, user-reported UX issue): previously this entry
@@ -2404,21 +2708,18 @@ function JeFormView({
 // Read-only detail modal
 // ============================================================
 
-function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose, language = "es" }) {
+function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose, language = "es", initialShowHistory = false }) {
   const totalDebit = (entry.items || []).reduce((s, i) => s + (i.debit || 0), 0);
   const totalCredit = (entry.items || []).reduce((s, i) => s + (i.credit || 0), 0);
 
   // Bloque A (2026-11-21): previous versions of this entry, loaded on demand
   // (GET /history). Each one is the entry exactly as it was before an edit
   // or the annulment, with who changed it and when.
-  const [showHistory, setShowHistory] = useState(false);
+  const [showHistory, setShowHistory] = useState(initialShowHistory);
   const [history, setHistory] = useState(null); // null = not loaded yet
   const [historyError, setHistoryError] = useState("");
 
-  const toggleHistory = async () => {
-    const next = !showHistory;
-    setShowHistory(next);
-    if (!next || history !== null) return;
+  const loadHistory = async () => {
     setHistoryError("");
     try {
       const response = await api.get(`/v1/journal-entries/${entry.id}/history`);
@@ -2427,6 +2728,19 @@ function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose, lang
       setHistory([]);
       setHistoryError(getApiErrorMessage(error, language, t.errorConn));
     }
+  };
+
+  // Opened from the list's history icon: load it right away.
+  useEffect(() => {
+    if (initialShowHistory) loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const toggleHistory = async () => {
+    const next = !showHistory;
+    setShowHistory(next);
+    if (!next || history !== null) return;
+    await loadHistory();
   };
 
   // NEW (2026-09-30): print the voucher as a standalone PDF, launched from
