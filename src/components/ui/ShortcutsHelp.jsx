@@ -24,7 +24,7 @@ const TEXT = {
     print: "Imprimir",
     close: "Cerrar",
     or: "o",
-    printTitle: "ERP Cloud — Atajos de teclado",
+    printTitle: "ZORU — Atajos de teclado",
   },
   en: {
     title: "Keyboard shortcuts",
@@ -33,7 +33,7 @@ const TEXT = {
     print: "Print",
     close: "Close",
     or: "or",
-    printTitle: "ERP Cloud — Keyboard shortcuts",
+    printTitle: "ZORU — Keyboard shortcuts",
   },
 };
 

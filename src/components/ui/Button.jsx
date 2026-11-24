@@ -1,4 +1,4 @@
-// Button.jsx — Átomo reutilizable para IntEgraERP
+// Button.jsx — Átomo reutilizable para ZORU
 // Uso (ver jerarquía en tokens.js):
 //   <Button variant="primary" onClick={fn}>+ Nuevo</Button>
 //   <Button variant="secondary" onClick={fn}>Cancelar</Button>

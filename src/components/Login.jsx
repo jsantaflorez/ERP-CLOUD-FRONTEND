@@ -193,7 +193,7 @@ function Login({ onLogin, language, onLanguageChange }) {
         </div>
 
         <div className="mb-6 text-center">
-          <img src={logo} alt="Logo ERP" className="mx-auto mb-3 h-20 w-20 object-contain" />
+          <img src={logo} alt="ZORU" className="mx-auto mb-3 h-20 w-20 object-contain" />
           <h1 className="text-2xl font-bold text-slate-800">{t.loginTitle}</h1>
           <p className="text-sm text-slate-500">{t.loginSubtitle}</p>
         </div>

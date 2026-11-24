@@ -1,4 +1,4 @@
-// tokens.js — Sistema de diseño centralizado de IntEgraERP
+// tokens.js — Sistema de diseño centralizado de ZORU
 // Si cambias un estilo aquí, cambia en TODA la aplicación.
 //
 // UI review 2026-11-04: jerarquía de botones explícita, contrastes WCAG AA
