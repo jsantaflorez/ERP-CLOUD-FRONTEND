@@ -86,6 +86,8 @@ function JournalBookPage({ language = "es" }) {
       credit: "Crédito",
       totalsRow: "Total",
       annulled: "Anulado",
+      reversalOf: "Reverso de",
+      reversedBy: "Reverso",
       generatedAt: "Generado",
       errorConn: "Error de conexión con el servidor.",
       exportExcel: "Exportar Excel",
@@ -119,6 +121,8 @@ function JournalBookPage({ language = "es" }) {
       credit: "Credit",
       totalsRow: "Total",
       annulled: "Voided",
+      reversalOf: "Reverses",
+      reversedBy: "Reverse",
       generatedAt: "Generated",
       errorConn: "Server connection error.",
       exportExcel: "Export to Excel",
@@ -241,8 +245,12 @@ function JournalBookPage({ language = "es" }) {
   // the backend.
   const displayedEntries = useMemo(() => {
     if (!Array.isArray(entries)) return entries;
-    if (statusFilter === "ACTIVE") return entries.filter((entry) => !entry.annulled);
-    if (statusFilter === "ANNULLED") return entries.filter((entry) => entry.annulled);
+    // Bloque A fase 3 (2026-11-24): an ANULACION reverse entry belongs with
+    // the annulled document it cancels -- "No anulados" leaves both out and
+    // "Anulados" shows both, so each filter's totals stay meaningful.
+    const isAnnulledSide = (entry) => entry.annulled || entry.reversalOfEntryId != null;
+    if (statusFilter === "ACTIVE") return entries.filter((entry) => !isAnnulledSide(entry));
+    if (statusFilter === "ANNULLED") return entries.filter(isAnnulledSide);
     return entries;
   }, [entries, statusFilter]);
 
@@ -284,8 +292,8 @@ function JournalBookPage({ language = "es" }) {
       const { totalDebit, totalCredit } = entryTotals(entry);
       rows.push([
         `${entry.documentNumber}   ·   ${entry.entryDate}   ·   ${documentTypeLabel(entry)}${
-          entry.annulled ? `   ·   ${t.annulled}` : ""
-        }`,
+          entry.annulled ? `   ·   ${t.annulled}${entry.reversalDocumentNumber ? ` (${t.reversedBy} ${entry.reversalDocumentNumber})` : ""}` : ""
+        }${entry.reversalOfDocumentNumber ? `   ·   ${t.reversalOf} ${entry.reversalOfDocumentNumber}` : ""}`,
       ]);
       if (entry.description) rows.push([entry.description]);
       rows.push([t.account, t.thirdParty, t.costCenter, t.debit, t.credit]);
@@ -359,10 +367,14 @@ function JournalBookPage({ language = "es" }) {
         cursorY += 5;
       }
 
-      if (entry.annulled) {
+      if (entry.annulled || entry.reversalOfDocumentNumber) {
         doc.setFontSize(9);
         doc.setTextColor(185, 28, 28);
-        doc.text(`${t.annulled}${entry.annulmentReason ? `: ${entry.annulmentReason}` : ""}`, 14, cursorY);
+        doc.text(
+          entry.annulled
+            ? `${t.annulled}${entry.annulmentReason ? `: ${entry.annulmentReason}` : ""}${entry.reversalDocumentNumber ? ` -- ${t.reversedBy} ${entry.reversalDocumentNumber}` : ""}`
+            : `${t.reversalOf} ${entry.reversalOfDocumentNumber}`,
+          14, cursorY);
         doc.setTextColor(0);
         cursorY += 5;
       }
@@ -540,6 +552,12 @@ function JournalBookPage({ language = "es" }) {
                     {entry.annulled && (
                       <div className="mb-3 rounded-lg bg-red-50 px-4 py-2 text-xs text-red-700">
                         <b>{t.annulled}</b>{entry.annulmentReason ? `: ${entry.annulmentReason}` : ""}
+                        {entry.reversalDocumentNumber ? ` -- ${t.reversedBy} ${entry.reversalDocumentNumber}` : ""}
+                      </div>
+                    )}
+                    {entry.reversalOfDocumentNumber && (
+                      <div className="mb-3 rounded-lg bg-slate-100 px-4 py-2 text-xs text-slate-700">
+                        <b>{t.reversalOf} {entry.reversalOfDocumentNumber}</b>
                       </div>
                     )}
 

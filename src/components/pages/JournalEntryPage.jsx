@@ -42,6 +42,20 @@ const CLOSING_DOC_TYPE_CODE = "CIERRE";
 // grabar. Sí se muestra al EDITAR un comprobante que ya es APERTURA
 // (decisión 2026-11-19: el comprobante de apertura es editable).
 const OPENING_DOC_TYPE_CODE = "APERTURA";
+// Bloque A fase 3 (2026-11-24): ANULACION is the reserved type of the reverse
+// entries the backend creates when a document is annulled (ANU-1, ANU-2...).
+// Never offered in the form (REVERSAL_DOC_TYPE_RESERVED on the backend).
+const REVERSAL_DOC_TYPE_CODE = "ANULACION";
+
+// Status text of an entry for exports (Fase 3: reverse entries and the
+// reverse that cancelled an annulled one).
+function entryStatusText(t, entry) {
+  if (entry.reversalOfDocumentNumber) return `${t.reversalOf} ${entry.reversalOfDocumentNumber}`;
+  if (entry.annulled) {
+    return entry.reversalDocumentNumber ? `${t.annulled} (${t.reversed} ${entry.reversalDocumentNumber})` : t.annulled;
+  }
+  return t.active;
+}
 
 const emptyItem = () => ({
   accountId: "",
@@ -179,6 +193,24 @@ function RowIconButton({ label, onClick, children, ...rest }) {
       title={label}
       className="relative inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
       {...rest}
+    >
+      {children}
+    </button>
+  );
+}
+
+// Fase 3 (2026-11-24): link from an annulled document to its reverse and
+// back. A real button (keyboard/screen reader), styled as a link; tabIndex
+// -1 so Tab through the table still lands on the row actions first.
+function LinkedDocButton({ label, onClick, children }) {
+  return (
+    <button
+      type="button"
+      tabIndex={-1}
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className="text-xs font-medium tabular-nums text-blue-700 hover:underline"
     >
       {children}
     </button>
@@ -511,6 +543,10 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       totalDebit: "Total Débito", totalCredit: "Total Crédito", status: "Estado",
       annulled: "Anulado", active: "Activo", view: "Ver",
       periodLabel: "Período", typeLabel: "Tipo", statusLabel: "Estado", reversed: "Reversado",
+      reversalOf: "Reverso de", reversalBadge: "Reverso",
+      reversalNotice: "Este documento lo generó el sistema al anular {doc}: tiene los mismos valores con débitos y créditos intercambiados. No se puede editar, duplicar ni anular.",
+      reversedNotice: "Su efecto se canceló con el documento de reverso {doc}, de la misma fecha.",
+      successAnnulReverse: "Documento anulado. Reverso generado: {doc}",
       period_thisMonth: "Este mes", period_lastMonth: "Mes anterior", period_thisYear: "Este año",
       period_custom: "Rango personalizado", period_all: "Todo",
       moreActions: "Más acciones del documento", periodClosedShort: "período cerrado",
@@ -589,7 +625,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       successUpdate: "¡Documento contable actualizado!",
       successAnnul: "¡Documento contable anulado!",
       annulTitle: "Anular Documento",
-      annulBody: "Esta acción neutraliza el efecto financiero del documento (los débitos y créditos quedan en cero). El número de documento y el registro permanecen para el historial, pero ya no podrá editarse ni volver a anularse.",
+      annulBody: "Se creará un documento de reverso (tipo ANULACION, ANU-…) con la misma fecha y los débitos y créditos intercambiados, que cancela el efecto de este documento. El original queda intacto y marcado como anulado. Ninguno de los dos podrá editarse ni volver a anularse.",
       annulReasonLabel: "Motivo de anulación",
       annulReasonPlaceholder: "Explique el motivo (obligatorio para el registro de auditoría)",
       annulReasonRequired: "El motivo de anulación es obligatorio",
@@ -616,6 +652,10 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       totalDebit: "Total Debit", totalCredit: "Total Credit", status: "Status",
       annulled: "Annulled", active: "Active", view: "View",
       periodLabel: "Period", typeLabel: "Type", statusLabel: "Status", reversed: "Reversed",
+      reversalOf: "Reverses", reversalBadge: "Reverse",
+      reversalNotice: "The system created this document when {doc} was annulled: same amounts with debits and credits swapped. It cannot be edited, duplicated or annulled.",
+      reversedNotice: "Its effect was cancelled by the reverse document {doc}, on the same date.",
+      successAnnulReverse: "Entry annulled. Reverse created: {doc}",
       period_thisMonth: "This month", period_lastMonth: "Last month", period_thisYear: "This year",
       period_custom: "Custom range", period_all: "All",
       moreActions: "More actions for document", periodClosedShort: "period closed",
@@ -694,7 +734,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
       successUpdate: "Journal entry updated!",
       successAnnul: "Journal entry annulled!",
       annulTitle: "Annul Entry",
-      annulBody: "This neutralizes the entry's financial effect (debits and credits are zeroed out). The document number and record remain for history, but it can no longer be edited or annulled again.",
+      annulBody: "A reverse document (type ANULACION, ANU-…) will be created on the same date with debits and credits swapped, cancelling this document's effect. The original stays intact and marked as annulled. Neither can be edited or annulled again.",
       annulReasonLabel: "Annulment reason",
       annulReasonPlaceholder: "Explain the reason (required for the audit trail)",
       annulReasonRequired: "An annulment reason is required",
@@ -905,7 +945,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   // hides it.
   const activeDocumentTypes = useMemo(
     () => documentTypes.filter(
-      (d) => d.active && d.code !== CLOSING_DOC_TYPE_CODE
+      (d) => d.active && d.code !== CLOSING_DOC_TYPE_CODE && d.code !== REVERSAL_DOC_TYPE_CODE
         && (d.code !== OPENING_DOC_TYPE_CODE || (editingId != null && String(d.id) === String(form.documentTypeId)))
     ),
     [documentTypes, editingId, form.documentTypeId]
@@ -975,7 +1015,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
             entry.description || "",
             totalDebit,
             totalCredit,
-            entry.annulled ? t.annulled : t.active,
+            entryStatusText(t, entry),
           ];
         }),
         [t.totalsRow, "", "", "", grandDebit, grandCredit, ""],
@@ -1027,7 +1067,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
           entry.description || "",
           money(totalDebit),
           money(totalCredit),
-          entry.annulled ? t.annulled : t.active,
+          entryStatusText(t, entry),
         ];
       });
       body.push([t.totalsRow, "", "", "", money(grandDebit), money(grandCredit), ""]);
@@ -1578,7 +1618,8 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
         reason: annulReason.trim(),
       });
       if (response.data?.success) {
-        showToast(t.successAnnul);
+        const reverseNumber = response.data?.data?.reversalDocumentNumber;
+        showToast(reverseNumber ? t.successAnnulReverse.replace("{doc}", reverseNumber) : t.successAnnul);
         closeAnnulModal();
         loadEntries(currentPage);
       } else {
@@ -1902,9 +1943,11 @@ function JeListView({
                   // UI 2026-11-21: Editar only while the entry's period is
                   // open; Anular too (the backend rejects both otherwise).
                   const periodOpen = isEntryPeriodOpen(entry);
-                  const canEdit = !entry.annulled && !isClosingEntry && canManageEntries && periodOpen;
-                  const canAnnul = !entry.annulled && canManageEntries && periodOpen;
-                  const canDuplicate = !entry.annulled && !isClosingEntry && canCreateEntries;
+                  // Fase 3: a reverse (ANULACION) entry is read-only.
+                  const isReversal = entry.reversalOfEntryId != null || entryDocType?.code === REVERSAL_DOC_TYPE_CODE;
+                  const canEdit = !entry.annulled && !isReversal && !isClosingEntry && canManageEntries && periodOpen;
+                  const canAnnul = !entry.annulled && !isReversal && canManageEntries && periodOpen;
+                  const canDuplicate = !entry.annulled && !isReversal && !isClosingEntry && canCreateEntries;
                   const menuItems = [];
                   if (canEdit) menuItems.push({ key: "view", label: t.view, icon: <IconEye />, onClick: () => onViewEntry(entry) });
                   if (entry.historyCount > 0) menuItems.push({ key: "history", label: `${t.historyButton} (${entry.historyCount})`, icon: <IconHistory />, onClick: () => onViewHistory(entry) });
@@ -1925,18 +1968,34 @@ function JeListView({
                       <td className={`${tbl.tdNum} !align-middle min-w-[9.5rem] !pl-6 !pr-4`}>{money(totalDebit)}</td>
                       <td className={`${tbl.tdNum} !align-middle min-w-[9.5rem] !pl-6 !pr-4`}>{money(totalCredit)}</td>
                       <td className={`${tbl.td} !align-middle whitespace-nowrap`}>
-                        {/* Fase 3 (reverso ANULACION) will send the reverse
-                            voucher's number; until then an annulled entry
-                            shows "Anulado" with its reason as tooltip. */}
-                        {entry.annulled ? (
-                          entry.reversalDocumentNumber ? (
-                            <span className="inline-flex items-center gap-1.5" title={entry.annulmentReason || ""}>
-                              <StatusBadge tone="warning">{t.reversed}</StatusBadge>
-                              <span className="text-xs tabular-nums text-slate-500">{entry.reversalDocumentNumber}</span>
-                            </span>
-                          ) : (
-                            <span title={entry.annulmentReason || ""}><StatusBadge tone="danger">{t.annulled}</StatusBadge></span>
-                          )
+                        {/* Fase 3 (2026-11-24): an annulled original shows
+                            "Anulado" + the number of its ANU reverse, and
+                            the reverse shows "Reverso de <original>"; both
+                            numbers open the other document. */}
+                        {isReversal ? (
+                          <span className="inline-flex items-center gap-1.5" title={entry.description || ""}>
+                            <StatusBadge tone="neutral">{t.reversalBadge}</StatusBadge>
+                            {entry.reversalOfDocumentNumber && (
+                              <LinkedDocButton
+                                label={`${t.reversalOf} ${entry.reversalOfDocumentNumber}`}
+                                onClick={() => onViewEntry({ id: entry.reversalOfEntryId, documentNumber: entry.reversalOfDocumentNumber, items: [] })}
+                              >
+                                {t.reversalOf} {entry.reversalOfDocumentNumber}
+                              </LinkedDocButton>
+                            )}
+                          </span>
+                        ) : entry.annulled ? (
+                          <span className="inline-flex items-center gap-1.5" title={entry.annulmentReason || ""}>
+                            <StatusBadge tone="danger">{t.annulled}</StatusBadge>
+                            {entry.reversalDocumentNumber && (
+                              <LinkedDocButton
+                                label={`${t.reversed} ${entry.reversalDocumentNumber}`}
+                                onClick={() => onViewEntry({ id: entry.reversalEntryId, documentNumber: entry.reversalDocumentNumber, items: [] })}
+                              >
+                                → {entry.reversalDocumentNumber}
+                              </LinkedDocButton>
+                            )}
+                          </span>
                         ) : (
                           <StatusBadge tone="success">{t.active}</StatusBadge>
                         )}
@@ -2873,6 +2932,14 @@ function JeDetailModal({ t, entry, documentTypeLabel, companyName, onClose, lang
       {entry.annulled && (
         <Alert tone="error" className="mb-4" title={t.annulled}>
           {entry.annulmentReason || null}
+          {entry.reversalDocumentNumber && (
+            <div className={entry.annulmentReason ? "mt-1" : ""}>{t.reversedNotice.replace("{doc}", entry.reversalDocumentNumber)}</div>
+          )}
+        </Alert>
+      )}
+      {entry.reversalOfDocumentNumber && (
+        <Alert tone="info" className="mb-4" title={`${t.reversalOf} ${entry.reversalOfDocumentNumber}`}>
+          {t.reversalNotice.replace("{doc}", entry.reversalOfDocumentNumber)}
         </Alert>
       )}
 
