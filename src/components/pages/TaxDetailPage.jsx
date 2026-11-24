@@ -8,6 +8,7 @@ import { getApiErrorMessage } from "../../constants/apiErrors";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { PeriodPresetSelect } from "../ui/PeriodPresetSelect";
 import {
   addPdfReportHeader,
   addPdfRunningHeader,
@@ -438,6 +439,8 @@ function TaxDetailPage({ language = "es" }) {
         onSubmit={handleGenerate}
         className="flex flex-wrap items-end gap-4 rounded-xl border border-gray-100 bg-white p-5 shadow-sm"
       >
+        {/* UI 2026-11-24: atajos de período (ver ui/PeriodPresetSelect). */}
+        <PeriodPresetSelect startDate={startDate} endDate={endDate} onChange={(s, e) => { setStartDate(s); setEndDate(e); }} language={language} bimesters />
         <div className="flex flex-col gap-1">
           <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.startDate}

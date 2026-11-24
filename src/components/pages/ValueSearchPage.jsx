@@ -18,6 +18,7 @@ import {
 } from "../../utils/reportExport";
 import { thirdPartyLabel } from "../../utils/thirdPartyLabel";
 
+import { PeriodPresetSelect } from "../ui/PeriodPresetSelect";
 // NEW (2026-10-25, user request): "Buscador de Movimientos por Valor" --
 // an audit tool for the "Gestión y Terceros" report group, same family
 // as IncompleteMovementsPage.jsx (whose "Editar" cross-navigation into
@@ -471,6 +472,8 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
         onSubmit={handleGenerate}
         className="flex flex-wrap items-end gap-4 rounded-xl border border-gray-100 bg-white p-5 shadow-sm"
       >
+        {/* UI 2026-11-24: atajos de período (ver ui/PeriodPresetSelect). */}
+        <PeriodPresetSelect startDate={startDate} endDate={endDate} onChange={(s, e) => { setStartDate(s); setEndDate(e); }} language={language} />
         <div className="flex flex-col gap-1">
           <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.startDate}

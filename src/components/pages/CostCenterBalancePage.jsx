@@ -17,6 +17,7 @@ import {
 } from "../../utils/reportExport";
 import { thirdPartyLabel } from "../../utils/thirdPartyLabel";
 
+import { PeriodPresetSelect } from "../ui/PeriodPresetSelect";
 // NEW (2026-09-21): third report screen, after Libro Auxiliar and Balance
 // de Comprobación. First built as a simple period-totals report (no
 // opening/closing balance), then upgraded the same day after the user
@@ -421,6 +422,8 @@ function CostCenterBalancePage({ language = "es" }) {
         onSubmit={handleGenerate}
         className="flex flex-wrap items-end gap-4 rounded-xl border border-gray-100 bg-white p-5 shadow-sm"
       >
+        {/* UI 2026-11-24: atajos de período (ver ui/PeriodPresetSelect). */}
+        <PeriodPresetSelect startDate={filters.startDate} endDate={filters.endDate} onChange={(s, e) => setFilters((prev) => ({ ...prev, startDate: s, endDate: e }))} language={language} />
         <div className="flex flex-col gap-1">
           <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.startDate}
