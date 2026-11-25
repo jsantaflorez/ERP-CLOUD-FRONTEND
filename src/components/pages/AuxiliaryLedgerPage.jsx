@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useElapsedSeconds, generatingLabel } from "../ui/useElapsedSeconds";
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
 import { ExportMenu } from "../ui/tableKit";
 import api from "../../services/api";
+import CatalogComboBox from "../ui/CatalogComboBox";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
 import * as XLSX from "xlsx";
@@ -20,9 +22,13 @@ import { PeriodPresetSelect } from "../ui/PeriodPresetSelect";
 // report endpoints, built as the first of what should eventually be a
 // full Reports section (Balance de Comprobación, Balance General, etc.
 // still pending).
+// Fase 4 (2026-11-24): cuentas de movimiento, activas o no (reporte
+// histórico); objeto estable para no relanzar la búsqueda.
+const REPORT_ACCOUNT_LOOKUP_PARAMS = { postingOnly: true, activeOnly: false };
+
 function AuxiliaryLedgerPage({ language = "es" }) {
-  const [accounts, setAccounts] = useState([]);
-  const [loadingAccounts, setLoadingAccounts] = useState(false);
+  // Fase 4 (2026-11-24): la cuenta se busca en el servidor (CatalogComboBox).
+  const [selectedAccount, setSelectedAccount] = useState(null);
 
   const today = todayLocalIso();
   const firstOfMonth = `${today.slice(0, 7)}-01`;
@@ -35,6 +41,8 @@ function AuxiliaryLedgerPage({ language = "es" }) {
 
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
+  // Fase 4 (2026-11-24): tiempo transcurrido en el botón mientras se genera.
+  const elapsedSeconds = useElapsedSeconds(loading);
   const [error, setError] = useState(null);
 
   const { session } = useAuth();
@@ -48,6 +56,7 @@ function AuxiliaryLedgerPage({ language = "es" }) {
       endDate: "Fecha Final",
       account: "Cuenta",
       allAccounts: "— Todas las cuentas —",
+      noAccountMatches: "Ninguna cuenta coincide",
       generate: "Generar",
       generating: "Generando...",
       loadingAccounts: "Cargando cuentas...",
@@ -85,6 +94,7 @@ function AuxiliaryLedgerPage({ language = "es" }) {
       endDate: "End Date",
       account: "Account",
       allAccounts: "— All accounts —",
+      noAccountMatches: "No matching accounts",
       generate: "Generate",
       generating: "Generating...",
       loadingAccounts: "Loading accounts...",
@@ -139,37 +149,6 @@ function AuxiliaryLedgerPage({ language = "es" }) {
     return docNumber || name;
   };
 
-  const loadAccounts = async () => {
-    setLoadingAccounts(true);
-    try {
-      const response = await api.get("/v1/chart-of-accounts", {
-        params: { size: 500, sort: "code" },
-      });
-      if (response.data && response.data.success) {
-        const payloadData = response.data.data;
-        const list = Array.isArray(payloadData)
-          ? payloadData
-          : Array.isArray(payloadData?.content)
-            ? payloadData.content
-            : [];
-        // Only posting (leaf) accounts actually receive movements — header
-        // accounts never appear in journal entry items, so offering them
-        // here would only ever return an empty ledger.
-        setAccounts(list.filter((a) => a.postingAccount));
-      }
-    } catch (error) {
-      // Non-fatal: the account picker just stays empty; "todas las
-      // cuentas" (the default) still works without this list.
-      console.error("Failed to load accounts for ledger filter", error);
-    } finally {
-      setLoadingAccounts(false);
-    }
-  };
-
-  useEffect(() => {
-    loadAccounts();
-  }, []);
-
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
     setFilters((prev) => ({ ...prev, [name]: value }));
@@ -188,9 +167,6 @@ function AuxiliaryLedgerPage({ language = "es" }) {
       return;
     }
 
-    const selectedAccount = filters.accountId
-      ? accounts.find((a) => String(a.id) === String(filters.accountId))
-      : null;
 
     const params = {
       startDate: filters.startDate,
@@ -464,23 +440,24 @@ function AuxiliaryLedgerPage({ language = "es" }) {
           <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.account}
           </label>
-          <select
+          <CatalogComboBox
+            kind="account"
             name="accountId"
+            language={language}
+            params={REPORT_ACCOUNT_LOOKUP_PARAMS}
+            allowClear
             value={filters.accountId}
-            onChange={handleFilterChange}
-            className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
-          >
-            <option value="">{t.allAccounts}</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.code} — {a.name}
-              </option>
-            ))}
-          </select>
+            selectedRecord={selectedAccount}
+            onChange={(id, record) => { setSelectedAccount(record); setFilters((prev) => ({ ...prev, accountId: id })); }}
+            className="relative"
+            inputClassName="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+            placeholder={t.allAccounts}
+            noResultsLabel={t.noAccountMatches}
+          />
         </div>
 
-        <Button type="submit" variant="primary" loading={loading} disabled={loadingAccounts}>
-          {loading ? t.generating : t.generate}
+        <Button type="submit" variant="primary" loading={loading}>
+          {loading ? generatingLabel(t.generating, elapsedSeconds) : t.generate}
         </Button>
       </form>
 

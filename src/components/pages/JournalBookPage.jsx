@@ -5,7 +5,7 @@ import { ExportMenu } from "../ui/tableKit";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
-import { completeContent } from "../../utils/completeResult";
+import { fetchJournalBook, journalBookProgressLabel } from "../../utils/journalBook";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -47,6 +47,10 @@ function JournalBookPage({ language = "es" }) {
   const [statusFilter, setStatusFilter] = useState("ALL");
 
   const [entries, setEntries] = useState(null); // null = not generated yet
+  // Fase 4 (2026-11-24): totales exactos del servidor (por estado) y avance
+  // del recorrido de páginas (ver utils/journalBook).
+  const [bookTotals, setBookTotals] = useState(null);
+  const [progress, setProgress] = useState(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState(null);
@@ -214,29 +218,23 @@ function JournalBookPage({ language = "es" }) {
 
     setLoading(true);
     setEntries(null);
+    setBookTotals(null);
     try {
-      // Same "fetch everything matching the filters in one shot, not
-      // paginated" pattern already used by JournalEntryPage's own export
-      // (fetchAllFilteredEntries) -- this report has no on-screen
-      // pagination of its own, it's meant to be read/printed as one
-      // continuous register, same as a real Libro Diario.
-      const response = await api.get("/v1/journal-entries", {
-        params: {
-          startDate,
-          endDate,
-          ...(documentTypeId ? { documentTypeId } : {}),
-          page: 0,
-          size: 10000,
-          sort: "entryDate,asc",
-        },
-      });
-      const pageData = response.data?.data;
-      // Bloque 0.4: refuse a truncated result instead of showing it.
-      setEntries(completeContent(pageData, language));
+      // Fase 4 (2026-11-24): ya no se pide "todo" en una página (Spring la
+      // cortaba en 2.000): se recorren páginas de 500 documentos por cursor
+      // y se verifica que lo recibido sume exactamente los totales del
+      // servidor; si no cuadra, se muestra un error, nunca un libro incompleto.
+      const { entries: allEntries, totals } = await fetchJournalBook(
+        { startDate, endDate, documentTypeId },
+        { language, onProgress: (loaded, total) => setProgress({ loaded, total }) }
+      );
+      setBookTotals(totals);
+      setEntries(allEntries);
     } catch (err) {
       setError(getApiErrorMessage(err, language, t.errorConn));
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   };
 
@@ -258,7 +256,11 @@ function JournalBookPage({ language = "es" }) {
   const hasRawData = Array.isArray(entries) && entries.length > 0;
   const hasData = Array.isArray(displayedEntries) && displayedEntries.length > 0;
 
+  // Fase 4 (2026-11-24): los totales generales son los del servidor
+  // (BigDecimal), del mismo lado del filtro de estado que se está viendo.
   const grandTotals = () => {
+    const bucket = bookTotals?.[{ ALL: "all", ACTIVE: "active", ANNULLED: "annulled" }[statusFilter]];
+    if (bucket) return { totalDebit: Number(bucket.debit), totalCredit: Number(bucket.credit) };
     let totalDebit = 0;
     let totalCredit = 0;
     (displayedEntries || []).forEach((entry) => {
@@ -497,7 +499,7 @@ function JournalBookPage({ language = "es" }) {
         </div>
 
         <Button type="submit" variant="primary" loading={loading}>
-          {loading ? t.generating : t.generate}
+          {loading ? (journalBookProgressLabel(progress, language) || t.generating) : t.generate}
         </Button>
       </form>
 

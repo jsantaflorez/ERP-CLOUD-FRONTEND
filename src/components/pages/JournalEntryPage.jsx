@@ -17,7 +17,7 @@ import { formatMoney } from "../../utils/amountFormat";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
-import { completeContent } from "../../utils/completeResult";
+import { fetchJournalBook } from "../../utils/journalBook";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -26,6 +26,8 @@ import AccountQuickCreateModal from "../common/AccountQuickCreateModal";
 import CostCenterQuickCreateModal from "../common/CostCenterQuickCreateModal";
 import ThirdPartyQuickCreateModal from "../common/ThirdPartyQuickCreateModal";
 import { thirdPartyLabel } from "../../utils/thirdPartyLabel";
+import CatalogComboBox from "../ui/CatalogComboBox";
+import { fetchCatalogByIds } from "../../utils/catalogLookup";
 
 // A brand-new line starts with both amounts empty -- the user picks either
 // a debit or a credit, never both (mirrors JournalEntryService's own rule).
@@ -448,9 +450,25 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   // entry -- see openNewEntry/openEditEntry/openEditEntryById/backToList.
   const [periodClosed, setPeriodClosed] = useState(false);
 
-  // Catalogs for the line-item pickers
-  const [accounts, setAccounts] = useState([]);
-  const [thirdParties, setThirdParties] = useState([]);
+  // Catalogs for the line-item pickers.
+  // Fase 4 (2026-11-24): cuentas y terceros ya NO se cargan enteros: los
+  // selectores buscan en el servidor (ui/CatalogComboBox). Aquí solo queda
+  // un caché por id de los registros que el documento usa (los elegidos,
+  // los de un documento que se abre para editar y los creados con F2), para
+  // que cada línea sepa si su cuenta pide tercero, centro de costo, etc.
+  const [accountCache, setAccountCache] = useState({});
+  const [thirdPartyCache, setThirdPartyCache] = useState({});
+  const rememberRecords = (setter) => (records) => {
+    const list = (Array.isArray(records) ? records : [records]).filter((r) => r && r.id != null);
+    if (list.length === 0) return;
+    setter((prev) => {
+      const next = { ...prev };
+      list.forEach((r) => { next[String(r.id)] = r; });
+      return next;
+    });
+  };
+  const rememberAccounts = rememberRecords(setAccountCache);
+  const rememberThirdParties = rememberRecords(setThirdPartyCache);
   const [costCenters, setCostCenters] = useState([]);
   const [documentTypes, setDocumentTypes] = useState([]);
   const [taxes, setTaxes] = useState([]);
@@ -787,34 +805,29 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
 
   // Fetches every entry matching the current filters, regardless of the
   // on-screen page -- the export has to cover "the filtered range", not
-  // just the 10 rows currently visible. A generous page size is the same
-  // pattern already used to pull whole catalogs (chart of accounts,
-  // third parties) in loadCatalogs() below.
+  // just the rows currently visible. Fase 4 (2026-11-24): por páginas de
+  // 500 documentos con cursor (utils/journalBook), verificadas contra los
+  // totales exactos del servidor; mismos filtros que el listado.
   const fetchAllFilteredEntries = async () => {
     const params = buildFilterParams();
-    params.set("page", "0");
-    params.set("size", "10000");
-    params.set("sort", "entryDate,asc");
-    const response = await api.get(`/v1/journal-entries?${params.toString()}`);
-    const pageData = response.data?.data;
-    // Bloque 0.4: an export must cover the whole filtered range, never
-    // the first 2.000 entries only.
-    return completeContent(pageData, language);
+    const { entries: allEntries } = await fetchJournalBook(
+      {
+        startDate: params.get("startDate"),
+        endDate: params.get("endDate"),
+        documentTypeId: params.get("documentTypeId"),
+        searchTerm: params.get("searchTerm"),
+      },
+      { language }
+    );
+    return allEntries;
   };
 
   const loadCatalogs = async () => {
     setLoadingCatalogs(true);
     try {
-      const [accRes, tpRes, ccRes, dtRes, taxRes, companyRes] = await Promise.allSettled([
-        // /v1/chart-of-accounts is paginated (Spring PageImpl), same as
-        // /v1/third-parties -- unlike /v1/cost-centers and
-        // /v1/document-types, which return flat arrays. Mirrors the
-        // Array.isArray(...) / .content fallback TaxPage and
-        // ChartOfAccountPage already use for this same endpoint, with a
-        // large page size so the picker sees the whole chart, not just
-        // the default first page.
-        api.get("/v1/chart-of-accounts", { params: { size: 1000, sort: "code" } }),
-        api.get("/v1/third-parties?page=0&size=1000"),
+      const [ccRes, dtRes, taxRes, companyRes] = await Promise.allSettled([
+        // Fase 4 (2026-11-24): cuentas y terceros ya no se cargan aquí
+        // (búsqueda en el servidor, ver ui/CatalogComboBox).
         api.get("/v1/cost-centers"),
         api.get("/v1/document-types"),
         // NEW (2026-10-14): the Tax catalog, so a line's account can be
@@ -827,27 +840,6 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
         api.get("/v1/companies/me"),
       ]);
 
-      if (accRes.status === "fulfilled") {
-        const raw = accRes.value.data?.data;
-        const list = Array.isArray(raw) ? raw : Array.isArray(raw?.content) ? raw.content : [];
-        setAccounts(list);
-      }
-      if (tpRes.status === "fulfilled") {
-        // ThirdPartyController#list is the one endpoint that returns the
-        // Spring Page<> directly, not wrapped in the usual ApiResponse
-        // {success, message, data} envelope every other endpoint here
-        // uses -- so response.data.content, not response.data.data.content.
-        // Mirrors the same fallback chain ThirdPartyPage.jsx already uses.
-        const raw = tpRes.value.data;
-        const list = Array.isArray(raw?.content)
-          ? raw.content
-          : Array.isArray(raw?.data)
-          ? raw.data
-          : Array.isArray(raw)
-          ? raw
-          : [];
-        setThirdParties(list);
-      }
       if (ccRes.status === "fulfilled") {
         const data = ccRes.value.data?.data ?? ccRes.value.data;
         setCostCenters(Array.isArray(data) ? data : []);
@@ -899,21 +891,47 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startDate, endDate, documentTypeId]);
 
-  // Only accounts eligible for posting are offered -- the backend rejects
-  // inactive or non-posting (summary) accounts anyway, so filtering here
-  // spares the user a doomed submit.
-  const postableAccounts = useMemo(
-    () => accounts.filter((a) => a.active && a.postingAccount),
-    [accounts]
-  );
-  // Active third parties, plus -- only while EDITING -- the inactive ones that
-  // were already on that entry, labelled "(inactivo)" so the user sees why.
-  const activeThirdParties = useMemo(() => {
+  // Fase 4 (2026-11-24): el selector de cuenta pide al servidor solo
+  // cuentas activas DE MOVIMIENTO (postingOnly/activeOnly), lo mismo que
+  // antes filtraba postableAccounts; el de tercero, solo activos. Los
+  // terceros inactivos que ya estaban en el documento que se edita se
+  // ofrecen además (extraRecords), marcados "(inactivo)".
+  const keptInactiveThirdParties = useMemo(() => {
+    if (!editingId) return [];
+    return [...keptThirdPartyIds]
+      .map((id) => thirdPartyCache[String(id)])
+      .filter((tp) => tp && !tp.active);
+  }, [editingId, keptThirdPartyIds, thirdPartyCache]);
+  const decorateThirdParty = useMemo(() => {
     const inactiveTag = language === "es" ? " (inactivo)" : " (inactive)";
-    return thirdParties
-      .filter((tp) => tp.active || (editingId && keptThirdPartyIds.has(String(tp.id))))
-      .map((tp) => (tp.active ? tp : { ...tp, legalDisplayName: `${tp.legalDisplayName}${inactiveTag}` }));
-  }, [thirdParties, editingId, keptThirdPartyIds, language]);
+    return (tp) => (tp.active ? tp : { ...tp, legalDisplayName: `${tp.legalDisplayName}${inactiveTag}` });
+  }, [language]);
+
+  // Resuelve por id las cuentas y terceros de las líneas que aún no están en
+  // el caché (documento abierto para editar, F4, etc.).
+  const requestedIdsRef = useRef({ account: new Set(), thirdParty: new Set() });
+  useEffect(() => {
+    const pending = (kind, cache, field) => {
+      const asked = requestedIdsRef.current[kind];
+      const ids = [...new Set(form.items.map((i) => i[field]).filter(Boolean).map(String))]
+        .filter((id) => !cache[id] && !asked.has(id));
+      ids.forEach((id) => asked.add(id));
+      return ids;
+    };
+    const accountIds = pending("account", accountCache, "accountId");
+    const thirdPartyIds = pending("thirdParty", thirdPartyCache, "thirdPartyId");
+    if (accountIds.length) {
+      fetchCatalogByIds("account", accountIds).then(rememberAccounts).catch(() => {
+        accountIds.forEach((id) => requestedIdsRef.current.account.delete(id));
+      });
+    }
+    if (thirdPartyIds.length) {
+      fetchCatalogByIds("thirdParty", thirdPartyIds).then(rememberThirdParties).catch(() => {
+        thirdPartyIds.forEach((id) => requestedIdsRef.current.thirdParty.delete(id));
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.items, accountCache, thirdPartyCache]);
   // NEW (2026-10-14): maps a chart-of-accounts id to its parameterized
   // Tax, if any -- enforced unique by the backend (uk_tax_company_account,
   // one Tax per account), so a plain object keyed by accountId is enough.
@@ -951,7 +969,8 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
     [documentTypes, editingId, form.documentTypeId]
   );
 
-  const accountById = (id) => accounts.find((a) => String(a.id) === String(id));
+  const accountById = (id) => (id ? accountCache[String(id)] : undefined);
+  const thirdPartyById = (id) => (id ? thirdPartyCache[String(id)] : undefined);
   const documentTypeById = (id) => documentTypes.find((d) => String(d.id) === String(id));
   const documentTypeLabel = (entry) => {
     const dt = documentTypeById(entry.documentTypeId);
@@ -1380,7 +1399,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   // used for a normal manual selection (so the usual accountId-change
   // side effect of clearing thirdPartyId/costCenterId still applies).
   const handleAccountCreated = (index, newAccount) => {
-    setAccounts((prev) => [...prev, newAccount].sort((a, b) => a.code.localeCompare(b.code)));
+    rememberAccounts(newAccount);
     handleItemChange(index, "accountId", String(newAccount.id));
   };
 
@@ -1396,7 +1415,7 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
   // appending here is enough to make the new third party immediately
   // pickable.
   const handleThirdPartyCreated = (index, newThirdParty) => {
-    setThirdParties((prev) => [...prev, newThirdParty].sort((a, b) => a.documentNumber.localeCompare(b.documentNumber)));
+    rememberThirdParties(newThirdParty);
     handleItemChange(index, "thirdPartyId", String(newThirdParty.id));
   };
 
@@ -1755,12 +1774,14 @@ function JournalEntryPage({ language = "es", onDirtyChange, openEntryId, onOpenE
           editingDocumentNumber={editingDocumentNumber}
           periodClosed={periodClosed}
           documentTypes={activeDocumentTypes}
-          postableAccounts={postableAccounts}
-          activeThirdParties={activeThirdParties}
           activeCostCenters={activeCostCenters}
           accountById={accountById}
+          thirdPartyById={thirdPartyById}
+          rememberAccounts={rememberAccounts}
+          rememberThirdParties={rememberThirdParties}
+          keptInactiveThirdParties={keptInactiveThirdParties}
+          decorateThirdParty={decorateThirdParty}
           taxByAccountId={taxByAccountId}
-          accounts={accounts}
           costCenters={costCenters}
           language={language}
           totals={totals}
@@ -2088,9 +2109,10 @@ function JeListView({
 
 function JeFormView({
   t, form, errors, saving, loadingCatalogs, loadingEntry, isEditing, editingDocumentNumber, periodClosed,
-  documentTypes, postableAccounts, activeThirdParties, activeCostCenters, accountById,
+  documentTypes, activeCostCenters, accountById, thirdPartyById,
+  rememberAccounts, rememberThirdParties, keptInactiveThirdParties, decorateThirdParty,
   taxByAccountId,
-  accounts, costCenters, language,
+  costCenters, language,
   totals, onHeaderChange, onItemChange, onAddLine, onRemoveLine, onSubmit, onCancel,
   onAccountCreated, onCostCenterCreated, onThirdPartyCreated,
 }) {
@@ -2512,9 +2534,8 @@ function JeFormView({
                 // never came up in 40 years of real accounting work and
                 // only added confusion.)
                 const prevItem = index > 0 ? form.items[index - 1] : null;
-                const prevThirdParty = prevItem?.thirdPartyId
-                  ? activeThirdParties.find((tp) => String(tp.id) === String(prevItem.thirdPartyId))
-                  : null;
+                const prevThirdPartyRecord = prevItem?.thirdPartyId ? thirdPartyById(prevItem.thirdPartyId) : null;
+                const prevThirdParty = prevThirdPartyRecord ? decorateThirdParty(prevThirdPartyRecord) : null;
                 const prevCostCenter = prevItem?.costCenterId
                   ? activeCostCenters.find((c) => String(c.id) === String(prevItem.costCenterId))
                   : null;
@@ -2523,10 +2544,13 @@ function JeFormView({
                   <tr key={index} onKeyDown={(e) => handleRowKeyDown(e, index)}>
                     <td className="px-3 py-2 align-top">
                       <div className="flex gap-1">
-                        <AccountComboBox
-                          accounts={postableAccounts}
+                        <CatalogComboBox
+                          kind="account"
+                          params={ACCOUNT_LOOKUP_PARAMS}
+                          language={language}
                           value={item.accountId}
-                          onChange={(id) => onItemChange(index, "accountId", id)}
+                          selectedRecord={acc || null}
+                          onChange={(id, record) => { rememberAccounts(record); onItemChange(index, "accountId", id); }}
                           onSelected={(account) => handleAccountSelected(index, account)}
                           onRetreat={() => retreatFocusBefore(index, "account")}
                           registerRef={registerFieldRef(index, "account")}
@@ -2547,10 +2571,15 @@ function JeFormView({
                       {acc?.requiresThirdParty ? (
                         <>
                           <div className="flex gap-1">
-                            <ThirdPartyComboBox
-                              thirdParties={activeThirdParties}
+                            <CatalogComboBox
+                              kind="thirdParty"
+                              params={THIRD_PARTY_LOOKUP_PARAMS}
+                              language={language}
                               value={item.thirdPartyId}
-                              onChange={(id) => onItemChange(index, "thirdPartyId", id)}
+                              selectedRecord={thirdPartyById(item.thirdPartyId) || null}
+                              extraRecords={keptInactiveThirdParties}
+                              decorate={decorateThirdParty}
+                              onChange={(id, record) => { rememberThirdParties(record); onItemChange(index, "thirdPartyId", id); }}
                               onSelected={() => handleThirdPartySelected(index)}
                               onRetreat={() => retreatFocusBefore(index, "thirdParty")}
                               registerRef={registerFieldRef(index, "thirdParty")}
@@ -2728,7 +2757,6 @@ function JeFormView({
     {accountModalIndex !== null && (
       <AccountQuickCreateModal
         language={language}
-        rows={accounts}
         onCreated={(newAccount) => {
           onAccountCreated(accountModalIndex, newAccount);
           setAccountModalIndex(null);
@@ -3092,353 +3120,12 @@ function JeDuplicateModal({ t, entry, date, setDate, description, setDescription
 // UI review 2026-11-04: delega en el estilo base compartido (tokens.js).
 const jeInputCls = (err) => inputClass(Boolean(err));
 
-// NEW (2026-10-13, user request): the account picker used to be a plain
-// <select>, which only jumps to an option by typing from the START of
-// its visible text -- here that's always the CODE ("5105 - Sueldos"),
-// so typing the account's NAME ("Sueldos") never matched anything,
-// forcing mass-entry users to memorize codes instead of searching by
-// name. This is a predictive text combobox that filters client-side
-// (accounts is already fully loaded in memory, same list the old
-// <select> rendered from) by CODE OR NAME, a case-insensitive match on
-// either field -- typing "5105" or "Sueldos" both surface "5105 - Sueldos".
-//
-// FIX (2026-10-13, same day): a plain substring match ranked results in
-// whatever order they came in, so typing "51" could surface an
-// unrelated account like "11051001" (which merely CONTAINS "51")
-// ahead of "5105 - Sueldos" -- and Enter always commits whichever
-// result sits first. Results are now ranked (exact code, code starts
-// with query, name starts with query, code contains query, name
-// contains query) and tied-broken by code, so "51" surfaces
-// code-starting matches like "5105" first.
-function AccountComboBox({ accounts, value, onChange, onSelected, onRetreat, registerRef, error, placeholder, noResultsLabel }) {
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const [highlight, setHighlight] = useState(0);
-  const inputRef = useRef(null);
-  const blurTimerRef = useRef(null);
-  // Lo que handleFocus puso en la búsqueda (ver Tab/Enter "sin tocar").
-  const seedRef = useRef("");
-
-  useEffect(() => () => clearTimeout(blurTimerRef.current), []);
-
-  const selected = accounts.find((a) => String(a.id) === String(value));
-  const selectedLabel = selected ? `${selected.code} - ${selected.name}` : "";
-
-  // While open, the input shows the live search text (even empty, so
-  // clearing it lists every account); once closed, it shows the
-  // currently selected account's own label.
-  const displayValue = open ? query : selectedLabel;
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return accounts;
-    // Ranked, not a plain filter -- see the FIX note above the component:
-    // an unranked substring match let an unrelated account that merely
-    // CONTAINS the query (e.g. "11051001" containing "51") win over the
-    // account the user actually meant ("5105"), since Enter always
-    // commits whatever ends up first.
-    const scored = [];
-    for (const a of accounts) {
-      const code = a.code.toLowerCase();
-      const name = a.name.toLowerCase();
-      let rank;
-      if (code === q) rank = 0;
-      else if (code.startsWith(q)) rank = 1;
-      else if (name.startsWith(q)) rank = 2;
-      else if (code.includes(q)) rank = 3;
-      else if (name.includes(q)) rank = 4;
-      else continue;
-      scored.push({ account: a, rank });
-    }
-    scored.sort((x, y) => x.rank - y.rank || x.account.code.localeCompare(y.account.code));
-    return scored.map((s) => s.account);
-  }, [accounts, query]);
-
-  const commitSelection = (account) => {
-    onChange(account ? String(account.id) : "");
-    setQuery("");
-    setOpen(false);
-    // NEW (2026-10-19, user request): fires on every commit, by Enter
-    // OR mouse click -- lets the row drive focus to whatever this
-    // account requires next (Tercero, Centro de Costo, Base, or
-    // straight to Débito), continuing the keyboard-only flow without
-    // an extra Tab.
-    onSelected?.(account);
-  };
-
-  const handleFocus = () => {
-    // NEW (2026-10-19, user request): used to always blank the field on
-    // focus, even when it already held a value -- re-tabbing/re-
-    // entering a filled line (routine in fast keyboard entry) showed an
-    // empty box and, worse, risked Enter re-picking whatever came
-    // first in the FULL unfiltered list instead of keeping what was
-    // already chosen. Seeding the query with the selected account's
-    // own code instead means the exact-match rank (see `filtered`
-    // above) keeps it first, so an untouched Tab/Enter-through
-    // re-selects the SAME account instead of a random one.
-    seedRef.current = selected ? selected.code : "";
-    setQuery(seedRef.current);
-    setHighlight(0);
-    setOpen(true);
-  };
-
-  const handleBlur = () => {
-    // Short delay so a click on an option (which fires its own
-    // onMouseDown first) still has a chance to commit before the
-    // dropdown unmounts -- the onMouseDown below also calls
-    // preventDefault() for the same reason, which is normally enough on
-    // its own, but this is a harmless safety net for the odd browser/
-    // input method that still blurs first.
-    blurTimerRef.current = setTimeout(() => {
-      setOpen(false);
-      setQuery("");
-    }, 150);
-  };
-
-  const handleKeyDown = (e) => {
-    const isAdvanceKey = (e.key === "Enter" || e.key === "Tab") && !e.ctrlKey && !e.metaKey && !e.altKey;
-    // UI 2026-11-10: Shift+Tab / Shift+Enter = campo anterior (mismo orden
-    // que Enter, hacia atrás).
-    if (isAdvanceKey && e.shiftKey) {
-      e.preventDefault();
-      setOpen(false);
-      setQuery("");
-      onRetreat?.();
-      return;
-    }
-    // Con la lista CERRADA (tras Esc), Enter/Tab avanzan con el valor que
-    // ya tenía (sin enviar el formulario); ↓ vuelve a abrir las sugerencias.
-    if (!open) {
-      if (isAdvanceKey) {
-        e.preventDefault();
-        onSelected?.(selected || null);
-      } else if (e.key === "ArrowDown") {
-        e.preventDefault();
-        handleFocus();
-      }
-      return;
-    }
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setHighlight((h) => Math.min(h + 1, filtered.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setHighlight((h) => Math.max(h - 1, 0));
-    } else if (isAdvanceKey) {
-      // Tab = Enter: toma la sugerencia resaltada y avanza (antes Tab salía
-      // del campo SIN tomar lo escrito). Con el campo vacío no elige nada
-      // (antes Enter vacío tomaba la primera cuenta de toda la lista).
-      e.preventDefault();
-      // FIX (2026-11-10): pasar por el campo SIN escribir (query == lo que
-      // sembró handleFocus) conserva la selección actual tal cual, en vez
-      // de "re-elegir" el primer resultado, que podía ser otro registro.
-      const untouched = selected && query === seedRef.current;
-      if (!untouched && query.trim() && filtered[highlight]) commitSelection(filtered[highlight]);
-      else {
-        setOpen(false);
-        setQuery("");
-        onSelected?.(selected || null);
-      }
-    } else if (e.key === "Escape") {
-      // Cierra solo la lista y CONSERVA el foco (antes hacía blur y el
-      // contador quedaba "en ninguna parte", obligado a usar el mouse).
-      // preventDefault evita que el mismo Esc cancele el comprobante.
-      e.preventDefault();
-      setOpen(false);
-      setQuery("");
-    }
-  };
-
-  return (
-    <div className="relative flex-1 min-w-0">
-      <input
-        ref={(el) => { inputRef.current = el; registerRef?.(el); }}
-        type="text"
-        value={displayValue}
-        placeholder={placeholder}
-        onFocus={handleFocus}
-        onBlur={handleBlur}
-        onChange={(e) => { setQuery(e.target.value); setHighlight(0); setOpen(true); }}
-        onKeyDown={handleKeyDown}
-        className={jeInputCls(error)}
-        autoComplete="off"
-      />
-      {open && (
-        <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
-          {filtered.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-slate-500">{noResultsLabel}</div>
-          ) : (
-            filtered.map((a, idx) => (
-              <div
-                key={a.id}
-                onMouseDown={(e) => { e.preventDefault(); commitSelection(a); }}
-                className={`cursor-pointer px-3 py-2 text-sm ${idx === highlight ? "bg-blue-50 text-blue-700" : "hover:bg-slate-50"}`}
-              >
-                {a.code} - {a.name}
-              </div>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// NEW (2026-10-19, user request): same predictive-search combobox as
-// AccountComboBox above (search by code/document number OR name, ranked
-// results, arrow keys + Enter, preserves an already-picked value on
-// refocus) applied to Tercero -- the native <select> it replaces had the
-// exact same "only matches from the start of the visible text" problem
-// AccountComboBox was built to fix on 2026-10-13.
-function ThirdPartyComboBox({ thirdParties, value, onChange, onSelected, onRetreat, registerRef, error, placeholder, noResultsLabel }) {
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const [highlight, setHighlight] = useState(0);
-  const inputRef = useRef(null);
-  const blurTimerRef = useRef(null);
-  // Lo que handleFocus puso en la búsqueda (ver Tab/Enter "sin tocar").
-  const seedRef = useRef("");
-
-  useEffect(() => () => clearTimeout(blurTimerRef.current), []);
-
-  const selected = thirdParties.find((tp) => String(tp.id) === String(value));
-  const selectedLabel = selected ? `${selected.documentNumber} - ${selected.legalDisplayName}` : "";
-
-  const displayValue = open ? query : selectedLabel;
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return thirdParties;
-    const scored = [];
-    for (const tp of thirdParties) {
-      const doc = tp.documentNumber.toLowerCase();
-      const name = tp.legalDisplayName.toLowerCase();
-      let rank;
-      if (doc === q) rank = 0;
-      else if (doc.startsWith(q)) rank = 1;
-      else if (name.startsWith(q)) rank = 2;
-      else if (doc.includes(q)) rank = 3;
-      else if (name.includes(q)) rank = 4;
-      else continue;
-      scored.push({ thirdParty: tp, rank });
-    }
-    scored.sort((x, y) => x.rank - y.rank || x.thirdParty.documentNumber.localeCompare(y.thirdParty.documentNumber));
-    return scored.map((s) => s.thirdParty);
-  }, [thirdParties, query]);
-
-  const commitSelection = (thirdParty) => {
-    onChange(thirdParty ? String(thirdParty.id) : "");
-    setQuery("");
-    setOpen(false);
-    onSelected?.(thirdParty);
-  };
-
-  const handleFocus = () => {
-    // Same fix as AccountComboBox's own handleFocus -- keep the current
-    // selection visible (and exact-match-ranked first) instead of
-    // blanking the field and risking an untouched Enter picking whatever
-    // third party happens to come first in the full list.
-    seedRef.current = selected ? selected.documentNumber : "";
-    setQuery(seedRef.current);
-    setHighlight(0);
-    setOpen(true);
-  };
-
-  const handleBlur = () => {
-    blurTimerRef.current = setTimeout(() => {
-      setOpen(false);
-      setQuery("");
-    }, 150);
-  };
-
-  const handleKeyDown = (e) => {
-    const isAdvanceKey = (e.key === "Enter" || e.key === "Tab") && !e.ctrlKey && !e.metaKey && !e.altKey;
-    // UI 2026-11-10: Shift+Tab / Shift+Enter = campo anterior (mismo orden
-    // que Enter, hacia atrás).
-    if (isAdvanceKey && e.shiftKey) {
-      e.preventDefault();
-      setOpen(false);
-      setQuery("");
-      onRetreat?.();
-      return;
-    }
-    // Con la lista CERRADA (tras Esc), Enter/Tab avanzan con el valor que
-    // ya tenía (sin enviar el formulario); ↓ vuelve a abrir las sugerencias.
-    if (!open) {
-      if (isAdvanceKey) {
-        e.preventDefault();
-        onSelected?.(selected || null);
-      } else if (e.key === "ArrowDown") {
-        e.preventDefault();
-        handleFocus();
-      }
-      return;
-    }
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setHighlight((h) => Math.min(h + 1, filtered.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setHighlight((h) => Math.max(h - 1, 0));
-    } else if (isAdvanceKey) {
-      // Tab = Enter: toma la sugerencia resaltada y avanza (antes Tab salía
-      // del campo SIN tomar lo escrito). Con el campo vacío no elige nada
-      // (antes Enter vacío tomaba la primera cuenta de toda la lista).
-      e.preventDefault();
-      // FIX (2026-11-10): pasar por el campo SIN escribir (query == lo que
-      // sembró handleFocus) conserva la selección actual tal cual, en vez
-      // de "re-elegir" el primer resultado, que podía ser otro registro.
-      const untouched = selected && query === seedRef.current;
-      if (!untouched && query.trim() && filtered[highlight]) commitSelection(filtered[highlight]);
-      else {
-        setOpen(false);
-        setQuery("");
-        onSelected?.(selected || null);
-      }
-    } else if (e.key === "Escape") {
-      // Cierra solo la lista y CONSERVA el foco (antes hacía blur y el
-      // contador quedaba "en ninguna parte", obligado a usar el mouse).
-      // preventDefault evita que el mismo Esc cancele el comprobante.
-      e.preventDefault();
-      setOpen(false);
-      setQuery("");
-    }
-  };
-
-  return (
-    <div className="relative flex-1 min-w-0">
-      <input
-        ref={(el) => { inputRef.current = el; registerRef?.(el); }}
-        type="text"
-        value={displayValue}
-        placeholder={placeholder}
-        onFocus={handleFocus}
-        onBlur={handleBlur}
-        onChange={(e) => { setQuery(e.target.value); setHighlight(0); setOpen(true); }}
-        onKeyDown={handleKeyDown}
-        className={jeInputCls(error)}
-        autoComplete="off"
-      />
-      {open && (
-        <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
-          {filtered.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-slate-500">{noResultsLabel}</div>
-          ) : (
-            filtered.map((tp, idx) => (
-              <div
-                key={tp.id}
-                onMouseDown={(e) => { e.preventDefault(); commitSelection(tp); }}
-                className={`cursor-pointer px-3 py-2 text-sm ${idx === highlight ? "bg-blue-50 text-blue-700" : "hover:bg-slate-50"}`}
-              >
-                {tp.documentNumber} - {tp.legalDisplayName}
-              </div>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
+// Fase 4 (2026-11-24): parámetros fijos de los selectores de línea (objetos
+// estables para no relanzar la búsqueda en cada render). Solo cuentas
+// activas de movimiento y terceros activos (los inactivos que ya estaban en
+// el documento se agregan aparte).
+const ACCOUNT_LOOKUP_PARAMS = { postingOnly: true, activeOnly: true };
+const THIRD_PARTY_LOOKUP_PARAMS = { activeOnly: true };
 
 // UI review 2026-11-04: envoltorio del Field compartido (etiqueta enlazada,
 // aria-invalid y error con ícono). Se conserva el nombre para no tocar

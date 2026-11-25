@@ -5,7 +5,7 @@ import { ExportMenu } from "../ui/tableKit";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
-import { completeContent } from "../../utils/completeResult";
+import { fetchJournalBook, journalBookProgressLabel } from "../../utils/journalBook";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -70,6 +70,8 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
   const [documentTypes, setDocumentTypes] = useState([]);
   const [entries, setEntries] = useState(null); // null = not searched yet
   const [loading, setLoading] = useState(false);
+  // Fase 4 (2026-11-24): avance del recorrido de páginas (utils/journalBook).
+  const [progress, setProgress] = useState(null);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState(null);
   const [editingEntryId, setEditingEntryId] = useState(null);
@@ -276,23 +278,19 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
       // condition itself is applied client-side in `results` below, not
       // sent to the backend, so tweaking it afterwards re-filters
       // instantly without a new request.
-      const response = await api.get("/v1/journal-entries", {
-        params: {
-          startDate,
-          endDate,
-          ...(documentTypeId ? { documentTypeId } : {}),
-          page: 0,
-          size: 10000,
-          sort: "entryDate,asc",
-        },
-      });
-      const pageData = response.data?.data;
-      // Bloque 0.4: refuse a truncated result instead of showing it.
-      setEntries(completeContent(pageData, language));
+      // Fase 4 (2026-11-24): páginas de 500 documentos por cursor, verificadas
+      // contra los totales exactos del servidor (ya no "todo" en una página,
+      // que Spring cortaba en 2.000).
+      const { entries: allEntries } = await fetchJournalBook(
+        { startDate, endDate, documentTypeId },
+        { language, onProgress: (loaded, total) => setProgress({ loaded, total }) }
+      );
+      setEntries(allEntries);
     } catch (err) {
       setError(getApiErrorMessage(err, language, t.errorConn));
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   };
 
@@ -638,7 +636,7 @@ function ValueSearchPage({ language = "es", onEditEntry }) {
         </label>
 
         <Button type="submit" variant="primary" loading={loading}>
-          {loading ? t.generating : t.generate}
+          {loading ? (journalBookProgressLabel(progress, language) || t.generating) : t.generate}
         </Button>
       </form>
 

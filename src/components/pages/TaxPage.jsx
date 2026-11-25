@@ -10,6 +10,7 @@ import { useFormKeyboard, ROW_KBD, rowNavKeyDown, FORM_HINTS, DISCARD_MESSAGE } 
 import api from "../../services/api"; // Centralized Axios instance with multi-tenancy context
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
+import CatalogComboBox from "../ui/CatalogComboBox";
 
 const initialForm = {
   code: "",
@@ -55,16 +56,20 @@ const TYPE_SUGGESTIONS = {
   OTRO: ["IMPOCONSUMO", "IMP_SALUDABLE", "IMP_CARBONO", "OTRO"],
 };
 
+// Fase 4 (2026-11-24): objeto estable para no relanzar la búsqueda.
+const TAX_ACCOUNT_LOOKUP_PARAMS = { postingOnly: true, activeOnly: true };
+
 function TaxPage({ language = "es" }) {
   const [rows, setRows]                   = useState([]);
-  const [accounts, setAccounts]           = useState([]);
+  // Fase 4 (2026-11-24): la cuenta vinculada se busca en el servidor
+  // (CatalogComboBox); aquí solo se guarda la cuenta elegida.
+  const [selectedAccount, setSelectedAccount] = useState(null);
   const [form, setForm]                   = useState(initialForm);
   const [errors, setErrors]               = useState({});
   const [open, setOpen]                   = useState(false);
   const [, setEditingId]                   = useState(null);
   const [searchTerm, setSearchTerm]       = useState("");
   const [loading, setLoading]             = useState(false);
-  const [loadingAccounts, setLoadingAccounts] = useState(false);
   const [toast, setToast]                 = useState(null);
 
   // Reference pointer to guarantee consistent identity states during transactional operations
@@ -205,54 +210,12 @@ function TaxPage({ language = "es" }) {
     }
   };
 
-  /**
-   * Fetches ledger accounts to map relations between tax rules and financial structures.
-   */
-  const loadAccounts = async () => {
-    setLoadingAccounts(true);
-    try {
-      // FIX (2026-10-15, user report): without a page size this
-      // fell back to Spring's default pagination (20 rows), so the
-      // dropdown silently stopped partway through the chart of
-      // accounts -- same large-page-size pattern already used by
-      // every other screen that needs the whole catalog (see
-      // ChartOfAccountPage/JournalEntryPage's loadCatalogs()).
-      const response = await api.get("/v1/chart-of-accounts", { params: { size: 1000, sort: "code" } });
-      if (response.data && response.data.success) {
-        const payloadData = response.data.data;
-        // Normalizes both flat arrays and standard Spring PageImpl structures
-        const accountsList = Array.isArray(payloadData)
-          ? payloadData
-          : (Array.isArray(payloadData?.content) ? payloadData.content : []);
-        setAccounts(accountsList);
-      } else {
-        showToast(response.data?.message || t.accountLoadError, "error");
-      }
-    } catch (error) {
-      showToast(getApiErrorMessage(error, language, t.accountLoadError), "error");
-    } finally {
-      setLoadingAccounts(false);
-    }
-  };
-
   useEffect(() => {
     loadTaxes();
-    loadAccounts();
   }, []);
 
-  // NEW (2026-10-23, user request): only posting accounts are offered for
-  // "Cuenta Vinculada" -- a parent/summary account can never actually
-  // receive journal entries (TaxService.create()/update() already
-  // rejects one with "is not a posting account"), so letting it be
-  // picked here was a doomed-submit trap. Also excludes inactive
-  // accounts for the same reason (TaxService also rejects those) --
-  // mirrors the exact postableAccounts filter JournalEntryPage already
-  // uses for its own account picker, same underlying backend rules.
-  const postableAccounts = useMemo(
-    () => accounts.filter((a) => a.active && a.postingAccount),
-    [accounts]
-  );
-
+  // Solo cuentas activas DE MOVIMIENTO para "Cuenta Vinculada" (TaxService
+  // rechaza las demás); ahora lo filtra el servidor (Fase 4).
   const filteredRows = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
     if (!term) return rows;
@@ -270,6 +233,7 @@ function TaxPage({ language = "es" }) {
 
   const resetForm = () => {
     setForm(initialForm);
+    setSelectedAccount(null);
     setErrors({});
     setEditingId(null);
     editingIdRef.current = null;
@@ -311,6 +275,9 @@ function TaxPage({ language = "es" }) {
       accountId:    item.accountId != null ? String(item.accountId) : "",
       active:       item.active ?? true,
     });
+    setSelectedAccount(item.accountId != null
+      ? { id: item.accountId, code: item.accountCode || "", name: item.accountName || "" }
+      : null);
     setErrors({});
     setEditingId(item.id);
     editingIdRef.current = item.id;
@@ -355,12 +322,6 @@ function TaxPage({ language = "es" }) {
       // afterward (see signSuggestedHint) -- a tax can legitimately
       // need the opposite sign of its account in an edge case, same
       // reasoning as ChartOfAccountPage's contra-account exception.
-      if (name === "accountId" && val) {
-        const selectedAccount = accounts.find((acc) => String(acc.id) === String(val));
-        if (selectedAccount?.nature) {
-          next.sign = selectedAccount.nature;
-        }
-      }
 
       return next;
     });
@@ -733,22 +694,23 @@ function TaxPage({ language = "es" }) {
 
               <div className="md:col-span-2">
                 <Field label={t.account} error={errors.accountId}>
-                  <select
+                  <CatalogComboBox
+                    kind="account"
                     name="accountId"
+                    language={language}
+                    params={TAX_ACCOUNT_LOOKUP_PARAMS}
                     value={form.accountId}
-                    onChange={handleChange}
-                    className={inputCls(errors.accountId)}
-                    disabled={loadingAccounts}
-                  >
-                    <option value="">
-                      {loadingAccounts ? t.loadingAccounts : t.selectAccount}
-                    </option>
-                    {postableAccounts.map((acc) => (
-                      <option key={acc.id} value={acc.id}>
-                        {acc.code} - {acc.name}
-                      </option>
-                    ))}
-                  </select>
+                    selectedRecord={selectedAccount}
+                    onChange={(id, record) => {
+                      setSelectedAccount(record);
+                      // Sugiere el Signo según la Naturaleza de la cuenta (2026-10-16).
+                      setForm((prev) => ({ ...prev, accountId: id, ...(record?.nature ? { sign: record.nature } : {}) }));
+                    }}
+                    className="relative"
+                    error={errors.accountId}
+                    placeholder={t.selectAccount}
+                    noResultsLabel={t.noResults}
+                  />
                 </Field>
               </div>
 

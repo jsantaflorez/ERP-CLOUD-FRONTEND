@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useElapsedSeconds, generatingLabel } from "../ui/useElapsedSeconds";
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
 import { ExportMenu } from "../ui/tableKit";
@@ -41,6 +42,8 @@ function IncompleteMovementsPage({ language = "es", onEditEntry }) {
 
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
+  // Fase 4 (2026-11-24): tiempo transcurrido en el botón mientras se genera.
+  const elapsedSeconds = useElapsedSeconds(loading);
   const [error, setError] = useState(null);
   // Tracks which row's "Editar" button is mid-navigation, purely so the
   // button can show a brief loading state -- onEditEntry's own fetch
@@ -268,7 +271,7 @@ function IncompleteMovementsPage({ language = "es", onEditEntry }) {
         </div>
 
         <Button type="submit" variant="primary" loading={loading}>
-          {loading ? t.generating : t.generate}
+          {loading ? generatingLabel(t.generating, elapsedSeconds) : t.generate}
         </Button>
 
         <span className="text-[11px] text-slate-500">{t.dateRangeHint}</span>

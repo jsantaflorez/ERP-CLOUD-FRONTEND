@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { useElapsedSeconds, generatingLabel } from "../ui/useElapsedSeconds";
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
 import { ExportMenu } from "../ui/tableKit";
 import api from "../../services/api";
+import CatalogComboBox from "../ui/CatalogComboBox";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
 import * as XLSX from "xlsx";
@@ -27,9 +29,15 @@ import {
 // the group carrying a single fixed one.
 // Export to Excel/PDF (2026-11-01, user request): added later, same
 // pattern as CostCenterBalancePage/AuxiliaryLedgerPage.
+// Fase 4 (2026-11-24): filtros de cuenta/tercero con búsqueda en el
+// servidor (CatalogComboBox); objetos estables para no relanzar búsquedas.
+// Cuentas de movimiento (activas o no) y terceros activos, como antes.
+const REPORT_ACCOUNT_LOOKUP_PARAMS = { postingOnly: true, activeOnly: false };
+const REPORT_THIRD_PARTY_LOOKUP_PARAMS = { activeOnly: true };
+
 function ThirdPartyBalancePage({ language = "es" }) {
-  const [accounts, setAccounts] = useState([]);
-  const [thirdParties, setThirdParties] = useState([]);
+  const [selectedAccount, setSelectedAccount] = useState(null);
+  const [selectedThirdParty, setSelectedThirdParty] = useState(null);
   const [costCenters, setCostCenters] = useState([]);
   const [loadingCatalogs, setLoadingCatalogs] = useState(false);
 
@@ -46,6 +54,8 @@ function ThirdPartyBalancePage({ language = "es" }) {
 
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
+  // Fase 4 (2026-11-24): tiempo transcurrido en el botón mientras se genera.
+  const elapsedSeconds = useElapsedSeconds(loading);
   const [error, setError] = useState(null);
   const [hideEmptyGroups, setHideEmptyGroups] = useState(false);
 
@@ -60,8 +70,10 @@ function ThirdPartyBalancePage({ language = "es" }) {
       endDate: "Fecha Final",
       account: "Cuenta",
       allAccounts: "— Todas las cuentas —",
+      noAccountMatches: "Ninguna cuenta coincide",
       thirdParty: "Tercero",
       allThirdParties: "— Todos los terceros —",
+      noThirdPartyMatches: "Ningún tercero coincide",
       costCenter: "Centro de Costo",
       allCostCenters: "— Todos los centros de costo —",
       generate: "Generar",
@@ -98,8 +110,10 @@ function ThirdPartyBalancePage({ language = "es" }) {
       endDate: "End Date",
       account: "Account",
       allAccounts: "— All accounts —",
+      noAccountMatches: "No matching accounts",
       thirdParty: "Third Party",
       allThirdParties: "— All third parties —",
+      noThirdPartyMatches: "No matching third parties",
       costCenter: "Cost Center",
       allCostCenters: "— All cost centers —",
       generate: "Generate",
@@ -143,36 +157,9 @@ function ThirdPartyBalancePage({ language = "es" }) {
   const loadCatalogs = async () => {
     setLoadingCatalogs(true);
     try {
-      const [accRes, tpRes, ccRes] = await Promise.allSettled([
-        api.get("/v1/chart-of-accounts", { params: { size: 500, sort: "code" } }),
-        api.get("/v1/third-parties?page=0&size=1000"),
+      const [ccRes] = await Promise.allSettled([
         api.get("/v1/cost-centers"),
       ]);
-
-      if (accRes.status === "fulfilled" && accRes.value.data?.success) {
-        const payloadData = accRes.value.data.data;
-        const list = Array.isArray(payloadData)
-          ? payloadData
-          : Array.isArray(payloadData?.content)
-            ? payloadData.content
-            : [];
-        setAccounts(list.filter((a) => a.postingAccount));
-      }
-
-      if (tpRes.status === "fulfilled") {
-        // ThirdPartyController#list returns the Spring Page<> directly,
-        // not wrapped in the usual ApiResponse envelope -- same fallback
-        // chain JournalEntryPage.jsx already uses for this endpoint.
-        const raw = tpRes.value.data;
-        const list = Array.isArray(raw?.content)
-          ? raw.content
-          : Array.isArray(raw?.data)
-          ? raw.data
-          : Array.isArray(raw)
-          ? raw
-          : [];
-        setThirdParties(list.filter((tp) => tp.active));
-      }
 
       if (ccRes.status === "fulfilled" && ccRes.value.data?.success) {
         const payloadData = ccRes.value.data.data;
@@ -214,12 +201,6 @@ function ThirdPartyBalancePage({ language = "es" }) {
       return;
     }
 
-    const selectedAccount = filters.accountId
-      ? accounts.find((a) => String(a.id) === String(filters.accountId))
-      : null;
-    const selectedThirdParty = filters.thirdPartyId
-      ? thirdParties.find((tp) => String(tp.id) === String(filters.thirdPartyId))
-      : null;
     const selectedCostCenter = filters.costCenterId
       ? costCenters.find((cc) => String(cc.id) === String(filters.costCenterId))
       : null;
@@ -471,19 +452,20 @@ function ThirdPartyBalancePage({ language = "es" }) {
           <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.thirdParty}
           </label>
-          <select
+          <CatalogComboBox
+            kind="thirdParty"
             name="thirdPartyId"
+            language={language}
+            params={REPORT_THIRD_PARTY_LOOKUP_PARAMS}
+            allowClear
             value={filters.thirdPartyId}
-            onChange={handleFilterChange}
-            className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
-          >
-            <option value="">{t.allThirdParties}</option>
-            {thirdParties.map((tp) => (
-              <option key={tp.id} value={tp.id}>
-                {tp.documentNumber} — {tp.legalDisplayName}
-              </option>
-            ))}
-          </select>
+            selectedRecord={selectedThirdParty}
+            onChange={(id, record) => { setSelectedThirdParty(record); setFilters((prev) => ({ ...prev, thirdPartyId: id })); }}
+            className="relative"
+            inputClassName="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+            placeholder={t.allThirdParties}
+            noResultsLabel={t.noThirdPartyMatches}
+          />
         </div>
 
         <div className="flex min-w-[220px] flex-col gap-1">
@@ -509,19 +491,20 @@ function ThirdPartyBalancePage({ language = "es" }) {
           <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.account}
           </label>
-          <select
+          <CatalogComboBox
+            kind="account"
             name="accountId"
+            language={language}
+            params={REPORT_ACCOUNT_LOOKUP_PARAMS}
+            allowClear
             value={filters.accountId}
-            onChange={handleFilterChange}
-            className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
-          >
-            <option value="">{t.allAccounts}</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.code} — {a.name}
-              </option>
-            ))}
-          </select>
+            selectedRecord={selectedAccount}
+            onChange={(id, record) => { setSelectedAccount(record); setFilters((prev) => ({ ...prev, accountId: id })); }}
+            className="relative"
+            inputClassName="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+            placeholder={t.allAccounts}
+            noResultsLabel={t.noAccountMatches}
+          />
         </div>
 
         <label className="flex items-center gap-2 pb-2 text-xs font-medium text-slate-500">
@@ -535,7 +518,7 @@ function ThirdPartyBalancePage({ language = "es" }) {
         </label>
 
         <Button type="submit" variant="primary" loading={loading} disabled={loadingCatalogs}>
-          {loading ? t.generating : t.generate}
+          {loading ? generatingLabel(t.generating, elapsedSeconds) : t.generate}
         </Button>
       </form>
 

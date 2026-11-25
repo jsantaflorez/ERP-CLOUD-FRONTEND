@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { useElapsedSeconds, generatingLabel } from "../ui/useElapsedSeconds";
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
 import { ExportMenu } from "../ui/tableKit";
 import api from "../../services/api";
+import CatalogComboBox from "../ui/CatalogComboBox";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
 import * as XLSX from "xlsx";
@@ -31,6 +33,11 @@ import {
 // own catalog actually has (filtered by the chosen Categoria, if any),
 // never a hardcoded list -- same extensibility principle as the
 // 2026-10-15 TaxPage.jsx redesign and the Retention report it replaces.
+// Fase 4 (2026-11-24): filtros de cuenta/tercero con búsqueda en el
+// servidor (CatalogComboBox); objetos estables para no relanzar búsquedas.
+// Terceros activos, como antes.
+const REPORT_THIRD_PARTY_LOOKUP_PARAMS = { activeOnly: true };
+
 function TaxDetailPage({ language = "es" }) {
   const today = todayLocalIso();
   const firstOfMonth = `${today.slice(0, 7)}-01`;
@@ -42,11 +49,13 @@ function TaxDetailPage({ language = "es" }) {
   const [thirdPartyId, setThirdPartyId] = useState(""); // "" = todos los terceros
 
   const [taxes, setTaxes] = useState([]);
-  const [thirdParties, setThirdParties] = useState([]);
+  const [selectedThirdParty, setSelectedThirdParty] = useState(null);
   const [loadingCatalogs, setLoadingCatalogs] = useState(false);
 
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
+  // Fase 4 (2026-11-24): tiempo transcurrido en el botón mientras se genera.
+  const elapsedSeconds = useElapsedSeconds(loading);
   const [error, setError] = useState(null);
 
   const { session } = useAuth();
@@ -65,6 +74,7 @@ function TaxDetailPage({ language = "es" }) {
       allTypes: "— Todos los tipos —",
       thirdParty: "Tercero",
       allThirdParties: "— Todos los terceros —",
+      noThirdPartyMatches: "Ningún tercero coincide",
       generate: "Generar",
       generating: "Generando...",
       dateRequired: "Selecciona ambas fechas para generar el reporte.",
@@ -106,6 +116,7 @@ function TaxDetailPage({ language = "es" }) {
       allTypes: "— All types —",
       thirdParty: "Third Party",
       allThirdParties: "— All third parties —",
+      noThirdPartyMatches: "No matching third parties",
       generate: "Generate",
       generating: "Generating...",
       dateRequired: "Select both dates to generate the report.",
@@ -140,29 +151,14 @@ function TaxDetailPage({ language = "es" }) {
   const loadCatalogs = async () => {
     setLoadingCatalogs(true);
     try {
-      const [taxRes, tpRes] = await Promise.allSettled([
+      const [taxRes] = await Promise.allSettled([
         api.get("/v1/taxes"),
-        api.get("/v1/third-parties?page=0&size=1000"),
       ]);
 
       if (taxRes.status === "fulfilled" && taxRes.value.data?.success) {
         setTaxes(Array.isArray(taxRes.value.data.data) ? taxRes.value.data.data : []);
       }
 
-      if (tpRes.status === "fulfilled") {
-        // ThirdPartyController#list returns the Spring Page<> directly,
-        // not wrapped in the usual ApiResponse envelope -- same fallback
-        // chain used elsewhere (JournalEntryPage.jsx, AuxiliaryLedgerPage.jsx).
-        const raw = tpRes.value.data;
-        const list = Array.isArray(raw?.content)
-          ? raw.content
-          : Array.isArray(raw?.data)
-          ? raw.data
-          : Array.isArray(raw)
-          ? raw
-          : [];
-        setThirdParties(list.filter((tp) => tp.active));
-      }
     } catch (err) {
       console.error("Failed to load filters for tax detail report", err);
     } finally {
@@ -231,9 +227,6 @@ function TaxDetailPage({ language = "es" }) {
       return;
     }
 
-    const selectedThirdParty = thirdPartyId
-      ? thirdParties.find((tp) => String(tp.id) === String(thirdPartyId))
-      : null;
 
     const params = { startDate, endDate };
     if (category) params.category = category;
@@ -505,22 +498,23 @@ function TaxDetailPage({ language = "es" }) {
           <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.thirdParty}
           </label>
-          <select
+          <CatalogComboBox
+            kind="thirdParty"
+            language={language}
+            params={REPORT_THIRD_PARTY_LOOKUP_PARAMS}
+            allowClear
             value={thirdPartyId}
-            onChange={(e) => setThirdPartyId(e.target.value)}
-            className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
-          >
-            <option value="">{t.allThirdParties}</option>
-            {thirdParties.map((tp) => (
-              <option key={tp.id} value={tp.id}>
-                {tp.documentNumber} — {tp.legalDisplayName}
-              </option>
-            ))}
-          </select>
+            selectedRecord={selectedThirdParty}
+            onChange={(id, record) => { setSelectedThirdParty(record); setThirdPartyId(id); }}
+            className="relative"
+            inputClassName="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+            placeholder={t.allThirdParties}
+            noResultsLabel={t.noThirdPartyMatches}
+          />
         </div>
 
         <Button type="submit" variant="primary" loading={loading} disabled={loadingCatalogs}>
-          {loading ? t.generating : t.generate}
+          {loading ? generatingLabel(t.generating, elapsedSeconds) : t.generate}
         </Button>
       </form>
 

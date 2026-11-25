@@ -136,15 +136,18 @@ const DEFAULT_NATURE_BY_CLASS = {
 /**
  * Quick-create modal for a Chart of Accounts entry, opened from a "+"
  * button next to an account picker elsewhere in the app (currently just
- * the Journal Entry form). `rows` is the caller's own full accounts list
- * (same shape loaded by ChartOfAccountPage.jsx / JournalEntryPage.jsx's
- * `accounts` state) -- needed for the parent-suggestion/code-structure
- * logic below. `onCreated(account)` fires once after a successful save
+ * the Journal Entry form). Fase 4 (2026-11-24): ya no recibe el plan de
+ * cuentas entero (`rows`); trae del servidor solo las cuentas cuyo código
+ * es prefijo del código escrito (GET /chart-of-accounts/lookup?prefixOf=),
+ * que son los únicos padres posibles -- suficiente para la sugerencia de
+ * padre y la validación de estructura de abajo. `onCreated(account)` fires once after a successful save
  * with the backend's full ChartOfAccountResponseDTO; `onClose()` fires on
  * cancel or after onCreated, whichever the caller doesn't already handle.
  */
-function AccountQuickCreateModal({ language = "es", rows, onCreated, onClose }) {
+function AccountQuickCreateModal({ language = "es", onCreated, onClose }) {
   const [form, setForm] = useState(initialForm);
+  // Fase 4: padres posibles del código escrito (ver nota arriba).
+  const [rows, setRows] = useState([]);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
@@ -303,6 +306,46 @@ function AccountQuickCreateModal({ language = "es", rows, onCreated, onClose }) 
     return () => { cancelled = true; };
   }, [chartTemplate]);
 
+  // Fase 4 (2026-11-24): al cambiar el código, trae sus padres posibles y
+  // aplica la misma sugerencia automática de padre de antes.
+  useEffect(() => {
+    const code = form.code.trim();
+    if (!code) {
+      setRows([]);
+      return undefined;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const response = await api.get("/v1/chart-of-accounts/lookup", { params: { prefixOf: code } });
+        if (cancelled) return;
+        const list = Array.isArray(response.data?.data) ? response.data.data : [];
+        setRows(list);
+        setForm((prev) => {
+          if (prev.code.trim() !== code) return prev;
+          let next = prev;
+          const suggested = getSuggestedParent(code, list);
+          const currentParent = list.find((r) => String(r.id) === String(next.parentId));
+          const currentParentStillValid = !!currentParent && code.startsWith(currentParent.code);
+          if (suggested && String(suggested.id) !== String(next.parentId)) {
+            next = { ...next, parentId: String(suggested.id) };
+            next = applyAccountClass(next, suggested.accountClass);
+          } else if (!suggested && !currentParentStillValid && next.parentId !== "") {
+            next = { ...next, parentId: "" };
+          }
+          return next;
+        });
+      } catch {
+        if (!cancelled) setRows([]);
+      }
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.code]);
+
   const parentCandidates = useMemo(() => {
     const code = form.code.trim();
     if (!code) return rows;
@@ -337,18 +380,8 @@ function AccountQuickCreateModal({ language = "es", rows, onCreated, onClose }) 
         if (parent) next = applyAccountClass(next, parent.accountClass);
       }
 
-      if (name === "code") {
-        const suggested = getSuggestedParent(val, rows);
-        const currentParent = rows.find((r) => String(r.id) === String(next.parentId));
-        const currentParentStillValid = !!currentParent && val.startsWith(currentParent.code);
-
-        if (suggested && String(suggested.id) !== String(next.parentId)) {
-          next = { ...next, parentId: String(suggested.id) };
-          next = applyAccountClass(next, suggested.accountClass);
-        } else if (!suggested && !currentParentStillValid && next.parentId !== "") {
-          next = { ...next, parentId: "" };
-        }
-      }
+      // Fase 4: la sugerencia de padre al cambiar el código se aplica cuando
+      // llegan del servidor los padres posibles (efecto de abajo).
 
       if (name === "accountClass") next = applyAccountClass(next, val);
 

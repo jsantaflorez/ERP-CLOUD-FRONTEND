@@ -384,6 +384,8 @@ export const SHORTCUTS = [
       { keys: ["Esc"], es: "Cerrar (pide confirmación si hay cambios sin guardar)", en: "Close (asks to confirm if there are unsaved changes)", short: { es: "cerrar", en: "close" } },
       { keys: ["Tab", "Shift+Tab"], es: "Recorrer campos y botones sin salir del panel", en: "Cycle through fields and buttons without leaving the panel" },
       { keys: ["Espacio"], es: "Marcar / desmarcar un interruptor Sí/No", en: "Toggle a Yes/No switch" },
+      { keys: ["↑", "↓"], es: "En un selector de cuenta o tercero: recorrer las sugerencias (se buscan en el servidor mientras escribe)", en: "In an account or third-party picker: browse the suggestions (searched on the server as you type)" },
+      { keys: ["Supr", "Enter"], es: "En un filtro de cuenta o tercero de un reporte: borrar el texto y Enter = todos", en: "In a report's account or third-party filter: clear the text and Enter = all" },
     ],
   },
   {

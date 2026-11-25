@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useElapsedSeconds, generatingLabel } from "../ui/useElapsedSeconds";
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
 import { ExportMenu } from "../ui/tableKit";
@@ -40,6 +41,8 @@ function IncomeStatementPage({ language = "es" }) {
 
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
+  // Fase 4 (2026-11-24): tiempo transcurrido en el botón mientras se genera.
+  const elapsedSeconds = useElapsedSeconds(loading);
   const [error, setError] = useState(null);
 
   const { session } = useAuth();
@@ -337,7 +340,7 @@ function IncomeStatementPage({ language = "es" }) {
         </div>
 
         <Button type="submit" variant="primary" loading={loading}>
-          {loading ? t.generating : t.generate}
+          {loading ? generatingLabel(t.generating, elapsedSeconds) : t.generate}
         </Button>
       </form>
 

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { useElapsedSeconds, generatingLabel } from "../ui/useElapsedSeconds";
 import AppHeader from "../common/AppHeader";
 import Button from "../ui/Button";
 import { ExportMenu } from "../ui/tableKit";
 import api from "../../services/api";
+import CatalogComboBox from "../ui/CatalogComboBox";
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../constants/apiErrors";
 import * as XLSX from "xlsx";
@@ -34,8 +36,13 @@ import { PeriodPresetSelect } from "../ui/PeriodPresetSelect";
 // Export to Excel/PDF (2026-11-01, user request): added later, same
 // grouped-sheet/grouped-page pattern as AuxiliaryLedgerPage -- see
 // handleExportExcel/handleExportPdf below.
+// Fase 4 (2026-11-24): filtros de cuenta/tercero con búsqueda en el
+// servidor (CatalogComboBox); objetos estables para no relanzar búsquedas.
+// Cuentas de movimiento, activas o no (es un reporte histórico).
+const REPORT_ACCOUNT_LOOKUP_PARAMS = { postingOnly: true, activeOnly: false };
+
 function CostCenterBalancePage({ language = "es" }) {
-  const [accounts, setAccounts] = useState([]);
+  const [selectedAccount, setSelectedAccount] = useState(null);
   const [costCenters, setCostCenters] = useState([]);
   const [loadingCatalogs, setLoadingCatalogs] = useState(false);
 
@@ -51,6 +58,8 @@ function CostCenterBalancePage({ language = "es" }) {
 
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
+  // Fase 4 (2026-11-24): tiempo transcurrido en el botón mientras se genera.
+  const elapsedSeconds = useElapsedSeconds(loading);
   const [error, setError] = useState(null);
   const [hideEmptyGroups, setHideEmptyGroups] = useState(false);
 
@@ -65,6 +74,7 @@ function CostCenterBalancePage({ language = "es" }) {
       endDate: "Fecha Final",
       account: "Cuenta",
       allAccounts: "— Todas las cuentas —",
+      noAccountMatches: "Ninguna cuenta coincide",
       costCenter: "Centro de Costo",
       allCostCenters: "— Todos los centros de costo —",
       generate: "Generar",
@@ -101,6 +111,7 @@ function CostCenterBalancePage({ language = "es" }) {
       endDate: "End Date",
       account: "Account",
       allAccounts: "— All accounts —",
+      noAccountMatches: "No matching accounts",
       costCenter: "Cost Center",
       allCostCenters: "— All cost centers —",
       generate: "Generate",
@@ -144,20 +155,9 @@ function CostCenterBalancePage({ language = "es" }) {
   const loadCatalogs = async () => {
     setLoadingCatalogs(true);
     try {
-      const [accRes, ccRes] = await Promise.allSettled([
-        api.get("/v1/chart-of-accounts", { params: { size: 500, sort: "code" } }),
+      const [ccRes] = await Promise.allSettled([
         api.get("/v1/cost-centers"),
       ]);
-
-      if (accRes.status === "fulfilled" && accRes.value.data?.success) {
-        const payloadData = accRes.value.data.data;
-        const list = Array.isArray(payloadData)
-          ? payloadData
-          : Array.isArray(payloadData?.content)
-            ? payloadData.content
-            : [];
-        setAccounts(list.filter((a) => a.postingAccount));
-      }
 
       if (ccRes.status === "fulfilled" && ccRes.value.data?.success) {
         const payloadData = ccRes.value.data.data;
@@ -201,9 +201,6 @@ function CostCenterBalancePage({ language = "es" }) {
       return;
     }
 
-    const selectedAccount = filters.accountId
-      ? accounts.find((a) => String(a.id) === String(filters.accountId))
-      : null;
     const selectedCostCenter = filters.costCenterId
       ? costCenters.find((cc) => String(cc.id) === String(filters.costCenterId))
       : null;
@@ -473,19 +470,20 @@ function CostCenterBalancePage({ language = "es" }) {
           <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
             {t.account}
           </label>
-          <select
+          <CatalogComboBox
+            kind="account"
             name="accountId"
+            language={language}
+            params={REPORT_ACCOUNT_LOOKUP_PARAMS}
+            allowClear
             value={filters.accountId}
-            onChange={handleFilterChange}
-            className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
-          >
-            <option value="">{t.allAccounts}</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.code} — {a.name}
-              </option>
-            ))}
-          </select>
+            selectedRecord={selectedAccount}
+            onChange={(id, record) => { setSelectedAccount(record); setFilters((prev) => ({ ...prev, accountId: id })); }}
+            className="relative"
+            inputClassName="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+            placeholder={t.allAccounts}
+            noResultsLabel={t.noAccountMatches}
+          />
         </div>
 
         <label className="flex items-center gap-2 pb-2 text-xs font-medium text-slate-500">
@@ -499,7 +497,7 @@ function CostCenterBalancePage({ language = "es" }) {
         </label>
 
         <Button type="submit" variant="primary" loading={loading} disabled={loadingCatalogs}>
-          {loading ? t.generating : t.generate}
+          {loading ? generatingLabel(t.generating, elapsedSeconds) : t.generate}
         </Button>
       </form>
 
