@@ -394,7 +394,8 @@ export const SHORTCUTS = [
     items: [
       { keys: ["Enter", "Tab"], es: "Siguiente campo, siempre en el mismo orden (encabezado incluido); en la última línea crea una nueva; si la última línea está vacía, va a Guardar", en: "Next field, always in the same order (header included); on the last line creates a new one; if the last line is blank, goes to Save", short: { es: "siguiente campo", en: "next field" } },
       { keys: ["Shift+Enter", "Shift+Tab"], es: "Campo anterior (mismo orden, hacia atrás)", en: "Previous field (same order, backwards)", short: { es: "anterior", en: "previous" } },
-      { keys: ["↑", "↓"], es: "Recorrer las sugerencias de cuenta y tercero", en: "Browse account and third-party suggestions", short: { es: "sugerencias", en: "suggestions" } },
+      { keys: ["↑", "↓"], es: "Recorrer las sugerencias de cuenta y tercero (al pie se ve la ficha de la resaltada: tercero, centro de costo, impuesto, naturaleza)", en: "Browse account and third-party suggestions (the highlighted one's details show at the bottom: third party, cost center, tax, nature)", short: { es: "sugerencias", en: "suggestions" } },
+      { keys: ["RePág", "AvPág"], es: "En las sugerencias: saltar 10", en: "In the suggestions: jump 10" },
       { keys: ["F2"], es: "Crear rápido la cuenta, tercero o centro de costo del campo actual", en: "Quick-create the account, third party or cost center of the current field", short: { es: "crear rápido", en: "quick-create" } },
       { keys: ["F4"], es: "Repetir el valor de la línea anterior en este campo", en: "Repeat the previous line's value in this field", short: { es: "repetir anterior", en: "repeat previous" } },
       { keys: [",", "."], es: "En Débito, Crédito y Base: escribir los centavos (los puntos de miles se ponen solos)", en: "In Debit, Credit and Base: start the cents (thousands separators are added automatically)" },

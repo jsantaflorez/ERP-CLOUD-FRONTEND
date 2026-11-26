@@ -20,17 +20,60 @@
 // - allowClear (filtros de reportes): borrar el texto y Enter/Tab = "todos".
 // - Sin onSelected/onRetreat (formularios y filtros), Enter/Tab pasan al
 //   campo siguiente/anterior del formulario, como cualquier otro campo.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CATALOG_KINDS, lookupCatalog, rankRecords } from "../../utils/catalogLookup";
+//
+// 2026-11-26 (pedido del usuario: scroll corto y parámetros "a ciegas"):
+// - La lista se dibuja en un portal (encima de la página): la tabla de líneas
+//   del documento tiene overflow-x-auto y recortaba la lista. Se abre hacia
+//   arriba si abajo no hay espacio, y sigue al campo al desplazarse.
+// - Más alta (hasta ~28rem) y ancha (hasta 560 px); la fila resaltada siempre
+//   queda a la vista; RePág/AvPág saltan 10.
+// - Cada fila muestra etiquetas con lo que la cuenta pide (tercero, centro de
+//   costo, impuesto/base, naturaleza) y su grupo padre; al pie, la ficha de la
+//   fila resaltada (cambia con flechas o al pasar el mouse).
+// - `describe(record)` permite a la pantalla añadir datos propios (el
+//   documento contable pasa el impuesto vinculado a la cuenta).
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { CATALOG_KINDS, describeRecord, lookupCatalog, rankRecords } from "../../utils/catalogLookup";
 import { inputClass } from "./tokens";
 import { focusNextField } from "./keyboard";
 
 const DEBOUNCE_MS = 200;
 
 const LABELS = {
-  es: { searching: "Buscando…", error: "No se pudo buscar. Intenta de nuevo.", more: "Se muestran los primeros 50: escribe más para afinar." },
-  en: { searching: "Searching…", error: "Search failed. Try again.", more: "Showing the first 50: keep typing to narrow down." },
+  es: { searching: "Buscando…", error: "No se pudo buscar. Intenta de nuevo.", more: "Se muestran los primeros 50: escribe más para afinar.", card: "Ficha de" },
+  en: { searching: "Searching…", error: "Search failed. Try again.", more: "Showing the first 50: keep typing to narrow down.", card: "Details of" },
 };
+
+const PANEL_MAX_WIDTH = 560;
+const PANEL_MAX_HEIGHT = 448; // ~28rem
+const PANEL_MIN_BELOW = 260;  // con menos espacio abajo, se abre hacia arriba
+const PAGE_JUMP = 10;
+
+const CHIP_TONES = {
+  thirdParty: "bg-violet-50 text-violet-700",
+  costCenter: "bg-teal-50 text-teal-700",
+  tax: "bg-amber-50 text-amber-800",
+  neutral: "bg-slate-100 text-slate-600",
+  warn: "bg-red-50 text-red-700",
+};
+
+/** Etiquetas cortas de una cuenta/tercero (también se usan bajo el campo de la línea). */
+export function CatalogChips({ chips, className = "" }) {
+  if (!chips || chips.length === 0) return null;
+  return (
+    <span className={`flex flex-wrap gap-1 ${className}`}>
+      {chips.map((c) => (
+        <span key={c.key} title={c.title || c.label}
+          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none ${CHIP_TONES[c.tone] || CHIP_TONES.neutral}`}>
+          {c.label}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+const DETAIL_TONES = { yes: "text-emerald-700 font-semibold", warn: "text-red-700 font-semibold" };
 
 function CatalogComboBox({
   kind,
@@ -46,6 +89,7 @@ function CatalogComboBox({
   params,
   extraRecords,
   decorate,
+  describe,
   allowClear = false,
   language = "es",
   className,
@@ -64,6 +108,8 @@ function CatalogComboBox({
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const inputRef = useRef(null);
+  const listRef = useRef(null);
+  const [panelStyle, setPanelStyle] = useState(null);
   const blurTimerRef = useRef(null);
   const debounceRef = useRef(null);
   const seqRef = useRef(0);
@@ -221,6 +267,12 @@ function CatalogComboBox({
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setHighlight((h) => Math.max(h - 1, 0));
+    } else if (e.key === "PageDown" && !e.altKey) {
+      e.preventDefault();
+      setHighlight((h) => Math.min(h + PAGE_JUMP, Math.max(filtered.length - 1, 0)));
+    } else if (e.key === "PageUp" && !e.altKey) {
+      e.preventDefault();
+      setHighlight((h) => Math.max(h - PAGE_JUMP, 0));
     } else if (isAdvanceKey) {
       e.preventDefault();
       const untouched = selected && query === seedRef.current;
@@ -248,6 +300,109 @@ function CatalogComboBox({
 
   const showMoreHint = fresh && results.length >= 50;
 
+  const describeFn = useCallback(
+    (r) => (describe ? describe(r) : describeRecord(kind, r, { language })),
+    [describe, kind, language]
+  );
+
+  // Posición de la lista (portal, position: fixed) junto al campo; se recalcula
+  // al desplazar cualquier contenedor o al cambiar el tamaño de la ventana.
+  const placePanel = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const width = Math.min(Math.max(rect.width, PANEL_MAX_WIDTH), vw - 16);
+    const left = Math.max(8, Math.min(rect.left, vw - width - 8));
+    const below = vh - rect.bottom - 8;
+    const above = rect.top - 8;
+    const openUp = below < PANEL_MIN_BELOW && above > below;
+    const maxHeight = Math.min(PANEL_MAX_HEIGHT, openUp ? above - 4 : below - 4);
+    setPanelStyle(openUp
+      ? { position: "fixed", left, width, bottom: vh - rect.top + 4, maxHeight }
+      : { position: "fixed", left, width, top: rect.bottom + 4, maxHeight });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    placePanel();
+    const onMove = () => placePanel();
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    return () => {
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
+    };
+  }, [open, placePanel]);
+
+  // La fila resaltada siempre a la vista al moverse con el teclado.
+  useEffect(() => {
+    if (!open) return;
+    const row = listRef.current?.querySelector(`[data-index="${highlight}"]`);
+    row?.scrollIntoView({ block: "nearest" });
+  }, [open, highlight, filtered]);
+
+  const highlighted = filtered[highlight] || null;
+  const highlightedInfo = highlighted ? describeFn(highlighted) : null;
+
+  const panel = open && panelStyle ? createPortal(
+    <div
+      style={panelStyle}
+      className="z-[70] flex flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg"
+      // Clic dentro de la lista (también en la ficha) no debe quitar el foco del campo.
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      {filtered.length === 0 ? (
+        <div className="px-3 py-2 text-xs text-slate-500">
+          {loading || !fresh ? L.searching : failed ? L.error : noResultsLabel}
+        </div>
+      ) : (
+        <>
+          <div ref={listRef} role="listbox" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            {filtered.map((r, idx) => {
+              const info = describeFn(r);
+              const active = idx === highlight;
+              return (
+                <div
+                  key={r.id}
+                  data-index={idx}
+                  role="option"
+                  aria-selected={active}
+                  onMouseEnter={() => setHighlight(idx)}
+                  onMouseDown={(e) => { e.preventDefault(); commitSelection(r, { move: Boolean(onSelected) }); }}
+                  className={`cursor-pointer border-b border-slate-50 px-3 py-1.5 last:border-b-0 ${active ? "bg-blue-50" : "hover:bg-slate-50"}`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className={`min-w-0 truncate text-sm ${active ? "text-blue-700" : "text-slate-800"}`}>{cfg.label(r)}</span>
+                    <CatalogChips chips={info.chips} className="shrink-0 justify-end" />
+                  </div>
+                  {info.subtitle && <div className="truncate text-[11px] text-slate-400">{info.subtitle}</div>}
+                </div>
+              );
+            })}
+            {(loading && !fresh) && <div className="px-3 py-1 text-[11px] text-slate-400">{L.searching}</div>}
+            {showMoreHint && <div className="px-3 py-1 text-[11px] text-slate-400">{L.more}</div>}
+          </div>
+          {highlightedInfo && highlightedInfo.details.length > 0 && (
+            <div className="shrink-0 border-t border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="mb-1 truncate text-[11px] text-slate-500">{L.card} {cfg.label(highlighted)}</div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs sm:grid-cols-3">
+                {highlightedInfo.details.map(([label, valueText, tone]) => (
+                  <div key={label} className="min-w-0 truncate">
+                    <span className="text-slate-500">{label}</span>{" "}
+                    <span className={DETAIL_TONES[tone] || "text-slate-800"}>{valueText}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>,
+    document.body
+  ) : null;
+
   return (
     <div className={className || "relative flex-1 min-w-0"}>
       <input
@@ -268,29 +423,7 @@ function CatalogComboBox({
         aria-expanded={open}
         aria-invalid={error ? true : undefined}
       />
-      {open && (
-        <div className="absolute z-20 mt-1 max-h-56 w-full min-w-[16rem] overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
-          {filtered.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-slate-500">
-              {loading || !fresh ? L.searching : failed ? L.error : noResultsLabel}
-            </div>
-          ) : (
-            <>
-              {filtered.map((r, idx) => (
-                <div
-                  key={r.id}
-                  onMouseDown={(e) => { e.preventDefault(); commitSelection(r, { move: Boolean(onSelected) }); }}
-                  className={`cursor-pointer px-3 py-2 text-sm ${idx === highlight ? "bg-blue-50 text-blue-700" : "hover:bg-slate-50"}`}
-                >
-                  {cfg.label(r)}
-                </div>
-              ))}
-              {(loading && !fresh) && <div className="px-3 py-1 text-[11px] text-slate-400">{L.searching}</div>}
-              {showMoreHint && <div className="px-3 py-1 text-[11px] text-slate-400">{L.more}</div>}
-            </>
-          )}
-        </div>
-      )}
+      {panel}
     </div>
   );
 }

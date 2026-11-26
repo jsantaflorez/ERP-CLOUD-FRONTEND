@@ -26,8 +26,8 @@ import AccountQuickCreateModal from "../common/AccountQuickCreateModal";
 import CostCenterQuickCreateModal from "../common/CostCenterQuickCreateModal";
 import ThirdPartyQuickCreateModal from "../common/ThirdPartyQuickCreateModal";
 import { thirdPartyLabel } from "../../utils/thirdPartyLabel";
-import CatalogComboBox from "../ui/CatalogComboBox";
-import { fetchCatalogByIds } from "../../utils/catalogLookup";
+import CatalogComboBox, { CatalogChips } from "../ui/CatalogComboBox";
+import { describeAccount, fetchCatalogByIds } from "../../utils/catalogLookup";
 
 // A brand-new line starts with both amounts empty -- the user picks either
 // a debit or a credit, never both (mirrors JournalEntryService's own rule).
@@ -2117,6 +2117,10 @@ function JeFormView({
   onAccountCreated, onCostCenterCreated, onThirdPartyCreated,
 }) {
   const selectedDocType = documentTypes.find((d) => String(d.id) === String(form.documentTypeId));
+  // 2026-11-26: etiquetas y ficha de la cuenta en el selector, con el impuesto
+  // vinculado a la cuenta (tarifa, si pide base, base mínima).
+  const describeLineAccount = (account) =>
+    describeAccount(account, { tax: account ? taxByAccountId[account.id] || null : null, language });
   // NEW (2026-10-01): tracks which item row's "+" button opened a
   // quick-create modal (null = none open). Lives here, not in the parent,
   // since it's pure "what's this form's UI currently showing" state --
@@ -2550,6 +2554,7 @@ function JeFormView({
                           language={language}
                           value={item.accountId}
                           selectedRecord={acc || null}
+                          describe={describeLineAccount}
                           onChange={(id, record) => { rememberAccounts(record); onItemChange(index, "accountId", id); }}
                           onSelected={(account) => handleAccountSelected(index, account)}
                           onRetreat={() => retreatFocusBefore(index, "account")}
@@ -2564,6 +2569,8 @@ function JeFormView({
                           +
                         </button>
                       </div>
+                      {/* 2026-11-26: lo que pide la cuenta elegida, a la vista en la línea. */}
+                      {acc && <CatalogChips chips={describeLineAccount(acc).chips} className="mt-1" />}
                       {lineErr.accountId && <p className="text-[10px] text-red-700 mt-1">{lineErr.accountId}</p>}
                       {lineErr.amount && <p className="text-[10px] text-red-700 mt-1">{lineErr.amount}</p>}
                     </td>
