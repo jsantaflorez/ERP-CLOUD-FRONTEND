@@ -1,70 +1,49 @@
 import api from './api';
 
+// Error -> stable CODE in `code` (INVALID_CREDENTIALS, ACCOUNT_LOCKED,
+// TOO_MANY_REQUESTS, NO_ACTIVE_COMPANIES, LOGIN_SESSION_EXPIRED...); Login.jsx
+// translates it to the active language. No response = server unreachable.
+function authError(error) {
+  const code = error.response ? (error.response.data?.message || 'INVALID_CREDENTIALS') : 'NETWORK_ERROR';
+  const err = new Error(code);
+  err.code = code;
+  return err;
+}
+
 /**
- * Sends an authentication request to the backend.
- * @param {string} username - The user identifier or email.
- * @param {string} password - The raw credentials.
- * @param {number|string} companyId - The company the user picked on the
- *   Login screen's dropdown (see getCompaniesForEmail below). FIXED
- *   (2026-10-28, Multiempresa Fase 2): this used to be a hardcoded
- *   testCompanyId=4 here, silently ignoring whichever account actually
- *   logged in -- now it's the real value chosen for THIS login attempt.
- * @returns {Promise<Object>} The API response payload containing JWT and metadata.
+ * B1 (2026-11-25) -- login en dos pasos, paso 1: correo + contraseña.
+ * Only after the password is verified does the backend list the user's
+ * companies (name and NIT), together with a 5-minute pre-session token that
+ * is only good for selectCompanyRequest() below. Replaces the old public
+ * POST /auth/companies lookup (a company directory without password).
+ * @returns {Promise<{preAuthToken:string, expiresIn:number, email:string, fullName:string,
+ *   companies:Array<{id:number, legalName:string, tradeName:string|null, taxId:string|null}>}>}
  */
-export async function loginRequest(username, password, companyId) {
+export async function loginRequest(email, password) {
   try {
-    const response = await api.post('/auth/login', {
-      email: username,      // Mapped to 'String email' (@Email in Java)
-      password: password,   // Mapped to 'String password'
-      companyId: companyId  // Mapped to 'Long companyId' in the Java record
-    });
-    return response.data;
+    const response = await api.post('/auth/login', { email, password });
+    return response.data?.data;
   } catch (error) {
-    // The backend answers with a stable CODE in `message` (INVALID_CREDENTIALS,
-    // ACCOUNT_LOCKED, TOO_MANY_REQUESTS...); Login.jsx translates it to the
-    // active language. No response at all = the server could not be reached.
-    const code = error.response ? (error.response.data?.message || 'INVALID_CREDENTIALS') : 'NETWORK_ERROR';
-    const err = new Error(code);
-    err.code = code;
-    throw err;
+    throw authError(error);
   }
 }
 
 /**
- * NEW (2026-10-28, Multiempresa Fase 2): looks up which companies a given
- * email can log into, to populate the Login screen's company dropdown.
- * Deliberately scoped to THAT email's own UserRole assignments -- the
- * backend never returns a global company list here, by design (a pilot
- * client's user should only ever see their own companies, nothing else).
- *
- * This runs before the password is verified (no session exists yet), so
- * it hits a public /api/auth endpoint rather than the authenticated
- * /api/v1/session/companies used later for the AppHeader switcher.
- *
- * Fails soft: any error (bad email format, network issue, unknown email)
- * just resolves to an empty list rather than throwing, since an empty
- * dropdown is a normal, recoverable UI state here -- not worth a blocking
- * error on every blur of the email field.
- * @param {string} email
- * @returns {Promise<Array<{id:number, legalName:string, tradeName:string|null, taxId:string}>>}
+ * B1 (2026-11-25) -- paso 2: the company chosen in the list, with the
+ * pre-session token of step 1 (sent explicitly: api.js keeps an Authorization
+ * header that the call already brings). Returns the normal access session
+ * payload ({ token, type, email, fullName, companyId, roles, expiresIn }).
  */
-export async function getCompaniesForEmail(email) {
+export async function selectCompanyRequest(preAuthToken, companyId) {
   try {
-    const response = await api.post('/auth/companies', { email });
-    return Array.isArray(response.data?.data) ? response.data.data : [];
+    const response = await api.post(
+      '/auth/select-company',
+      { companyId },
+      { headers: { Authorization: `Bearer ${preAuthToken}` } }
+    );
+    return response.data?.data;
   } catch (error) {
-    // FIX (2026-11-12): this used to swallow EVERY error and return [], so a
-    // backend that was down, a 500 or the rate limit (429) all showed the
-    // misleading "no companies for this email". Now only a malformed email
-    // (400) counts as "no companies"; anything else is reported as what it is.
-    const status = error.response?.status;
-    if (status === 400) return [];
-    const code = !error.response
-      ? 'NETWORK_ERROR'
-      : status === 429 ? 'TOO_MANY_REQUESTS' : 'SERVER_UNAVAILABLE';
-    const err = new Error(code);
-    err.code = code;
-    throw err;
+    throw authError(error);
   }
 }
 

@@ -405,6 +405,16 @@ export const SHORTCUTS = [
     ],
   },
   {
+    // B1 (2026-11-25): paso 2 del ingreso (elegir empresa).
+    id: "login",
+    title: { es: "Ingreso: elegir empresa", en: "Sign in: choose the company" },
+    items: [
+      { keys: ["↑", "↓"], es: "Moverse entre las empresas (Inicio / Fin: primera / última)", en: "Move between companies (Home / End: first / last)" },
+      { keys: ["Enter"], es: "Entrar a la empresa resaltada (viene resaltada la última usada en este equipo)", en: "Sign in to the highlighted company (the last one used on this device comes highlighted)" },
+      { keys: ["Esc"], es: "Volver a correo y contraseña", en: "Back to email and password" },
+    ],
+  },
+  {
     id: "menu",
     title: { es: "Menús desplegables (Exportar)", en: "Drop-down menus (Export)" },
     items: [

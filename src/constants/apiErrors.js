@@ -83,6 +83,9 @@ export const API_ERROR_LABELS = {
     NO_ACCESS_TO_COMPANY: "No tienes acceso a la empresa seleccionada.",
     ACCOUNT_LOCKED: "Tu cuenta está bloqueada temporalmente por varios intentos fallidos. Inténtalo de nuevo en 15 minutos.",
     INVALID_CREDENTIALS: "Usuario o contraseña incorrectos.",
+    // B1 (2026-11-25): login en dos pasos.
+    NO_ACTIVE_COMPANIES: "Tu usuario no tiene empresas activas. Contacta al administrador de tu empresa.",
+    LOGIN_SESSION_EXPIRED: "Pasó demasiado tiempo para elegir la empresa. Ingresa de nuevo tu contraseña.",
     NETWORK_ERROR: "No se pudo conectar con el servidor. Verifica tu conexión e inténtalo de nuevo.",
     SERVER_UNAVAILABLE: "El servidor respondió con un error al consultar tus empresas. Inténtalo de nuevo en un momento.",
     // Multiempresa Fase 3 (UserManagementController/UserManagementService).
@@ -215,6 +218,8 @@ export const API_ERROR_LABELS = {
     NO_ACCESS_TO_COMPANY: "You don't have access to the selected company.",
     ACCOUNT_LOCKED: "Your account is temporarily locked after several failed attempts. Try again in 15 minutes.",
     INVALID_CREDENTIALS: "Incorrect username or password.",
+    NO_ACTIVE_COMPANIES: "Your user has no active companies. Contact your company's administrator.",
+    LOGIN_SESSION_EXPIRED: "Too much time passed to choose the company. Enter your password again.",
     NETWORK_ERROR: "Could not reach the server. Check your connection and try again.",
     SERVER_UNAVAILABLE: "The server returned an error while loading your companies. Try again in a moment.",
     PASSWORD_TOO_SHORT: "Password must be at least 6 characters.",

@@ -32,7 +32,10 @@ api.interceptors.request.use(
     const { token: sessionToken } = getActiveSession();
     const token = sessionToken || localStorage.getItem('token');
 
-    if (token) {
+    // B1 (2026-11-25): a call that already brings its own Authorization (step
+    // 2 of the login, with the pre-session token) keeps it -- a stale session
+    // token left in localStorage must not replace it.
+    if (token && !config.headers?.Authorization) {
       config.headers.Authorization = `Bearer ${token}`;
     }
 

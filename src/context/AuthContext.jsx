@@ -2,6 +2,7 @@
 import { createContext, useContext, useState, useCallback } from "react";
 import api from "../services/api";
 import { levelFromRoles } from "../utils/roleLevel";
+import { rememberLastCompany } from "../utils/lastCompany";
 import {
   getActiveSession,
   setActiveSession,
@@ -31,6 +32,8 @@ export function AuthProvider({ children }) {
 
     if (sessionData.token) localStorage.setItem("token", sessionData.token);
     if (sessionData.companyId) localStorage.setItem("companyId", sessionData.companyId);
+    // B1 (2026-11-25): la próxima vez, el paso 2 del ingreso la trae resaltada.
+    rememberLastCompany(sessionData.email, sessionData.companyId);
   }, []);
 
   const logout = useCallback(() => {
@@ -78,6 +81,7 @@ export function AuthProvider({ children }) {
 
     if (nextSession.token) localStorage.setItem("token", nextSession.token);
     if (nextSession.companyId) localStorage.setItem("companyId", nextSession.companyId);
+    rememberLastCompany(getActiveSession().email, nextSession.companyId);
 
     // FIX (2026-11-04): roles are per company. AppHeader reloads the page
     // after switching and App.jsx restores "erp_user" from localStorage, so

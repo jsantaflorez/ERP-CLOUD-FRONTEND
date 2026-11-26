@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { loginRequest, getCompaniesForEmail } from "../services/securityService";
+import { useEffect, useRef, useState } from "react";
+import { loginRequest, selectCompanyRequest } from "../services/securityService";
 import { useAuth } from "../context/AuthContext";
 import logo from "../logo/logo.png";
 import spain from "../logo/spain.png";
@@ -7,177 +7,142 @@ import uk from "../logo/uk.png";
 import translations from "../translations";
 import { levelFromRoles } from "../utils/roleLevel";
 import { API_ERROR_LABELS } from "../constants/apiErrors";
+import { getLastCompanyId } from "../utils/lastCompany";
 
+// B1 (auditoría F1-13, 2026-11-25): login en dos pasos.
+//
+// Paso 1: correo + contraseña. Antes, al salir del campo correo la pantalla
+// pedía SIN contraseña la lista de empresas de ese correo (un directorio
+// público de clientes con su NIT). Ahora las empresas solo llegan después de
+// verificar la contraseña, junto con un token de pre-sesión de 5 minutos que
+// vive solo en la memoria de esta pantalla (nunca en localStorage).
+//
+// Paso 2: la lista de empresas (nombre y NIT), SIEMPRE visible aunque haya
+// una sola (decisión del usuario), con la última usada en este equipo ya
+// resaltada: ↑/↓ (Inicio/Fin) para moverse, Enter o clic para entrar, Esc o
+// "Cambiar usuario" para volver al paso 1.
 function Login({ onLogin, language, onLanguageChange }) {
+  const [step, setStep] = useState("credentials"); // "credentials" | "company"
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError]       = useState("");
-  const [loading, setLoading]   = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  // NEW (2026-10-28, Multiempresa Fase 2): the company this login
-  // attempt targets. Used to be hardcoded (testCompanyId=4 in
-  // securityService.js) -- now the user picks it here, from the real
-  // list of companies THEIR email has access to (never a global list,
-  // by explicit product decision -- see getCompaniesForEmail).
-  const [companyId, setCompanyId] = useState("");
-  const [companies, setCompanies] = useState([]);
-  const [loadingCompanies, setLoadingCompanies] = useState(false);
-  // Tracks whether a lookup has actually completed for the CURRENT
-  // email, so the "no companies found" hint only shows after a real
-  // attempt -- not while the user is still typing their address.
-  const [companiesChecked, setCompaniesChecked] = useState(false);
-  // Set when the company lookup itself failed (server down, 429, 500) --
-  // shown instead of the "no companies" hint, which would be misleading.
-  const [companiesError, setCompaniesError] = useState("");
+  // Paso 2
+  const [preAuth, setPreAuth] = useState(null); // { token, email, fullName, companies }
+  const [highlight, setHighlight] = useState(0);
+  const listRef = useRef(null);
+  const emailRef = useRef(null);
 
   const { login } = useAuth();
-
   const t = translations[language] || translations.es;
 
-  // FIX (2026-11-04): login errors used to show the backend's raw English
-  // text. The backend now sends a stable code; translate it to the active
-  // language, falling back to the generic "wrong username or password".
   const authErrorMessage = (code) =>
     (API_ERROR_LABELS[language] || API_ERROR_LABELS.es)[code] || t.invalidCredentials;
 
-  /**
-   * Looks up which companies the typed email can log into, once the
-   * user leaves the field. Keeps this a single-screen, single-submit
-   * login (per product decision) -- this is just a second field on the
-   * same form, not an extra step/page.
-   */
-  const handleEmailBlur = async () => {
-    const cleanUser = username.trim().toLowerCase();
-    if (!cleanUser) return;
+  // Al llegar al paso 2, el foco va a la lista para seguir solo con teclado.
+  useEffect(() => {
+    if (step === "company") listRef.current?.focus();
+    if (step === "credentials") emailRef.current?.focus();
+  }, [step]);
 
-    setLoadingCompanies(true);
-    setCompaniesError("");
-    try {
-      const list = await getCompaniesForEmail(cleanUser);
-      setCompanies(list);
-      // Auto-select the obvious case: a single matching company (the
-      // common pilot-client scenario today) shouldn't force an extra
-      // click on a dropdown with exactly one option.
-      if (list.length === 1) {
-        setCompanyId(String(list[0].id));
-      }
-    } catch (err) {
-      setCompanies([]);
-      setCompaniesError(authErrorMessage(err.code));
-    } finally {
-      setLoadingCompanies(false);
-      setCompaniesChecked(true);
-    }
+  const backToCredentials = (message = "") => {
+    setStep("credentials");
+    setPreAuth(null);
+    setPassword("");
+    setError(message);
   };
 
-  /**
-   * Resets the company dropdown whenever the email itself changes --
-   * the previously fetched list belonged to the OLD address and would
-   * otherwise silently stay selectable against a different email.
-   */
-  const handleUsernameChange = (e) => {
-    setUsername(e.target.value);
-    setError("");
-    setCompanies([]);
-    setCompanyId("");
-    setCompaniesChecked(false);
-    setCompaniesError("");
-  };
-
-  /**
-   * Handles the login form submission against the active backend.
-   * @param {Event} e - The HTML form submit event.
-   */
-  const handleSubmit = async (e) => {
+  const handleCredentials = async (e) => {
     e.preventDefault();
     setError("");
-
     const cleanUser = username.trim().toLowerCase();
-    if (!cleanUser || !password || !companyId) {
-      // Falls back to an inline string if translations.js doesn't have
-      // this key yet -- add `requiredFields` to both es/en dictionaries
-      // in translations.js to remove this fallback.
+    if (!cleanUser || !password) {
       setError(t.requiredFields || (language === "es" ? "Por favor complete todos los campos" : "Please fill in all fields"));
       return;
     }
-
     setLoading(true);
     try {
-      // Execute authentication request against our Spring Boot backend
-      const result = await loginRequest(cleanUser, password, Number(companyId));
-
-      if (result && result.success) {
-        /**
-         * Enterprise Mapping:
-         * Standardize backend response fields to match the UI expectations.
-         *
-         * FIX: previously assumed a nested `result.data.user` object with
-         * `roles: [{ name: "..." }]` and a hardcoded companyId -- that
-         * shape doesn't match what this backend actually returns. The
-         * real response is flat: { token, type, expiresIn, companyId,
-         * email, fullName, roles: ["READ","CREATE",...] }. The old
-         * mapping never THREW an error (optional chaining just silently
-         * fell back to defaults), so login still "worked" but always
-         * granted the "Administrator" fallback level and a fake
-         * companyId, regardless of who actually logged in.
-         */
-        const mappedUser = {
-          id: result.data.id ?? 1, // backend doesn't return a numeric user id in this payload
-          username: result.data.fullName || result.data.email || cleanUser,
-          roles: Array.isArray(result.data.roles) ? result.data.roles : [],
-          // Kept for backward compatibility with Dashboard.jsx's current
-          // role checks (which expect a single string level). This is a
-          // coarse guess -- SYS_ADMIN maps to "Administrator", anything
-          // else falls back to "USER". Dashboard.jsx's authorization
-          // logic should ideally be updated to check the `roles` array
-          // directly instead of this flattened string; flagging this as
-          // a follow-up rather than changing Dashboard.jsx silently here.
-          // FIX (2026-11-04): used to map ONLY SYS_ADMIN to "Administrator"
-          // and everything else to "USER", so COMPANY_ADMIN and ACCOUNTANT
-          // users saw an empty menu. See utils/roleLevel.js.
-          level: levelFromRoles(result.data.roles),
-          active: true
-        };
-
-        // FIXED (2026-10-28, Multiempresa Fase 2): companyName used to
-        // always be null here with a TODO explaining the backend doesn't
-        // return a display name, only the numeric id. Now the Login
-        // screen already fetched the user's own company list (to build
-        // the dropdown above), so we can resolve the real label locally
-        // by matching the id the backend actually confirmed logging into.
-        const matchedCompany = companies.find(
-          (c) => String(c.id) === String(result.data.companyId)
-        );
-
-        // Feed the tenant/auth context (token + companyId) so every Axios
-        // request picks it up automatically via the interceptor. This
-        // replaces the old direct localStorage.setItem("token"/"companyId")
-        // calls that used to live here.
-        login({
-          token: result.data.token,
-          companyId: result.data.companyId != null ? String(result.data.companyId) : null,
-          companyName: matchedCompany ? (matchedCompany.tradeName || matchedCompany.legalName) : null,
-          username: mappedUser.username,
-          email: result.data.email || cleanUser,
-          roles: mappedUser.roles,
-          role: mappedUser.level,
-        });
-
-        // Propagate the clean, mapped user object to the main App wrapper
-        // (this is a separate concern from the tenant/auth context above --
-        // App.jsx uses it purely to decide whether to show Login or
-        // Dashboard, and to display user info in the UI).
-        onLogin(mappedUser);
-      } else {
-        setError(authErrorMessage(result.message));
-      }
+      const data = await loginRequest(cleanUser, password);
+      const companies = Array.isArray(data?.companies) ? data.companies : [];
+      const lastId = getLastCompanyId(data?.email || cleanUser);
+      const lastIndex = companies.findIndex((c) => String(c.id) === String(lastId));
+      setPreAuth({
+        token: data?.preAuthToken,
+        email: data?.email || cleanUser,
+        fullName: data?.fullName || "",
+        companies,
+      });
+      setHighlight(lastIndex >= 0 ? lastIndex : 0);
+      setPassword(""); // ya no se necesita: el paso 2 usa el token de pre-sesión
+      setStep("company");
     } catch (err) {
-      // Captures backend exceptions or network failures safely
       setError(authErrorMessage(err.code || err.message));
     } finally {
       setLoading(false);
     }
   };
+
+  const enterCompany = async (company) => {
+    if (!company || loading || !preAuth) return;
+    setError("");
+    setLoading(true);
+    try {
+      const data = await selectCompanyRequest(preAuth.token, company.id);
+      const roles = Array.isArray(data?.roles) ? data.roles : [];
+      const mappedUser = {
+        id: data?.id ?? 1, // the payload carries no numeric user id
+        username: data?.fullName || data?.email || preAuth.email,
+        roles,
+        level: levelFromRoles(roles),
+        active: true,
+      };
+      login({
+        token: data?.token,
+        companyId: data?.companyId != null ? String(data.companyId) : String(company.id),
+        companyName: company.tradeName || company.legalName,
+        username: mappedUser.username,
+        email: data?.email || preAuth.email,
+        roles,
+        role: mappedUser.level,
+      });
+      onLogin(mappedUser);
+    } catch (err) {
+      const code = err.code || err.message;
+      if (code === "LOGIN_SESSION_EXPIRED") {
+        backToCredentials(authErrorMessage(code));
+      } else {
+        setError(authErrorMessage(code));
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleListKeyDown = (e) => {
+    const count = preAuth?.companies?.length || 0;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlight((h) => Math.min(h + 1, count - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlight((h) => Math.max(h - 1, 0));
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      setHighlight(0);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      setHighlight(Math.max(count - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      enterCompany(preAuth?.companies?.[highlight]);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      backToCredentials();
+    }
+  };
+
+  const optionId = (index) => `login-company-${index}`;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
@@ -198,46 +163,84 @@ function Login({ onLogin, language, onLanguageChange }) {
           <p className="text-sm text-slate-500">{t.loginSubtitle}</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <input type="text" placeholder={t.user} value={username}
-            onChange={handleUsernameChange}
-            onBlur={handleEmailBlur}
-            className="rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
-          />
+        {step === "credentials" ? (
+          // FIX (2026-11-25, prueba del usuario): el mensaje ya NO se borra al
+          // cambiar un campo. Al volver del paso 2 el navegador autocompleta
+          // correo/contraseña, eso disparaba onChange y el aviso de "pasó
+          // demasiado tiempo" desaparecía casi enseguida. Ahora el mensaje
+          // queda hasta el siguiente intento (handleCredentials lo limpia).
+          <form onSubmit={handleCredentials} className="flex flex-col gap-4">
+            <input ref={emailRef} type="text" placeholder={t.user} value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+              className="rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
+            />
+            <input type="password" placeholder={t.password} value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              className="rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
+            />
+            {error && <p className="text-sm text-red-700">{error}</p>}
+            <button type="submit" disabled={loading}
+              className="rounded-xl bg-blue-600 px-4 py-3 font-medium text-white hover:bg-blue-700 disabled:opacity-60 transition-colors">
+              {loading ? "..." : t.loginButton}
+            </button>
+          </form>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <div>
+              {preAuth?.fullName && (
+                <p className="text-sm text-slate-600">{t.loginGreeting} <strong className="text-slate-800">{preAuth.fullName}</strong></p>
+              )}
+              <p className="text-sm font-semibold text-slate-800">{t.selectCompany}</p>
+            </div>
 
-          <div className="flex flex-col gap-1">
-            <select
-              value={companyId}
-              onChange={(e) => { setCompanyId(e.target.value); setError(""); }}
-              disabled={loadingCompanies || companies.length === 0}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-400"
+            <ul
+              ref={listRef}
+              role="listbox"
+              tabIndex={0}
+              aria-label={t.selectCompany}
+              aria-activedescendant={optionId(highlight)}
+              onKeyDown={handleListKeyDown}
+              className="max-h-72 overflow-y-auto rounded-xl border border-slate-300 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
             >
-              <option value="">
-                {loadingCompanies ? t.loadingCompanies : t.selectCompany}
-              </option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.tradeName || c.legalName}
-                </option>
-              ))}
-            </select>
-            {companiesError ? (
-              <p className="text-xs text-red-600">{companiesError}</p>
-            ) : companiesChecked && !loadingCompanies && companies.length === 0 && (
-              <p className="text-xs text-amber-700">{t.noCompaniesForEmail}</p>
-            )}
-          </div>
+              {(preAuth?.companies || []).map((c, index) => {
+                const active = index === highlight;
+                return (
+                  <li
+                    key={c.id}
+                    id={optionId(index)}
+                    role="option"
+                    aria-selected={active}
+                    onMouseEnter={() => setHighlight(index)}
+                    onClick={() => enterCompany(c)}
+                    className={`cursor-pointer border-b border-slate-100 px-4 py-3 last:border-b-0 ${active ? "bg-blue-50" : "hover:bg-slate-50"}`}
+                  >
+                    <div className={`text-sm font-semibold ${active ? "text-blue-700" : "text-slate-800"}`}>{c.legalName}</div>
+                    <div className="text-xs text-slate-500">
+                      {c.taxId ? `${t.companyTaxId} ${c.taxId}` : ""}
+                      {c.tradeName && c.tradeName !== c.legalName ? `${c.taxId ? " · " : ""}${c.tradeName}` : ""}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
 
-          <input type="password" placeholder={t.password} value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
-          />
-          {error && <p className="text-sm text-red-700">{error}</p>}
-          <button type="submit" disabled={loading}
-            className="rounded-xl bg-blue-600 px-4 py-3 font-medium text-white hover:bg-blue-700 disabled:opacity-60 transition-colors">
-            {loading ? "..." : t.loginButton}
-          </button>
-        </form>
+            <p className="text-[11px] text-slate-500">{t.loginCompanyHint}</p>
+            {error && <p className="text-sm text-red-700">{error}</p>}
+
+            <div className="flex items-center justify-between gap-3">
+              <button type="button" onClick={() => backToCredentials()} disabled={loading}
+                className="text-sm text-slate-600 underline hover:text-slate-800 disabled:opacity-60">
+                {t.changeUser}
+              </button>
+              <button type="button" onClick={() => enterCompany(preAuth?.companies?.[highlight])} disabled={loading}
+                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60 transition-colors">
+                {loading ? "..." : t.loginButton}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
